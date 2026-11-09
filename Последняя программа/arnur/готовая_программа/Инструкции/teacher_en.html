@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Teacher guide — station operator trainer</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+<nav class="lang"><a href="index.html">All guides</a> · <a href="teacher_ru.html">Русский</a> · <a href="teacher_kk.html">Қазақша</a> · <b>English</b></nav>
+<h1>Teacher guide</h1>
+<p class="sub">How to prepare the classroom, run a training game, set faults and review the results.</p>
+
+<nav class="toc"><b>Contents</b>
+<ol>
+<li><a href="#kit">What is included</a></li>
+<li><a href="#class">Preparing the classroom</a></li>
+<li><a href="#students">Students</a></li>
+<li><a href="#lessons">Lessons</a></li>
+<li><a href="#run">Running a lesson</a></li>
+<li><a href="#screen">Student screen and control</a></li>
+<li><a href="#faults">Faults (express inputs)</a></li>
+<li><a href="#schedule">Timetable and train graph</a></li>
+<li><a href="#reports">Reports and summary sheet</a></li>
+<li><a href="#score">How students are assessed</a></li>
+<li><a href="#maket">Layout (Arduino)</a></li>
+<li><a href="#lang">Languages</a></li>
+<li><a href="#faq">Troubleshooting</a></li>
+</ol></nav>
+
+<h2 id="kit">1. What is included</h2>
+<table>
+<tr><th>Folder</th><th>What it is</th></tr>
+<tr><td><code>Преподаватель\Teacher.exe</code></td><td>The teacher program. Starts the connection server itself. Data (students, lessons, results) is kept in <code>Преподаватель\данные</code>.</td></tr>
+<tr><td><code>АКЖТ\Station.exe</code></td><td>Panel of АКЖТ station and the junction post (one window for two monitors). <code>Arduino</code> folder — layout firmware.</td></tr>
+<tr><td><code>Алгабас\Algabas.exe</code></td><td>Panel of Алгабас station. <code>датчики.txt</code> — which layout sensor belongs to which section. <code>Arduino</code> folder — the sketch.</td></tr>
+<tr><td><code>Сервер\PromServer.exe</code></td><td>Connection server (port 8090). No need to start it by hand.</td></tr>
+<tr><td><code>Инструкции</code></td><td>These guides (student, teacher, programmer) in three languages.</td></tr>
+</table>
+<p>No installation is needed: everything is inside the exe files. The whole <code>готовая_программа</code> folder can be carried on a USB stick. Windows 10 / 11, computers on one network.</p>
+
+<h2 id="class">2. Preparing the classroom</h2>
+<ol>
+<li>On the teacher computer start <code>Преподаватель\Teacher.exe</code>. Windows asks about the firewall for PromServer — allow it on private networks. The log at the bottom shows the address for the stations (e.g. <code>192.168.8.27</code>).</li>
+<li>On the student computers start АКЖТ or Алгабас → <span class="btn">Connection…</span> → the teacher address → <span class="btn">Connect</span>. The address is remembered.</li>
+<li>The station appears in the table on the «Lesson» tab. АКЖТ and Алгабас are connected to each other — trains pass between the stations by themselves.</li>
+<li>With the layout — choose the Arduino port in the list at the top of the station window (see <a href="#maket">section 11</a>).</li>
+</ol>
+<figure><img src="img/teacher_en_0.png" alt="Lesson tab"><figcaption>Teacher program, «Lesson» tab.</figcaption></figure>
+
+<h2 id="students">3. Students</h2>
+<p>«Students» tab: <span class="btn">Add…</span> (full name, group, password — may be empty), <span class="btn">Edit…</span>, <span class="btn">Password…</span>, <span class="btn">Delete</span>. A student logs in at the station with «Log in» and chooses himself. If registration is allowed, a student can add himself («I am not on the list…»).</p>
+
+<h2 id="lessons">4. Lessons</h2>
+<p>«Lessons» tab: lessons on the left, properties on the right. <span class="btn">New lesson</span>, <span class="btn">Copy</span>, <span class="btn">Delete</span>. Changes are saved at once.</p>
+<figure><img src="img/teacher_en_2.png" alt="Lessons tab"><figcaption>Lesson properties.</figcaption></figure>
+<table>
+<tr><th>Section</th><th>Properties</th></tr>
+<tr><td>1. Lesson</td><td>Name, level (1 — beginners … 5 — exam), what the student should do (shown to the student by the «Task» button).</td></tr>
+<tr><td>2. Task</td><td>Trains to receive / dispatch, allowed critical events, pass from … points.</td></tr>
+<tr><td>3. Trains and time</td><td>How many virtual trains to send and how often, duration (game minutes), start (game time).</td></tr>
+<tr><td>4. Panel</td><td>Route cancellation delays (ОС, ОП, ОМ), artificial release, worker time; separate control.</td></tr>
+<tr><td>5. Timetable</td><td>The lesson timetable («Timetable» tab), how early a train appears on the approach, train speed (s per section; 12 for timetables).</td></tr>
+<tr><td>6. Shunting and sidings</td><td>Plan: wagons to place on / remove from the siding, local wagons to dispatch; local wagons per freight train; loading minutes per wagon; recovery train arrival and works.</td></tr>
+</table>
+<p>Ready lessons go from «Getting to know the panel» to the «Exam»; there are timetable lessons, «Logs, forms, radio», «Shunting work and private siding», «Derailment and recovery train».</p>
+
+<h2 id="run">5. Running a lesson</h2>
+<ol>
+<li>«Lesson» tab: choose a lesson → <span class="btn">Start lesson</span>. Stations receive the lesson, panels are reset, counters are zeroed.</li>
+<li>Students log in. To seat a student at a station by hand — <span class="btn">Assign student…</span>.</li>
+<li><span class="btn">▶ Run</span> — game time runs; <span class="btn">❚❚ Pause</span> — stopped (panels accept no commands); «Speed ×1…×10» — for all stations.</li>
+<li>The station table shows the student, received / dispatched, critical events, mistakes, points — updated live.</li>
+<li><span class="btn">Finish lesson</span> — stations send their results, saved on the «Reports» tab.</li>
+</ol>
+
+<h2 id="screen">6. Student screen and control</h2>
+<ul>
+<li>Click a station in the table — its screen appears on the right.</li>
+<li>Large: double-click the station or <span class="btn">Screen full size…</span> — a separate full-screen window, F11 — without a frame. For АКЖТ the «АКЖТ» / «Junction post» buttons show one diagram on the whole screen, «Whole window» — everything.</li>
+<li><span class="btn">Take control</span> — your mouse and keyboard operate the student's panel, the student's panel does not respond. «Return control to the student» — back.</li>
+</ul>
+
+<h2 id="faults">7. Faults (express inputs)</h2>
+<p>During the lesson: choose the station → <span class="btn">Faults…</span> → «Express input…»: object (signal, switch, section, line, train) → fault type → condition (none / state / change to state / change from state; for trains — any, by number, train, shunting, passenger, freight) → start (at once or from a game time) → «Accept». The list shows the state: waiting, active, being fixed by ШН, fixed. «Remove fault» — fix it yourself.</p>
+<table>
+<tr><th>Fault</th><th>What it trains</th></tr>
+<tr><td>Signal does not clear / dropped</td><td>Call-on signal, radio «Instruction», form ДУ-54 at the exit signal; ДУ-46 entry, calling ШН.</td></tr>
+<tr><td>Switch: no detection, does not move, gap, trailed</td><td>Crank, lock and clamp, disconnection keeping the signals, mock-up; ДУ-46.</td></tr>
+<tr><td>False occupancy / false clear of a section or line</td><td>Auxiliary throw (ВК), artificial release, auxiliary direction change, telephone communication (ДУ-47, ДУ-50).</td></tr>
+<tr><td>Direction does not change</td><td>ВСН, switching to telephone communication.</td></tr>
+<tr><td>Train: engine, brakes, out-of-gauge, derailment</td><td>Radio («Repair»), informing the dispatcher, recovery train, warning.</td></tr>
+</table>
+<p>The student does not see a «fault» label — only what an operator would see. Train faults are reported by the driver.</p>
+
+<h2 id="schedule">8. Timetable and train graph</h2>
+<ul>
+<li>«Timetable» tab: training timetables (three ready ones). A row is a train: number (even trains run АКЖТ → post → Алгабас), category, origin, times at each point, track. Errors and the planned graph are at the bottom.</li>
+<li>Timetable lesson: «Lessons» → «5. Timetable». Trains appear by themselves; the student has a «Timetable» button.</li>
+<li>«Train graph» tab: train paths of the current lesson are drawn live, the planned graph is dashed. Wheel — zoom, drag — scroll. Technical and sectional speed at the bottom.</li>
+</ul>
+
+<h2 id="reports">9. Reports and summary sheet</h2>
+<figure><img src="img/teacher_en_3.png" alt="Reports tab"><figcaption>«Reports» tab.</figcaption></figure>
+<ul>
+<li>Filters: name, group, status, dates. Choose a student — his lessons are listed below; double-click a lesson or <span class="btn">Detailed</span> — the detailed report (opens in the browser, print with Ctrl+P).</li>
+<li>The detailed report contains: result and grade, critical events and mistakes, faults, log ДУ-46, logs ДУ-2 / ДУ-47 / ДУ-58 / ДУ-60, forms, warnings, radio, <b>automatic log check</b> (what matched the facts and what did not — you decide), shunting work and the siding log, the recovery train, the train graph, the action log.</li>
+<li><span class="btn">Student reports (print)</span>, <span class="btn">Print list</span>, <span class="btn">Prepare summary sheet…</span> (instructor, printing, Excel file).</li>
+</ul>
+
+<h2 id="score">10. How students are assessed</h2>
+<p>100 points minus penalties. Pass — points not below the lesson threshold and critical events not above the allowed number. The full penalty table is in the <a href="student_en.html#score">student guide</a>. In short:</p>
+<ul>
+<li>Critical (−20): train waits at a closed entry signal more than 3 min, trailed switch, timetable delay over 5 min, unsecured wagons, second locomotive on the siding.</li>
+<li>Fault not recorded in ДУ-46 or ШН / ДНЦ / ПД not informed — −5 each. Unfulfilled task — −10 per train. Logs do not match the facts — −2 (up to −10 per log).</li>
+</ul>
+
+<h2 id="maket">11. Layout (Arduino)</h2>
+<ul>
+<li>The programs work with or without the layout. At the top of the station window there is a port list: choose the Arduino port. The «Sensors» line shows what the board sends.</li>
+<li>АКЖТ: firmware <code>АКЖТ\Arduino\StationMain_AKZHT</code>, instructions — <code>АКЖТ\Arduino\ИНСТРУКЦИЯ.txt</code>.</li>
+<li>Алгабас: sketch <code>Алгабас\Arduino\StationMain</code> (22.10.2026: switches on shield sockets 0–4). Which sensor belongs to which section — <code>Алгабас\датчики.txt</code> (can be changed without rebuilding).</li>
+<li>The station sees a real train on the layout as occupied sections. The student gives it a number (right-click the section → «Layout train number…»).</li>
+</ul>
+
+<h2 id="lang">12. Languages</h2>
+<p>The «Русский / Қазақша / English» list is next to «Connection…». Your language is sent to all stations; a student can switch his own. Reports and the summary sheet are printed in your language. Station and signal names and what you type (names, lesson titles) are not translated.</p>
+
+<h2 id="faq">13. Troubleshooting</h2>
+<dl>
+<dt>A station does not appear in the table.</dt><dd>Check the address in «Connection…» at the station, the Windows firewall on the teacher computer (PromServer, private network) and that the computers are on one network.</dd>
+<dt>The server does not start.</dt><dd>Another server is already running on this computer (a second Teacher.exe or PromServer.exe): close it.</dd>
+<dt>A student cannot log in.</dt><dd>Add him on the «Students» tab or reset the password («Password…»).</dd>
+<dt>A result did not arrive.</dt><dd>The station was offline when you finished the lesson. Do not close the station programs until «result received» appears in the table.</dd>
+<dt>The layout does not respond.</dt><dd>Choose the right port; for АКЖТ see <code>ИНСТРУКЦИЯ.txt</code> in the Arduino folder.</dd>
+</dl>
+</main>
+</body>
+</html>

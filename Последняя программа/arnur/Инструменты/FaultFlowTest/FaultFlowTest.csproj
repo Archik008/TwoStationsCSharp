@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- [ДОБАВЛЕНО 20.10.2026, этап 3] Тест без окон: неисправности, ДУ-46, виртуальный ШН, кнопки со счётчиком (ядро Алгабаса) -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\Исходники\Алгабас\Algabas\Algabas.csproj" />
+  </ItemGroup>
+</Project>

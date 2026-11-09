@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="kk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Бағдарламашыға арналған нұсқаулық — ДСП тренажёры</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+<nav class="lang"><a href="index.html">Барлық нұсқаулықтар</a> · <a href="programmer_ru.html">Русский</a> · <b>Қазақша</b> · <a href="programmer_en.html">English</a></nav>
+<h1>Бағдарламашыға арналған нұсқаулық</h1>
+<p class="sub">Бастапқы кодтың құрылымы, құрастыру, ядро, хаттама, макет, аударма, тесттер. Тренажёрды әрі қарай дамытатындарға арналған.</p>
+
+<nav class="toc"><b>Мазмұны</b>
+<ol>
+<li><a href="#repo">Бастапқы код</a></li>
+<li><a href="#build">Құрастыру</a></li>
+<li><a href="#core">Ядро: модель және тәуелділіктер</a></li>
+<li><a href="#modules">Функциялар бойынша модульдер</a></li>
+<li><a href="#net">Желі және сабақ хаттамасы</a></li>
+<li><a href="#teacher">Оқытушы бағдарламасы</a></li>
+<li><a href="#arduino">Макет және Arduino</a></li>
+<li><a href="#i18n">Аударма</a></li>
+<li><a href="#tests">Тесттер</a></li>
+<li><a href="#rules">Түзету ережелері</a></li>
+<li><a href="#todo">Тексерілмегені және келесі қадамдар</a></li>
+</ol></nav>
+
+<h2 id="repo">1. Бастапқы код</h2>
+<p>Бәрі <code>arnur</code> бумасында (git, <code>main</code> тармағы). <code>.gitattributes</code> = <code>* -text</code>: git жол соңдарын өзгертпейді.</p>
+<table>
+<tr><th>Жол</th><th>Не</th></tr>
+<tr><td><code>Исходники\АКЖТ\Station</code></td><td>«АКЖТ + жол бекеті» бағдарламасы (C#, .NET 8, WinForms), <code>Station.csproj</code>, шешім <code>..\Station.sln</code>. <code>Исходники\АКЖТ\CHANGES.md</code> — өзгерістер журналы, <code>Arduino</code> — микробағдарламалар.</td></tr>
+<tr><td><code>Исходники\Алгабас\Algabas</code></td><td>«Алгабас» бағдарламасы (сол ядро), <code>Algabas.csproj</code>, <code>Исходники\Алгабас\CHANGES.md</code>.</td></tr>
+<tr><td><code>Исходники\Преподаватель</code></td><td>«Оқытушы» бағдарламасы (C#, WinForms). Ядроның кейбір файлдары АКЖТ-дан сілтемемен қосылған.</td></tr>
+<tr><td><code>Исходники\Сервер</code></td><td>Go тіліндегі PromServer байланыс сервері (WebSocket, 8090 порты).</td></tr>
+<tr><td><code>Инструменты</code></td><td>Тесттер мен құралдар (9-бөлім), аударма (<code>Инструменты\i18n</code>).</td></tr>
+<tr><td><code>готовая_программа</code></td><td>Құрастырылған exe, микробағдарламалар, оқытушы деректері, нұсқаулықтар. exe файлдары git-ке кірмейді.</td></tr>
+<tr><td><code>Документы</code></td><td>Үлгі (ДСП/ДНЦ тренажёры, PDF), тапсырма, тапсырыс берушінің жауаптары, жоспар және кезеңдер тарихы, бағдаршамдар pin кестесі.</td></tr>
+<tr><td><code>Архив</code></td><td>Ескі: Python нұсқасы, бастапқы кодтың ескі көшірмелері, GitHub «AKZHT-station» репозиторийінің бұрынғы git-і (<code>Архив\Station_AKZH-main_GitHub\.git_github</code> — қозғамаңыз).</td></tr>
+</table>
+
+<h2 id="build">2. Құрастыру</h2>
+<ul>
+<li>Қажет: .NET SDK 8 немесе жаңасы (SDK 10 net8 құрастырады), сервер үшін — Go 1.23+.</li>
+<li>Әр жобада өз <code>build_exe.bat</code> файлы бар: бір файлды self-contained exe (win-x64) бірден <code>готовая_программа\&lt;бума&gt;</code> ішіне. Параметрмен (<code>build_exe.bat x</code>) — соңында кідіріссіз.</li>
+<li>Бәрін бірден: <code>собрать_всё.bat</code> (Go болмаса сервер құрастырылмайды — қалғандарын бір-бірден құрастырыңыз).</li>
+<li>Компиляцияны жылдам тексеру: <code>dotnet build Station.csproj -v q -nologo</code>.</li>
+<li>exe жанындағы пайдаланушы файлдарын (<code>scheme_style.ini</code>, <code>датчики.txt</code>, <code>Arduino</code>) құрастыру қайта жазбайды.</li>
+<li>bat файлдары CRLF және UTF-8 болуы керек (LF және кирилл әріптерімен cmd бұзылады).</li>
+</ul>
+
+<h2 id="core">3. Ядро: модель және тәуелділіктер</h2>
+<p><b>Ортақ файлдар АКЖТ пен Алгабаста байт бойынша бірдей.</b> АКЖТ-да түзетіп, Алгабасқа көшіресіз (<code>cp</code>), <code>cmp</code>-пен тексересіз. Ерекшеліктер (әр бағдарламада өзінікі): <code>Core/ArduinoLink.cs</code>, <code>Ui/SchemeGeometry.cs</code>, <code>Ui/SchemeStyle.cs</code>, <code>Ui/StationView.cs</code>, <code>SchemePanel.cs</code> (АКЖТ — жоба түбірінде, Алгабас — <code>Ui</code> ішінде; екеуінде де түзетіңіз).</p>
+<table>
+<tr><th>Файл</th><th>Не</th></tr>
+<tr><td><code>Core/Model.cs</code></td><td><code>TrackSection</code> (бос еместік: қолмен, датчик, пойыздар, көрші, ақаулық; тұйықтау; ескерту, «терезе», макеттегі пойыз нөмірі), <code>RailSwitch</code>, <code>RailSignal</code>, <code>RailRoute</code>, <code>DirectionLine</code>, <code>LevelCrossing</code>.</td></tr>
+<tr><td><code>Core/Interlocking.cs</code> + <code>Core/Panel.cs</code></td><td>ЭО тәуелділіктері (<code>partial class Interlocking</code>): маршруттар, ұстаммен болдырмау, ИР, бағыттамалар, шақыру сигналы, бағыт, <code>Tick(dt)</code>. <code>Panel.cs</code> — ДСП пульті функциялары (бағыттамаларды тұйықтау, қалпақшалар, курбель, ажырату, автоәрекет, кілт-таяқша, өткел, қиып өту, бөлек басқару), <code>Ticked</code> оқиғасы.</td></tr>
+<tr><td><code>Core/TrainSim.cs</code></td><td>Виртуалды пойыздар: <code>VirtualTrain</code> (нөмір, санат, <code>Consist</code> вагондары, радиобайланыс пен бланк белгілері), <code>Wagon</code>, учаскелер бойынша қозғалыс. Ілгектер: <code>Hold</code> (тұрақ), <code>SpeedFactor</code> (ескертулер), <code>Permit</code> (бұйрық, бланк), <code>Blocked</code> («терезе»), <code>Spawned</code>, <code>Exited</code>, <code>BackedUp</code>, <code>PassedAtDanger</code> оқиғалары.</td></tr>
+<tr><td><code>Model/ModelHost.cs</code></td><td>0,1 с таймер: <code>il.Tick</code>, <code>Trains.Tick</code>, <code>Training.Tick</code>; модель қадамы — <code>Training.ModelDt(dt)</code> (сабақтың үзілісі мен жеделдетуі).</td></tr>
+<tr><td><code>Akzht/AkzhtLayout.cs</code>, <code>Post/PostLayout.cs</code>, <code>Algabas/AlgabasLayout.cs</code></td><td>Станция сызбалары: учаскелер, бағыттамалар, бағдаршамдар, маршруттар, топология (<code>NextStep</code>), сурет геометриясы.</td></tr>
+<tr><td><code>SchemePanel.cs</code>, <code>Ui/StationPane.cs</code> (ортақ: станция панелі), <code>Ui/StationForm.cs</code> (Алгабас терезесі), <code>MainForm.cs</code> (АКЖТ терезесі)</td><td>Сызбаны салу, тінтуір мен мәзірлер, станция терезесі, түймелер бағандары.</td></tr>
+</table>
+
+<h2 id="modules">4. Функциялар бойынша модульдер</h2>
+<table>
+<tr><th>Функция</th><th>Ядро</th><th>Терезелер</th></tr>
+<tr><td>Оқытушымен сабақ, бағалау</td><td><code>Core/Training.cs</code></td><td><code>Ui/TrainingUi.cs</code> (сабақ жолағы, кіру, экран суреті, қашықтан енгізу)</td></tr>
+<tr><td>Ақаулықтар (экспресс-кіріспелер)</td><td><code>Core/Faults.cs</code></td><td>—</td></tr>
+<tr><td>ДУ-46, қызметкерлер, санауышы бар түймелер</td><td><code>Core/Du46.cs</code></td><td><code>Ui/Du46Ui.cs</code></td></tr>
+<tr><td>ДСП пульті</td><td><code>Core/Panel.cs</code></td><td><code>Ui/PanelUi.cs</code></td></tr>
+<tr><td>Кесте, ГИД оқиғалары</td><td><code>Core/ScheduleData.cs</code>, <code>Core/Schedule.cs</code>, <code>Model/ScheduleSetup.cs</code></td><td><code>Ui/ScheduleUi.cs</code></td></tr>
+<tr><td>Пойыз нысан ретінде, радиобайланыс, ескертулер мен «терезелер», макеттегі пойыз</td><td><code>Core/Radio.cs</code></td><td><code>Ui/RadioUi.cs</code></td></tr>
+<tr><td>ДУ-2/47/58/60 журналдары, бланкілер, автотексеру</td><td><code>Core/Journals.cs</code></td><td><code>Ui/JournalsUi.cs</code></td></tr>
+<tr><td>Вагондар, маневрлік жұмыс, ПНП</td><td><code>Core/Shunting.cs</code> (бағдарламаның ПНП-сы — <code>Model/ScheduleSetup.cs</code> ішінде)</td><td><code>Ui/ShuntUi.cs</code></td></tr>
+<tr><td>Қалпына келтіру пойызы</td><td><code>Core/Recovery.cs</code></td><td><code>Ui/ShuntUi.cs</code></td></tr>
+<tr><td>Көрші станциямен байланыс</td><td><code>Core/DispatchLink.cs</code>, <code>Core/DispatchMirror.cs</code></td><td><code>Ui/ServerDialog.cs</code>, <code>Ui/DirectionConsentDialog.cs</code></td></tr>
+<tr><td>Тілдер</td><td><code>Core/Lang.cs</code></td><td><code>Ui/LangUi.cs</code></td></tr>
+<tr><td>ЖИ-көмекші (студент сұрақтары ru/kk, маршрут қадаммен, бас тарту кеңестері, Уикипедия, Ollama — міндетті емес)</td><td><code>Ai/AiAssistant.cs</code>, <code>Ai/AiKnowledge.cs</code>, <code>Ai/AiText.cs</code>, <code>Ai/AiStation.cs</code>, <code>Ai/AiWiki.cs</code>, <code>Ai/AiLlm.cs</code>, <code>Ai/AiDefaults.cs</code></td><td><code>Ai/AiChatWindow.cs</code>, <code>MainForm.cs</code> ішіндегі «ЖИ» батырмасы; тест <code>Инструменты\AiTest</code></td></tr>
+<tr><td>Интерфейс режимдері (инженерлік, оқу, жұмыс, павлодарлық), «Параметрлер», түстер</td><td><code>Ui/UiSettings.cs</code> (режимдер бойынша панельдер, <code>интерфейс.txt</code> файлы), <code>Ui/SchemePalette.cs</code></td><td><code>Ui/StationPane.cs</code> (режим бойынша орналасу), <code>Ui/UiParamsForm.cs</code>, <code>Ui/ClassicPanel.cs</code> («Енисей» батырмалы пульті)</td></tr>
+</table>
+<p>Барлық модульдер <code>Training.Init</code> ішінде іске қосылады. Жаңа бұзушылықтар — <code>Training.AddEvent(critical, code, text, penalty)</code> арқылы, айыппұл шектері — <code>PenaltyCap</code>. Тек оқытушыға арналған жазба — <code>Training.Note</code>. Қызметкерлер хабарламалары — <code>Du46.Message</code>.</p>
+
+<h2 id="net">5. Желі және сабақ хаттамасы</h2>
+<p>PromServer бір реттік хабарламаларды <code>{"type":"event","to":…,"data":{…}}</code> (4 МБ дейін) <code>data</code> ішін талдамай таратады. Станциялар мен оқытушы (<code>station = "teacher"</code>) — клиенттер. Сабақ хаттамасы — <code>data.kind</code> өрісі, толық тізім <code>Core/Training.cs</code> басында:</p>
+<table>
+<tr><th>Оқытушы → станция</th><th>Станция → оқытушы</th></tr>
+<tr><td><code>t_hello</code>, <code>t_login</code>, <code>t_session</code> (сабақ, студент, уақыт, тіл, кесте), <code>t_time</code>, <code>t_take</code>, <code>t_stop</code>, <code>t_screen</code> (терезе аймағы), <code>t_input</code>, <code>t_objects</code>, <code>t_fault_add</code>, <code>t_fault_remove</code>, <code>t_lang</code></td>
+<td><code>s_hello</code>, <code>s_login</code>, <code>s_register</code>, <code>s_progress</code>, <code>s_screen</code>, <code>s_objects</code>, <code>s_faults</code>, <code>s_train_event</code> (ГИД), <code>s_result</code> (оқиғалар, әрекеттер журналы, ақаулықтар, ДУ-46, пойыздар, <code>docs</code> — журналдар мен бланкілер кестелері, <code>supplied / removed / localDeparted</code>)</td></tr>
+</table>
+<p>Станциялар арасында: <code>DispatchMirror</code> — аралықтың ортақ учаскелерінің бос еместігі, көрші бағдаршамдары, бағытты ауыстыруға келісім, пойызды беру (<code>kind = "train"</code> нөмірімен және паспортымен: санат, индекс, натуралық парақ).</p>
+<p>Жаңа хабарламаларды сол схема бойынша қосыңыз (<code>t_*</code> / <code>s_*</code>); қабылдау: станцияда — <code>Training.OnEvent</code>, оқытушыда — <code>Classroom.OnEvent</code>.</p>
+
+<h2 id="teacher">6. Оқытушы бағдарламасы</h2>
+<ul>
+<li><code>Data.cs</code> — студенттер (құпиясөз хеші), сабақтар (<code>Lesson</code> — PropertyGrid редакторы; <code>Wire</code> өрісі станцияларға кетеді), нәтижелер (<code>GameResult</code>, <code>DocTable</code>), баптаулар, <code>Db</code> (exe жанындағы <code>данные</code> бумасы).</li>
+<li><code>Classroom.cs</code> — станциялар, кіру, сабақ, уақыт, сервер. <code>TeacherForm.cs</code> — қойындылар. <code>Reports.cs</code> — HTML есептер және CSV ведомость. <code>StationScreenWindow.cs</code>, <code>ScreenView.cs</code> — станция экраны. <code>FaultDialog.cs</code> — экспресс-кіріспелер. <code>ScheduleTab.cs</code>, <code>Gid.cs</code>, <code>GidTab.cs</code> — кесте және ГИД.</li>
+<li>Сабақтың жаңа қасиеті: <code>Lesson</code> ішінде (санат, жазу) + <code>Wire</code> ішінде + <code>LessonTask</code> ішінде де дәл солай (<code>Core/Training.cs</code>).</li>
+</ul>
+
+<h2 id="arduino">7. Макет және Arduino</h2>
+<pre>ДК → Arduino, бағдаршамдар: 'L' + N байт (1 бит = 1 шам, 0 = ЖАНАДЫ)
+ДК → Arduino, бағыттамалар:  "W &lt;арна&gt; &lt;1|2&gt;\n"   1 = плюс, 2 = минус, PCA9685 арнасы
+Arduino → ДК, датчиктер:     "Data: 1011…\n"  (74HC165, '0' = учаске БОС ЕМЕС)
+Arduino → ДК, датчиктер:     "Occ: 101\n"     (АКЖТ: датчиктер тікелей пиндерде)</pre>
+<ul>
+<li>Алгабас: шамдар мен бағыттамалар картасы — <code>Algabas/AlgabasHardware.cs</code>. 22.10.2026 бастап бағыттамалар шилдтің 0–4 ажыратқыштарында (1 → 0, 4/6 → 1 және 2, 8 → 3, 2 → 4); калибрлеу — <code>готовая_программа\Алгабас\Arduino\StationMain\Switches.h</code> скетчінде. Датчиктер — exe жанындағы <code>датчики.txt</code> (учаске = бит нөмірі).</li>
+<li>АКЖТ: микробағдарлама <code>готовая_программа\АКЖТ\Arduino\StationMain_AKZHT</code>, түсініктемелер — сол жердегі <code>ИНСТРУКЦИЯ.txt</code>; ескі микробағдарламаның сақтық көшірмесі — <code>Backup</code>. Скетчті баптаушылар 27.10.2026 Алгабас скетчі үлгісімен жасаған; серво арналары — <code>AkzhtHardware.cs</code>, <code>Post/PostHardware.cs</code>, калибровка — <code>Switches.h</code>. Платамен алмасу exe жанындағы <code>arduino_diag.log</code> файлына жазылады.</li>
+<li>АКЖТ: бағдаршам шамдарының картасы — pin кестесі бойынша (<code>Документы</code>), «АКЖТ + аралық» нұсқасы, 13 байт; <code>AkzhtHardware.cs</code> ішінде және exe жанындағы <code>светофоры.txt</code> файлына шығарылады («АКЖТ Н5 жёлтый = 0.6», «ПОСТ 1-I красный = 7.3»), қайта құрастырусыз түзетіледі. <code>StationMain_AKZHT</code> микробағдарламасы (<code>LIGHT_FRAME_BYTES = 13</code>). Сымдарды тексеру — «Шамдар бір-бірден» батырмасы (<code>Ui/LampTestForm.cs</code>).</li>
+<li><code>Core/ArduinoLink.cs</code> бағдарламаларда әртүрлі — көшірмеңіз.</li>
+<li>Тақтасыз бәрі жұмыс істейді: бағыттамалар тек экранда ауысады, пойыздар — виртуалды.</li>
+</ul>
+
+<h2 id="i18n">8. Аударма</h2>
+<p>Кодтағы жолдар орысша қалады — олар кілттер. Аударма көрсету кезінде жасалады: терезелер, мәзірлер, MessageBox, кестелер өздері аударылады (<code>Ui/LangUi.cs</code>); өз салуыңыз — <code>L.T(мәтін)</code>, формат — <code>L.F("…{0}…", …)</code>, HTML — <code>L.Html</code>. Деректер мен хаттамада — тек орысша.</p>
+<ol>
+<li>Интерфейсті орысша, жақсысы тұтас үлгілермен жазыңыз (<code>$"Поезд №{n} на {s}"</code>, бөліктерден жапсырмай).</li>
+<li><code>python Инструменты\i18n\check.py --todo новое.tsv</code> — аудармасыз жаңа жолдар.</li>
+<li>Қазақша мен ағылшынша жазып, <code>Инструменты\i18n\strings.tsv</code> ішіне көшіріңіз (керексіздерін — <code>skip.txt</code> ішіне).</li>
+<li><code>python Инструменты\i18n\check.py --build</code> → <code>Lang\Strings.kk.json / en.json</code> сөздіктері екі станцияға → қайта құрастыру.</li>
+</ol>
+<p>Қазақша теміржол терминдерін тіл иесі тексеруі керек: <code>Инструменты\i18n\ПРОВЕРИТЬ_КАЗАХСКИЙ.md</code>.</p>
+
+<h2 id="tests">9. Тесттер</h2>
+<table>
+<tr><th>Команда</th><th>Не тексереді</th></tr>
+<tr><td><code>dotnet run --project Инструменты\PanelTest</code></td><td>ДСП пульті (6-кезең) АКЖТ ядросында.</td></tr>
+<tr><td><code>dotnet run --project Инструменты\FaultFlowTest</code></td><td>Ақаулықтар, ДУ-46, санауышы бар түймелер (Алгабас).</td></tr>
+<tr><td><code>dotnet run --project Инструменты\ScheduleTest</code></td><td>Кесте, ГИД оқиғалары.</td></tr>
+<tr><td><code>dotnet run --project Инструменты\JournalsTest</code></td><td>Пойыз, радиобайланыс, журналдар, бланкілер, ескертулер, «терезелер», макеттегі пойыз, автотексеру.</td></tr>
+<tr><td><code>dotnet run --project Инструменты\ShuntTest</code></td><td>Вагондар, ажырату, бекіту, ПНП, құрастыру, ПТО, қалпына келтіру пойызы.</td></tr>
+<tr><td><code>dotnet run --project Инструменты\LangTest</code></td><td>Аударма.</td></tr>
+<tr><td><code>dotnet run --project Инструменты\LampMapTest</code></td><td>АКЖТ шамдар картасы: светофоры.txt, 13 байт, pin кестесі бойынша биттер, «шамдар бір-бірден».</td></tr>
+<tr><td><code>dotnet run --project Инструменты\UiModesTest</code></td><td>Интерфейс режимдері: панельдер, интерфейс.txt, әр режимдегі станция терезесі, «Енисей» пульт батырмаларымен маршрут.</td></tr>
+<tr><td><code>dotnet run --project Инструменты\AlgabasShots &lt;бума&gt;</code></td><td>Алгабас терезесінің барлық режимдердегі суреттері (<code>DocShots &lt;бума&gt; modes</code> — АКЖТ үшін де солай).</td></tr>
+<tr><td><code>Инструменты\e2e_*.ps1</code></td><td>Құрастырылған exe-дегі өтпелі тесттер: скрипт 8091 портындағы сервер арқылы оқытушының рөлін ойнайды.</td></tr>
+<tr><td><code>Инструменты\DocShots</code>, <code>Инструменты\Stage5Shots &lt;бума&gt; ru|kk|en all</code></td><td>Осы нұсқаулықтарға арналған терезе суреттері.</td></tr>
+</table>
+<p>Терезесіз тесттер оқытушы хабарламаларын тікелей <code>Training.OnEvent</code>-ке (reflection) береді және уақытты қолмен жылжытады; терезелер <code>DrawToBitmap</code> арқылы PNG-ге түсіріледі.</p>
+
+<h2 id="rules">10. Түзету ережелері</h2>
+<ul>
+<li>Түзетуге түсініктеме — <code>// [ДОБАВЛЕНО күні, этап N]</code> немесе <code>[ИЗМЕНЕНО …]</code>; түсініктемелер мен интерфейс — орысша.</li>
+<li>Ортақ файлдар екі станцияда бірдей (түзетуден кейін — <code>cp</code> және <code>cmp</code>).</li>
+<li>Файлдардың жол соңдары мен кодтамасын өзгертпеңіз (түзетпес бұрын CRLF / LF қараңыз).</li>
+<li>Әр нұсқа — екі станцияның <code>CHANGES.md</code> файлына жазба: «Не / Қалай / Файлдар» кестесі, «Тексерілді» және «Тексерілмеді».</li>
+<li>Бұрынғы кезеңдердің тесттерін бұзбаңыз; жаңа функциялар — өз тестімен.</li>
+</ul>
+
+<h2 id="todo">11. Тексерілмегені және келесі қадамдар</h2>
+<ul>
+<li>Тікелей тексерілмеген: барлық терезелердегі шертулер, бірнеше ДК арасындағы жұмыс, нақты датчиктер мен пойыз нөмірлері бар макет, дыбыс, АКЖТ-ның екі мониторы.</li>
+<li>Қазақша терминдер — тіл иесінің тексеруі.</li>
+<li>Тапсырыс беруші кейінге қалдырды: пойыз диспетчерінің (ДНЦ) бағдарламасы.</li>
+</ul>
+</main>
+</body>
+</html>

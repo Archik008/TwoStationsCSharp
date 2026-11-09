@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Редактор станций (C#-версия веб-макета «Исходники\Редактор станций»). Схема сохраняется в .station.json -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <AssemblyName>StationEditor</AssemblyName>
+    <RootNamespace>StationEditor</RootNamespace>
+    <ApplicationHighDpiMode>SystemAware</ApplicationHighDpiMode>
+    <Product>Редактор станций</Product>
+    <Version>0.2.0</Version>
+  </PropertyGroup>
+
+</Project>

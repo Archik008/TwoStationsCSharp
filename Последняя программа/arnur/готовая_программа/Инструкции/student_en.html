@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Student guide — station operator trainer</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+<nav class="lang"><a href="index.html">All guides</a> · <a href="student_ru.html">Русский</a> · <a href="student_kk.html">Қазақша</a> · <b>English</b></nav>
+<h1>Student guide</h1>
+<p class="sub">Station operator (ДСП) trainer: АКЖТ station, the junction post and Алгабас station. For those working at a station panel.</p>
+
+<nav class="toc"><b>Contents</b>
+<ol>
+<li><a href="#start">Getting started</a></li>
+<li><a href="#window">The station window</a></li>
+<li><a href="#routes">Routes and signals</a></li>
+<li><a href="#switches">Switches</a></li>
+<li><a href="#panel">Operator panel</a></li>
+<li><a href="#trains">Trains and radio</a></li>
+<li><a href="#journals">Logs</a></li>
+<li><a href="#blanks">Forms</a></li>
+<li><a href="#warnings">Warnings and possessions</a></li>
+<li><a href="#faults">Faults (log ДУ-46)</a></li>
+<li><a href="#shunting">Shunting and the private siding</a></li>
+<li><a href="#recovery">Derailment and the recovery train</a></li>
+<li><a href="#schedule">Timetable</a></li>
+<li><a href="#score">Assessment</a></li>
+<li><a href="#faq">FAQ</a></li>
+</ol></nav>
+
+<h2 id="start">1. Getting started</h2>
+<ol>
+<li>Start your station program: <code>АКЖТ\Station.exe</code> (АКЖТ station and the junction post) or <code>Алгабас\Algabas.exe</code>. The teacher tells you which one.</li>
+<li>Press <span class="btn">Connection…</span>, type the teacher's computer address (shown in the teacher program, e.g. <code>192.168.8.27</code>) and press <span class="btn">Connect</span>. The address is remembered.</li>
+<li>A dark lesson bar appears above the panel. Press <span class="btn">Log in</span>, choose yourself and enter your password if you have one. Not in the list — <span class="btn">I am not on the list…</span> (if the teacher allows registration).</li>
+<li>When the teacher starts the lesson, the bar shows its name and the game time. The <span class="btn">Task</span> button shows what to do and the violations so far.</li>
+<li>While the teacher keeps the time paused, the panel does not accept commands.</li>
+</ol>
+<div class="note">Interface language — the <b>Русский / Қазақша / English</b> list in the top right corner. The teacher can also switch the language for everyone.</div>
+
+<h2 id="window">2. The station window</h2>
+<figure><img src="img/station_en.png" alt="АКЖТ station window"><figcaption>АКЖТ window: АКЖТ station on the left, the junction post on the right. The window is made for two monitors; with one monitor use the «View» button.</figcaption></figure>
+<ul>
+<li><b>Top bar:</b> layout (Arduino) status, <span class="btn">Connection…</span>, <span class="btn">View</span>, <span class="btn">Simplified view on</span> (large signals), <span class="btn">ДУ-46</span>, <span class="btn">Logs ▾</span>, <span class="btn">Lamp test</span>, <span class="btn">Clear all</span>, language, <span class="btn">Exit</span>.</li>
+<li><b>Diagram:</b> tracks, switches (yellow numbers), signals, trains (blue labels «No.2002 →»). The line under the diagram explains whatever is under the mouse.</li>
+<li><b>Section occupancy</b> — the side table: red — occupied, yellow — locked in a route.</li>
+<li><b>Bottom columns:</b> «Switches», «Operator panel», «Simulation» (place a train, remove trains, speed) and the route list with the <b>TRAIN / SHUNTING</b> switch.</li>
+<li><b>Interface mode</b> — the <span class="btn">Settings</span> button on top: <b>Engineering</b> (everything, for setting up the model), <b>Training</b> (for lessons: no occupancy list or setup buttons), <b>Working</b> (like the ДСП workstation of Medeu station: large diagram, clock, ДСП panel as a strip on top, TRAIN / SHUNTING below; no simulation or manual occupancy — for work with the model), <b>Pavlodar</b> (grey diagram with the «Енисей» push-button panel below: start and end signal buttons, switches «+ № −», track buttons — destination or ИР). In the same window any panel can be shown or hidden with checkboxes; the choice is remembered.</li>
+<li><b>AI assistant</b> — the <span class="btn">ЖИ</span> button on top (in the training and Pavlodar modes the window opens by itself). Ask in Russian or Kazakh: «как задать маршрут», «маршрут Н на путь 3» (the answer is step by step: what to click, which switches move, which sections must be free, whether it can be set now), «для чего светофор Н1». Point the mouse at a signal and ask «что это?». When the program refuses (red line in the log), a hint appears in the AI window by itself.</li>
+</ul>
+
+<h2 id="routes">3. Routes and signals</h2>
+<ul>
+<li><b>Set a route:</b> choose TRAIN or SHUNTING, left-click the start signal, then the end signal or the destination track. The route blinks while it is being set (switches move) and is lit steadily when the signal clears. You can also click the route in the list.</li>
+<li><b>Cancel selection</b> — if you clicked the wrong start signal.</li>
+<li><b>Cancel a route:</b> right-click the signal → «Cancel…», or the <span class="btn">Cancel route</span> button (the last one set). If the signal has already cleared, cancellation is delayed — lamps <b>ОС</b> (6 s), <b>ОП</b> (train route with occupied approach, 3 min), <b>ОМ</b> (shunting, 1 min).</li>
+<li><b>Calling-on signal:</b> right-click the entry signal → «Call-on signal…». Used when the normal signal cannot be cleared (e.g. false occupancy). Each press must be recorded in log ДУ-46 (counter button).</li>
+<li><b>Line direction:</b> «Change direction» in the «Switches» column; with a false occupancy — «Aux. change…» (ВСН, counter button). The neighbouring station must agree.</li>
+</ul>
+
+<h2 id="switches">4. Switches</h2>
+<ul>
+<li><b>Throw:</b> left-click the switch number on the diagram or its button in the «Switches» column. A switch in a route or on an occupied section does not move.</li>
+<li><b>Auxiliary throw (ВК)</b> — only with a false occupancy of the switch section: right-click the switch → «Auxiliary throw…». Record it in ДУ-46.</li>
+<li><b>Right-click a switch:</b> red cap (cannot be thrown from the panel), «Switch control» (crank flap, cranking, lock, clamp), «Disconnect from interlocking…», «Set on mock-up», «Information…» (actual position).</li>
+<li><b>Marks by the number:</b> К — cap, З — flap, Л — lock / clamp, В — disconnected, М — on mock-up. «ВЗРЕЗ» — the switch was trailed through by a train.</li>
+<li><b>Show all switch positions:</b> hold «Switch check» or press both mouse buttons on the diagram: normal — green, reverse — yellow.</li>
+</ul>
+
+<h2 id="panel">5. Operator panel</h2>
+<table>
+<tr><th>Button / lamp</th><th>What it does</th></tr>
+<tr><td>ЧЗС, НЗС, ЗС</td><td>Locking of even, odd, all switches. Left click — press, right click — release. Counter button.</td></tr>
+<tr><td>АДЧ, АДН</td><td>Automatic operation on the main track: the route is set again after the train passes. Counter (seal).</td></tr>
+<tr><td>ИР…</td><td>Artificial release of sections that did not release behind the train. Time delay, counter.</td></tr>
+<tr><td>ОС, ОП, ОМ</td><td>Route cancellation delay lamps (with seconds).</td></tr>
+<tr><td>Взрез, Bell off</td><td>Trailed switch lamp and bell silencing.</td></tr>
+<tr><td>Key staff</td><td>Take out, give to the driver, take back, put in. While the key is out the line direction cannot change.</td></tr>
+<tr><td>ЗП, Warning, Cancel warn., Closing</td><td>Level crossing at the junction post: lamp ЗП (white — open, blinking — closing, red — closed).</td></tr>
+<tr><td>Loco, Removal, Siding ▾</td><td>Private siding: locomotive on the siding, wagons ready for removal, siding menu (see <a href="#shunting">section 11</a>).</td></tr>
+<tr><td>Separate control (as on «Енисей»)</td><td>As on the «Енисей» panel: switches first, then the signal.</td></tr>
+</table>
+<div class="note">Counter buttons (ПС, ИР, ВК, ВСН, ЗС, АД): after pressing, a ДУ-46 entry window opens — write the reason. Not recorded within 10 game minutes — a mistake.</div>
+
+<h2 id="trains">6. Trains and radio</h2>
+<p>Hover over a train to see its number, category, direction and why it is standing. <b>Right-click a train:</b></p>
+<ul>
+<li><b>Number and index…</b> — number (even — even direction →, odd — odd ←), index, category, long, heavy, out-of-gauge.</li>
+<li><b>Call by radio…</b> — the «Train No…» window (below).</li>
+<li><b>Warning for the train…</b>, <b>Hand a form…</b>, <b>Shunting work…</b>, <b>Train list…</b>, <b>Call recovery train…</b> (after a derailment).</li>
+<li>Reverse, make it a shunting move / a train.</li>
+</ul>
+<figure class="small"><img src="img/radio_en.png" alt="Train radio"><figcaption>Train radio window.</figcaption></figure>
+<table>
+<tr><th>Command</th><th>What the driver does</th></tr>
+<tr><td>Stop / Proceed</td><td>Stops and waits for «Proceed».</td></tr>
+<tr><td>Instruction…</td><td>Registered order: pass one stop signal. The order is recorded in ДУ-58 automatically. Make sure the route is prepared and switches are locked first.</td></tr>
+<tr><td>Set back</td><td>Sets the train back by one section and waits.</td></tr>
+<tr><td>Repair</td><td>With an engine fault the crew repairs the locomotive (4–8 min) and reports.</td></tr>
+<tr><td>Shorten the stop</td><td>A passenger train may leave before its scheduled time.</td></tr>
+<tr><td>Warning…</td><td>Speed limit for this train and the warnings in force.</td></tr>
+<tr><td>Where are you?</td><td>The driver reports station, section and why he is standing.</td></tr>
+<tr><td>Shunting work…, Train list…, Recovery train…</td><td>See sections <a href="#shunting">11</a> and <a href="#recovery">12</a>.</td></tr>
+</table>
+<p><b>A real train on the layout</b> has no number: right-click the occupied section → «Layout train number…». The number follows the train from section to section. Radio and forms for it are only recorded — the train is driven by hand.</p>
+
+<h2 id="journals">7. Logs</h2>
+<p>The <span class="btn">Logs ▾</span> button: ДУ-2, ДУ-47, ДУ-58, ДУ-60, forms, radio, warnings, ДУ-46. Each log has entries on the left and a form on the right. <span class="btn">New entry</span> → fill in → <span class="btn">Save</span>. To correct — select the entry, change it, «Save» (the correction is time-stamped). <b>Entries cannot be deleted.</b></p>
+<figure><img src="img/du2_en.png" alt="Log ДУ-2"><figcaption>Train movement log ДУ-2.</figcaption></figure>
+<table>
+<tr><th>Log</th><th>What to record</th></tr>
+<tr><td>ДУ-2 — train movement</td><td>Every train: number, index, track, arrival, departure (or passing), marks «ПС» (calling-on signal), «ПР» (written permission). At the end of the lesson the program checks number, track and time ±2 min against the facts.</td></tr>
+<tr><td>ДУ-47 — telephonograms</td><td>Outgoing telephonograms to the neighbouring station. «Save / send» — the neighbour replies (consent, line clear / occupied). Text templates are in the list.</td></tr>
+<tr><td>ДУ-58 — dispatcher orders</td><td>Train dispatcher (ДНЦ) orders — number, time, text. A dispatcher order pops up — record it. Your radio «Instruction» is recorded automatically.</td></tr>
+<tr><td>ДУ-60 — warnings</td><td>Every warning issued: place, speed, start, end. «From an issued warning…» fills the form, «Cancel selected» — cancellation.</td></tr>
+<tr><td>ДУ-46 — inspection</td><td>Faults and counter button presses (see <a href="#faults">section 10</a>).</td></tr>
+</table>
+
+<h2 id="blanks">8. Forms</h2>
+<p><span class="btn">Logs ▾</span> → «Forms…» (or right-click a train → «Hand a form…»): choose the type → <span class="btn">Create form</span> → fill in → «Save» → choose the train → <span class="btn">Hand to the driver</span>. A handed form cannot be changed.</p>
+<figure class="small"><img src="img/du54_en.png" alt="Form ДУ-54"><figcaption>Form ДУ-54.</figcaption></figure>
+<table>
+<tr><th>Form</th><th>When</th><th>What the train does</th></tr>
+<tr><td>ДУ-50 way note</td><td>Telephone communication. First — the neighbour's consent (ДУ-47)</td><td>Passes the exit signal at stop; on the line ignores the automatic block signals</td></tr>
+<tr><td>ДУ-52</td><td>Semi-automatic block, exit signal does not clear</td><td>Passes the exit signal at stop</td></tr>
+<tr><td>ДУ-54</td><td>Automatic block, exit signal does not clear</td><td>Passes the exit signal at stop, then follows the block signals</td></tr>
+<tr><td>ДУ-55, ДУ-56</td><td>All signalling and communication interrupted</td><td>ДУ-56 — like ДУ-50; ДУ-55 — notice to the neighbour</td></tr>
+<tr><td>ДУ-61 warning</td><td>Warnings in force on the way</td><td>The driver is warned («Fill in the warnings in force» button)</td></tr>
+<tr><td>ДУ-64 special conditions</td><td>Work and recovery trains, assistance</td><td>Passes the exit signal at stop, on the line ignores block signals</td></tr>
+</table>
+
+<h2 id="warnings">9. Warnings and possessions</h2>
+<p>Right-click a section or a line → «Warning / possession…»: the section or the whole line, kilometre, speed for passenger and freight trains, until cancelled or until a time. The «Enter possession data» box closes the track for works (track, signalling, power service).</p>
+<figure class="small"><img src="img/restriction_en.png" alt="Warning input"><figcaption>Warning / possession input.</figcaption></figure>
+<ul>
+<li>On the diagram a warning is an orange dashed line under the section, a possession — a red cross.</li>
+<li>Trains run slower under a warning. No route can be set into a possession and no train enters it (except work and recovery trains).</li>
+<li>Record each warning in ДУ-60. Hand ДУ-61 to the drivers of trains going there (or tell them by radio «Warning…»).</li>
+<li>A possession on a line is given by a dispatcher order — record its number in ДУ-58 (and the reopening order after cancellation).</li>
+<li>Cancel: right-click the section → «Cancel: …» or «Logs ▾» → «Warnings and possessions…».</li>
+</ul>
+
+<h2 id="faults">10. Faults (log ДУ-46)</h2>
+<p>The teacher sets faults. There is no «fault» label — you see what an operator would see: a switch without detection, a signal that does not clear, a section occupied without a train. Train faults are reported by the driver.</p>
+<ol>
+<li>Right-click the object → «Fault… (ДУ-46 log)» or the <span class="btn">ДУ-46</span> button.</li>
+<li>Write the entry → <span class="btn">Enter in the log</span>.</li>
+<li>Tick the staff (ШН — signal technician, ДНЦ — dispatcher, ПД — track master for a derailment) → <span class="btn">Inform</span>.</li>
+<li>The technician arrives (2–5 game minutes) and sends a report. Press <span class="btn">Sign</span> — the fault is fixed.</li>
+</ol>
+<figure><img src="img/du46_en.png" alt="ДУ-46"><figcaption>Inspection log ДУ-46.</figcaption></figure>
+
+<h2 id="shunting">11. Shunting and the private siding</h2>
+<p>A freight train carries wagons (train list). At its head, behind the locomotive, there are <b>local</b> wagons for the station's private siding: «Stroykomplekt» at АКЖТ (dead-end 6), «Oil depot» at Алгабас (dead-end М6Т).</p>
+<figure><img src="img/shunt_en.png" alt="Shunting work"><figcaption>Shunting window: wagons of the set and buttons.</figcaption></figure>
+<ol>
+<li>Receive the train and stop it (radio «Stop»). Right-click the train → «Disband, shunting work…» — it becomes a shunting set.</li>
+<li>Select the first transit wagon → <span class="btn">Uncouple</span>. The transit wagons stay on the track without a locomotive (label «wag. N»).</li>
+<li>Secure them at once: select wagons → <span class="btn">Shoe</span>. The norm is 1 brake shoe per 10 wagons. Report <span class="btn">Secured</span>. Not secured to the norm for 2 minutes — a critical event.</li>
+<li>The <span class="btn">Siding ▾</span> menu on the panel → «Shunting work notice».</li>
+<li>Set a shunting route into the siding dead-end. When the locomotive enters — «Siding ▾» → «Shunting work on the siding…»: tick the wagons «To place» → <span class="btn">Do the shunting work</span>.</li>
+<li>The wagons go to the cargo fronts (5 fronts by wagon type, 5 wagons each). The foreman asks «Do you allow leaving for the station?» — «Sign» = yes.</li>
+<li>Loading / unloading takes time. When the yellow «Removal» lamp lights — enter again, «To remove» → do it.</li>
+<li>Go back to the wagons on the track and come right up to them (the loco stops with «can couple») — remove the shoes (<span class="btn">Shoe</span>) and press <span class="btn">Couple</span>.</li>
+<li><span class="btn">Forming…</span> — number and index, the set becomes a train again. <span class="btn">Inspection</span> — the inspector (ПТО) checks it in 3–6 minutes. Dispatch the train.</li>
+</ol>
+<figure class="small"><img src="img/pnp_en.png" alt="Siding status"><figcaption>Siding status: fronts, operations, wagons for removal.</figcaption></figure>
+<div class="note">Do not: enter the siding as a train (only as a shunting move), place wagons without the notice, move off with a shoe under a wagon, dispatch a formed train without inspection.</div>
+
+<h2 id="recovery">12. Derailment and the recovery train</h2>
+<ol>
+<li>The driver reports a derailment. Record it in ДУ-46, notify ДНЦ and ПД.</li>
+<li>ПД arrives and reports that a recovery train is needed. Right-click the derailed train → «Call recovery train…» → «Call».</li>
+<li>A few minutes later train No.8002 appears on the approach. Receive it and bring it by routes right up to the derailment site.</li>
+<li>The recovery chief (НВП) reports arrival, then that the derailment is cleared: the train is limited to 40 km/h.</li>
+<li>Give the train a 40 km/h warning (radio → «Warning…»), then dispatch it.</li>
+</ol>
+
+<h2 id="schedule">13. Timetable</h2>
+<p>In a timetable lesson trains appear by themselves with numbers. The <span class="btn">Timetable</span> button on the lesson bar — trains, facts, printing. Receive trains on the tracks given in the timetable. Passenger trains do not leave early. A departure delay caused by the station of more than 5 minutes is a critical event.</p>
+
+<h2 id="score">14. Assessment</h2>
+<p>100 points minus penalties. <b>Pass</b> — points not below the lesson threshold and critical events not above the allowed number. Unfulfilled task (receive / dispatch) — −10 per train.</p>
+<table>
+<tr><th>Violation</th><th>Penalty</th></tr>
+<tr><td>Train stands at a closed entry signal for more than 3 minutes</td><td class="crit">critical, −20</td></tr>
+<tr><td>Switch trailed through by a train</td><td class="crit">critical, −20</td></tr>
+<tr><td>Timetable departure delay over 5 minutes</td><td class="crit">critical, −20</td></tr>
+<tr><td>Wagons without a locomotive not secured to the norm for 2 minutes</td><td class="crit">critical, −20</td></tr>
+<tr><td>Second locomotive on the private siding</td><td class="crit">critical, −20</td></tr>
+<tr><td>Attempt to set an impossible route</td><td>−2 (total up to −20)</td></tr>
+<tr><td>Route cancelled with a train on the approach</td><td>−5 (up to −20)</td></tr>
+<tr><td>Fault not recorded in ДУ-46 / ШН / ДНЦ / ПД not notified</td><td>−5 each</td></tr>
+<tr><td>Counter button not recorded in ДУ-46 within 10 minutes</td><td>−5 (up to −20)</td></tr>
+<tr><td>ДУ-2 does not match the facts / dispatcher order not in ДУ-58 / warning not in ДУ-60</td><td>−2 (up to −10 per log)</td></tr>
+<tr><td>ДУ-50 handed without the neighbour's consent (ДУ-47)</td><td>−5</td></tr>
+<tr><td>Form handed to the wrong train</td><td>−2</td></tr>
+<tr><td>Train entered a warning without ДУ-61 / radio</td><td>−5</td></tr>
+<tr><td>Train let past by order or form with switches not locked</td><td>−5</td></tr>
+<tr><td>«Secured» reported with too few shoes; moving with a shoe; train without inspection</td><td>−5</td></tr>
+<tr><td>Entering the siding as a train; placing wagons without notice</td><td>−5</td></tr>
+<tr><td>Shunting plan (place / remove / dispatch local wagons) not fulfilled</td><td>−2 per wagon (up to −20)</td></tr>
+<tr><td>Train dispatched after a derailment without a 40 km/h warning</td><td>−5</td></tr>
+</table>
+
+<h2 id="faq">15. FAQ</h2>
+<dl>
+<dt>A route cannot be set.</dt><dd>Read the line at the bottom of the window and the log: the reason is there (section occupied, switch cannot move, line direction, possession…).</dd>
+<dt>A train stands still.</dt><dd>Hover over it — the hint shows the reason («standing at signal…», «switch without detection», «possession ahead», «stopped by radio»).</dd>
+<dt>No lesson bar.</dt><dd>No connection with the teacher: check «Connection…» and the address.</dd>
+<dt>The panel does not respond.</dt><dd>The time is paused or the teacher has taken control (shown on the bar).</dd>
+</dl>
+</main>
+</body>
+</html>

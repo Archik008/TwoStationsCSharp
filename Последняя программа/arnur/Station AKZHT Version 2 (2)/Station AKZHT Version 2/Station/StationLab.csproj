@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <AssemblyName>StationLab</AssemblyName>
+    <Product>Station LAB (экспериментальная версия)</Product>
+    <RootNamespace>StationApp</RootNamespace>
+    <ApplicationHighDpiMode>SystemAware</ApplicationHighDpiMode>
+    <ForceDesignerDpiUnaware>true</ForceDesignerDpiUnaware>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="RouteManager.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="RouteManager.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- SerialPort (связь с Arduino) -->
+    <PackageReference Include="System.IO.Ports" Version="8.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="Ui\AKZTAI\" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Инструкция программиста — тренажёр ДСП</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+<nav class="lang"><a href="index.html">Все инструкции</a> · <b>Русский</b> · <a href="programmer_kk.html">Қазақша</a> · <a href="programmer_en.html">English</a></nav>
+<h1>Инструкция программиста</h1>
+<p class="sub">Устройство исходников, сборка, ядро, протокол, макет, перевод, тесты. Для тех, кто будет дорабатывать тренажёр.</p>
+
+<nav class="toc"><b>Содержание</b>
+<ol>
+<li><a href="#repo">Исходники</a></li>
+<li><a href="#build">Сборка</a></li>
+<li><a href="#core">Ядро: модель и зависимости</a></li>
+<li><a href="#modules">Модули по функциям</a></li>
+<li><a href="#net">Сеть и протокол занятия</a></li>
+<li><a href="#teacher">Программа преподавателя</a></li>
+<li><a href="#arduino">Макет и Arduino</a></li>
+<li><a href="#i18n">Перевод</a></li>
+<li><a href="#tests">Тесты</a></li>
+<li><a href="#rules">Правила правок</a></li>
+<li><a href="#todo">Что не проверено и что дальше</a></li>
+</ol></nav>
+
+<h2 id="repo">1. Исходники</h2>
+<p>Всё в папке <code>arnur</code> (git, ветка <code>main</code>). <code>.gitattributes</code> = <code>* -text</code>: git не трогает концы строк.</p>
+<table>
+<tr><th>Путь</th><th>Что</th></tr>
+<tr><td><code>Исходники\АКЖТ\Station</code></td><td>Программа «АКЖТ + путевой пост» (C#, .NET 8, WinForms), <code>Station.csproj</code>, решение <code>..\Station.sln</code>. <code>Исходники\АКЖТ\CHANGES.md</code> — журнал изменений, <code>Arduino</code> — прошивки.</td></tr>
+<tr><td><code>Исходники\Алгабас\Algabas</code></td><td>Программа «Алгабас» (то же ядро), <code>Algabas.csproj</code>, <code>Исходники\Алгабас\CHANGES.md</code>.</td></tr>
+<tr><td><code>Исходники\Преподаватель</code></td><td>Программа «Преподаватель» (C#, WinForms). Часть файлов ядра подключена ссылками из АКЖТ.</td></tr>
+<tr><td><code>Исходники\Сервер</code></td><td>Сервер связи PromServer на Go (WebSocket, порт 8090).</td></tr>
+<tr><td><code>Инструменты</code></td><td>Тесты и инструменты (раздел 9), перевод (<code>Инструменты\i18n</code>).</td></tr>
+<tr><td><code>готовая_программа</code></td><td>Собранные exe, прошивки, данные преподавателя, инструкции. exe в git не входят.</td></tr>
+<tr><td><code>Документы</code></td><td>Образец (тренажёр ДСП/ДНЦ, PDF), задание, ответы заказчика, план и история этапов, таблица распиновки светофоров.</td></tr>
+<tr><td><code>Архив</code></td><td>Старое: Python-версия, старые копии исходников, бывший git GitHub-репозитория «AKZHT-station» (<code>Архив\Station_AKZH-main_GitHub\.git_github</code> — не трогать).</td></tr>
+</table>
+
+<h2 id="build">2. Сборка</h2>
+<ul>
+<li>Нужно: .NET SDK 8 или новее (SDK 10 собирает net8), для сервера — Go 1.23+.</li>
+<li>Каждый проект — свой <code>build_exe.bat</code>: self-contained exe (win-x64, один файл) сразу в <code>готовая_программа\&lt;папка&gt;</code>. С параметром (<code>build_exe.bat x</code>) — без паузы в конце.</li>
+<li>Всё сразу: <code>собрать_всё.bat</code> (без Go сервер не соберётся — остальные соберутся по одному).</li>
+<li>Быстрая проверка компиляции: <code>dotnet build Station.csproj -v q -nologo</code>.</li>
+<li>Пользовательские файлы рядом с exe (<code>scheme_style.ini</code>, <code>датчики.txt</code>, <code>Arduino</code>) сборка не затирает.</li>
+<li>bat-файлы — в CRLF и UTF-8 (с LF и кириллицей cmd ломается).</li>
+</ul>
+
+<h2 id="core">3. Ядро: модель и зависимости</h2>
+<p><b>Общие файлы — побайтно одинаковые в АКЖТ и Алгабасе.</b> Правите в АКЖТ, копируете в Алгабас (<code>cp</code>), проверяете <code>cmp</code>. Исключения (свои у каждой программы): <code>Core/ArduinoLink.cs</code>, <code>Ui/SchemeGeometry.cs</code>, <code>Ui/SchemeStyle.cs</code>, <code>Ui/StationView.cs</code>, <code>SchemePanel.cs</code> (у АКЖТ в корне проекта, у Алгабаса в <code>Ui</code>; правки делать в обоих).</p>
+<table>
+<tr><th>Файл</th><th>Что</th></tr>
+<tr><td><code>Core/Model.cs</code></td><td><code>TrackSection</code> (занятость: ручная, датчик, поезда, сосед, неисправность; замыкание; предупреждение, «окно», номер поезда на макете), <code>RailSwitch</code>, <code>RailSignal</code>, <code>RailRoute</code>, <code>DirectionLine</code>, <code>LevelCrossing</code>.</td></tr>
+<tr><td><code>Core/Interlocking.cs</code> + <code>Core/Panel.cs</code></td><td>Зависимости ЭЦ (<code>partial class Interlocking</code>): маршруты, отмена с выдержкой, ИР, перевод стрелок, пригласительный, направление, такт <code>Tick(dt)</code>. <code>Panel.cs</code> — функции пульта ДСП (замыкание стрелок, колпачки, курбель, выключение, автодействие, ключ-жезл, переезд, взрез, раздельное управление), событие <code>Ticked</code>.</td></tr>
+<tr><td><code>Core/TrainSim.cs</code></td><td>Виртуальные поезда: <code>VirtualTrain</code> (номер, категория, вагоны <code>Consist</code>, флаги радиосвязи и бланков), <code>Wagon</code>, движение по участкам. Крючки: <code>Hold</code> (стоянка), <code>SpeedFactor</code> (предупреждения), <code>Permit</code> (приказ, бланк), <code>Blocked</code> («окно»), события <code>Spawned</code>, <code>Exited</code>, <code>BackedUp</code>, <code>PassedAtDanger</code>.</td></tr>
+<tr><td><code>Model/ModelHost.cs</code></td><td>Таймер 0,1 с: <code>il.Tick</code>, <code>Trains.Tick</code>, <code>Training.Tick</code>; шаг модели — <code>Training.ModelDt(dt)</code> (пауза и ускорение урока).</td></tr>
+<tr><td><code>Akzht/AkzhtLayout.cs</code>, <code>Post/PostLayout.cs</code>, <code>Algabas/AlgabasLayout.cs</code></td><td>Схемы станций: участки, стрелки, светофоры, маршруты, топология (<code>NextStep</code>), геометрия рисунка.</td></tr>
+<tr><td><code>SchemePanel.cs</code>, <code>Ui/StationPane.cs</code> (общий: панель станции), <code>Ui/StationForm.cs</code> (окно Алгабаса), <code>MainForm.cs</code> (окно АКЖТ)</td><td>Рисование схемы, мышь и меню, окно станции, колонки кнопок.</td></tr>
+</table>
+
+<h2 id="modules">4. Модули по функциям</h2>
+<table>
+<tr><th>Функция</th><th>Ядро</th><th>Окна</th></tr>
+<tr><td>Занятие с преподавателем, оценка</td><td><code>Core/Training.cs</code></td><td><code>Ui/TrainingUi.cs</code> (полоса занятия, вход, снимок экрана, удалённый ввод)</td></tr>
+<tr><td>Неисправности (экспресс-вводные)</td><td><code>Core/Faults.cs</code></td><td>—</td></tr>
+<tr><td>ДУ-46, работники, кнопки со счётчиком</td><td><code>Core/Du46.cs</code></td><td><code>Ui/Du46Ui.cs</code></td></tr>
+<tr><td>Пульт ДСП</td><td><code>Core/Panel.cs</code></td><td><code>Ui/PanelUi.cs</code> (колонка «Пульт ДСП»)</td></tr>
+<tr><td>Расписание, события для ГИД</td><td><code>Core/ScheduleData.cs</code>, <code>Core/Schedule.cs</code>, <code>Model/ScheduleSetup.cs</code></td><td><code>Ui/ScheduleUi.cs</code></td></tr>
+<tr><td>Поезд как объект, радиосвязь, предупреждения и «окна», поезд на макете</td><td><code>Core/Radio.cs</code></td><td><code>Ui/RadioUi.cs</code></td></tr>
+<tr><td>Журналы ДУ-2/47/58/60, бланки, автопроверка</td><td><code>Core/Journals.cs</code></td><td><code>Ui/JournalsUi.cs</code></td></tr>
+<tr><td>Вагоны, маневровая работа, ПНП</td><td><code>Core/Shunting.cs</code> (ПНП программы — в <code>Model/ScheduleSetup.cs</code>)</td><td><code>Ui/ShuntUi.cs</code></td></tr>
+<tr><td>Восстановительный поезд</td><td><code>Core/Recovery.cs</code></td><td><code>Ui/ShuntUi.cs</code></td></tr>
+<tr><td>Связь с соседней станцией</td><td><code>Core/DispatchLink.cs</code>, <code>Core/DispatchMirror.cs</code></td><td><code>Ui/ServerDialog.cs</code>, <code>Ui/DirectionConsentDialog.cs</code></td></tr>
+<tr><td>Языки</td><td><code>Core/Lang.cs</code></td><td><code>Ui/LangUi.cs</code></td></tr>
+<tr><td>ЖИ-помощник (вопросы студента ru/kk, маршрут по шагам, подсказки при отказах, Википедия, Ollama — необязательна)</td><td><code>Ai/AiAssistant.cs</code> (порядок ответа), <code>Ai/AiKnowledge.cs</code> (Knowledge + инструкция студента, поиск по понятиям), <code>Ai/AiText.cs</code> (язык, синонимы ru/kk), <code>Ai/AiStation.cs</code> (объекты схемы, маршрут по шагам, журнал), <code>Ai/AiWiki.cs</code>, <code>Ai/AiLlm.cs</code>, <code>Ai/AiDefaults.cs</code> (справка, глоссарий, подсказки)</td><td><code>Ai/AiChatWindow.cs</code>, кнопка «ЖИ» в <code>MainForm.cs</code>; тест <code>Инструменты\AiTest</code></td></tr>
+<tr><td>Режимы интерфейса (инженерный, учебный, рабочий, павлодарский), «Параметры», цвета</td><td><code>Ui/UiSettings.cs</code> (панели по режимам, файл <code>интерфейс.txt</code>), <code>Ui/SchemePalette.cs</code></td><td><code>Ui/StationPane.cs</code> (раскладка по режиму), <code>Ui/UiParamsForm.cs</code>, <code>Ui/ClassicPanel.cs</code> (кнопочный пульт «Енисей»)</td></tr>
+</table>
+<p>Все модули инициализируются в <code>Training.Init</code>. Новые нарушения — через <code>Training.AddEvent(critical, code, text, penalty)</code>, потолки штрафов — <code>PenaltyCap</code>. Запись только для преподавателя — <code>Training.Note</code>. Сообщения работников — <code>Du46.Message</code>.</p>
+
+<h2 id="net">5. Сеть и протокол занятия</h2>
+<p>PromServer рассылает разовые сообщения <code>{"type":"event","to":…,"data":{…}}</code> (до 4 МБ), содержимое <code>data</code> не разбирает. Станции и преподаватель (<code>station = "teacher"</code>) — клиенты. Протокол занятия — поле <code>data.kind</code>, полный список в шапке <code>Core/Training.cs</code>:</p>
+<table>
+<tr><th>Преподаватель → станция</th><th>Станция → преподаватель</th></tr>
+<tr><td><code>t_hello</code>, <code>t_login</code>, <code>t_session</code> (урок, студент, время, язык, расписание), <code>t_time</code>, <code>t_take</code>, <code>t_stop</code>, <code>t_screen</code> (область окна), <code>t_input</code>, <code>t_objects</code>, <code>t_fault_add</code>, <code>t_fault_remove</code>, <code>t_lang</code></td>
+<td><code>s_hello</code>, <code>s_login</code>, <code>s_register</code>, <code>s_progress</code>, <code>s_screen</code>, <code>s_objects</code>, <code>s_faults</code>, <code>s_train_event</code> (ГИД), <code>s_result</code> (события, журнал действий, неисправности, ДУ-46, поезда, <code>docs</code> — таблицы журналов и бланков, <code>supplied / removed / localDeparted</code>)</td></tr>
+</table>
+<p>Станции между собой: <code>DispatchMirror</code> — занятость общих участков перегона, светофоры соседа, согласие на смену направления, передача поезда (<code>kind = "train"</code> с номером и паспортом: категория, индекс, натурный лист).</p>
+<p>Новые сообщения добавляйте по той же схеме (<code>t_*</code> / <code>s_*</code>), приём: на станции — <code>Training.OnEvent</code>, у преподавателя — <code>Classroom.OnEvent</code>.</p>
+
+<h2 id="teacher">6. Программа преподавателя</h2>
+<ul>
+<li><code>Data.cs</code> — студенты (хеш пароля), уроки (<code>Lesson</code> — редактор PropertyGrid; поле <code>Wire</code> уходит на станции), результаты (<code>GameResult</code>, <code>DocTable</code>), настройки, <code>Db</code> (папка <code>данные</code> рядом с exe).</li>
+<li><code>Classroom.cs</code> — станции, вход, урок, время, сервер. <code>TeacherForm.cs</code> — вкладки. <code>Reports.cs</code> — HTML-отчёты и CSV-ведомость. <code>StationScreenWindow.cs</code>, <code>ScreenView.cs</code> — экран станции. <code>FaultDialog.cs</code> — экспресс-вводные. <code>ScheduleTab.cs</code>, <code>Gid.cs</code>, <code>GidTab.cs</code> — расписание и ГИД.</li>
+<li>Новое свойство урока: в <code>Lesson</code> (категория, подпись) + в <code>Wire</code> + такое же в <code>LessonTask</code> (<code>Core/Training.cs</code>).</li>
+</ul>
+
+<h2 id="arduino">7. Макет и Arduino</h2>
+<pre>ПК → Arduino, светофоры:  'L' + N байт (1 бит = 1 лампа, 0 = ГОРИТ)
+ПК → Arduino, стрелки:    "W &lt;канал&gt; &lt;1|2&gt;\n"   1 = плюс, 2 = минус, канал PCA9685
+Arduino → ПК, датчики:    "Data: 1011…\n"  (74HC165, '0' = участок ЗАНЯТ)
+Arduino → ПК, датчики:    "Occ: 101\n"     (АКЖТ: датчики прямо на пинах)</pre>
+<ul>
+<li>Алгабас: карта ламп и стрелок — <code>Algabas/AlgabasHardware.cs</code>. С 22.10.2026 стрелки на разъёмах шилда 0–4 (1 → 0, 4/6 → 1 и 2, 8 → 3, 2 → 4); калибровка — в скетче <code>готовая_программа\Алгабас\Arduino\StationMain\Switches.h</code>. Датчики — файл <code>датчики.txt</code> рядом с exe (участок = номер бита).</li>
+<li>АКЖТ: прошивка <code>готовая_программа\АКЖТ\Arduino\StationMain_AKZHT</code>, пояснения — <code>ИНСТРУКЦИЯ.txt</code> там же; резервная копия старой прошивки — <code>Backup</code>. Скетч сделан наладчиками 27.10.2026 по образцу скетча Алгабаса; каналы серво — <code>AkzhtHardware.cs</code>, <code>Post/PostHardware.cs</code>, калибровка — <code>Switches.h</code>. Обмен с платой пишется в <code>arduino_diag.log</code> рядом с exe.</li>
+<li>АКЖТ: карта ламп светофоров — по таблице распиновки (<code>Документы</code>), вариант «АКЖТ + промежуточная», 13 байт; встроена в <code>AkzhtHardware.cs</code> и выгружается в файл <code>светофоры.txt</code> рядом с exe (строки «АКЖТ Н5 жёлтый = 0.6», «ПОСТ 1-I красный = 7.3»), правится без пересборки. Прошивка <code>StationMain_AKZHT</code> (<code>LIGHT_FRAME_BYTES = 13</code>). Проверка проводки — кнопка «Лампы по одной» (<code>Ui/LampTestForm.cs</code>).</li>
+<li><code>Core/ArduinoLink.cs</code> у программ разный — не копировать между ними.</li>
+<li>Без платы всё работает: стрелки переводятся только на экране, поезда — виртуальные.</li>
+</ul>
+
+<h2 id="i18n">8. Перевод</h2>
+<p>Строки в коде остаются русскими — это ключи. Перевод — при показе: окна, меню, MessageBox, таблицы переводятся сами (<code>Ui/LangUi.cs</code>), своё рисование — <code>L.T(текст)</code>, формат — <code>L.F("…{0}…", …)</code>, HTML — <code>L.Html</code>. В данные и протокол — только русский.</p>
+<ol>
+<li>Пишите интерфейс по-русски, лучше целыми шаблонами (<code>$"Поезд №{n} на {s}"</code>, а не склейкой из кусков).</li>
+<li><code>python Инструменты\i18n\check.py --todo новое.tsv</code> — новые строки без перевода.</li>
+<li>Дописать казахский и английский, перенести в <code>Инструменты\i18n\strings.tsv</code> (ненужные — в <code>skip.txt</code>).</li>
+<li><code>python Инструменты\i18n\check.py --build</code> → словари <code>Lang\Strings.kk.json / en.json</code> в обе станции → пересобрать.</li>
+</ol>
+<p>Казахские железнодорожные термины нужно проверить носителю: <code>Инструменты\i18n\ПРОВЕРИТЬ_КАЗАХСКИЙ.md</code>.</p>
+
+<h2 id="tests">9. Тесты</h2>
+<table>
+<tr><th>Команда</th><th>Что проверяет</th></tr>
+<tr><td><code>dotnet run --project Инструменты\PanelTest</code></td><td>Пульт ДСП (этап 6) на ядре АКЖТ.</td></tr>
+<tr><td><code>dotnet run --project Инструменты\FaultFlowTest</code></td><td>Неисправности, ДУ-46, кнопки со счётчиком (Алгабас).</td></tr>
+<tr><td><code>dotnet run --project Инструменты\ScheduleTest</code></td><td>Расписание, события ГИД.</td></tr>
+<tr><td><code>dotnet run --project Инструменты\JournalsTest</code></td><td>Поезд, радиосвязь, журналы, бланки, предупреждения, «окна», поезд на макете, автопроверка.</td></tr>
+<tr><td><code>dotnet run --project Инструменты\ShuntTest</code></td><td>Вагоны, расцепка, закрепление, ПНП, формирование, ПТО, восстановительный поезд.</td></tr>
+<tr><td><code>dotnet run --project Инструменты\LangTest</code></td><td>Перевод.</td></tr>
+<tr><td><code>dotnet run --project Инструменты\LampMapTest</code></td><td>Карта ламп АКЖТ: светофоры.txt, 13 байт, биты по таблице распиновки, «лампы по одной».</td></tr>
+<tr><td><code>dotnet run --project Инструменты\UiModesTest</code></td><td>Режимы интерфейса: панели, интерфейс.txt, окно станции в каждом режиме, маршрут кнопками пульта «Енисей».</td></tr>
+<tr><td><code>dotnet run --project Инструменты\AlgabasShots &lt;папка&gt;</code></td><td>Снимки окна Алгабаса во всех режимах (<code>DocShots &lt;папка&gt; modes</code> — то же для АКЖТ).</td></tr>
+<tr><td><code>Инструменты\e2e_*.ps1</code></td><td>Сквозные тесты на собранных exe: скрипт играет преподавателя через сервер на порту 8091.</td></tr>
+<tr><td><code>Инструменты\DocShots</code>, <code>Инструменты\Stage5Shots &lt;папка&gt; ru|kk|en all</code></td><td>Снимки окон для этих инструкций.</td></tr>
+</table>
+<p>Тесты без окон подают сообщения преподавателя прямо в <code>Training.OnEvent</code> (reflection) и шагают время вручную; окна снимаются в PNG через <code>DrawToBitmap</code>.</p>
+
+<h2 id="rules">10. Правила правок</h2>
+<ul>
+<li>Комментарий к правке — <code>// [ДОБАВЛЕНО дата, этап N]</code> или <code>[ИЗМЕНЕНО …]</code>; комментарии и интерфейс — по-русски.</li>
+<li>Общие файлы — одинаковые в обеих станциях (после правки — <code>cp</code> и <code>cmp</code>).</li>
+<li>Не менять концы строк и кодировку файлов (смотрите CRLF / LF перед правкой).</li>
+<li>Каждая версия — запись в <code>CHANGES.md</code> обеих станций: таблица «Что / Как / Файлы», «Проверено» и «Не проверено».</li>
+<li>Тесты прошлых этапов не ломать; новые функции — со своим тестом.</li>
+</ul>
+
+<h2 id="todo">11. Что не проверено и что дальше</h2>
+<ul>
+<li>Не проверено вживую: клики во всех окнах, работа между несколькими ПК, макет с настоящими датчиками и номерами поездов, звук, два монитора АКЖТ.</li>
+<li>Казахский перевод терминов — проверка носителем.</li>
+<li>Отложено заказчиком: программа поездного диспетчера (ДНЦ).</li>
+</ul>
+</main>
+</body>
+</html>

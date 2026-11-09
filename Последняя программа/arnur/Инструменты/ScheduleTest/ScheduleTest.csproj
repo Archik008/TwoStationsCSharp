@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- [ДОБАВЛЕНО 22.10.2026, этап 5] Тест без окон: поезда по расписанию (ядро АКЖТ + пост) -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\Исходники\АКЖТ\Station\Station.csproj" />
+  </ItemGroup>
+</Project>

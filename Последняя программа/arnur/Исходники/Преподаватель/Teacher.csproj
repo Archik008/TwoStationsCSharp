@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>disable</Nullable>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>TeacherApp</RootNamespace>
+    <AssemblyName>Teacher</AssemblyName>
+    <ApplicationHighDpiMode>SystemAware</ApplicationHighDpiMode>
+  </PropertyGroup>
+
+  <!-- Связь с сервером — те же файлы, что у программ станций (одинаковые в АКЖТ и Алгабасе) -->
+  <ItemGroup>
+    <Compile Include="..\АКЖТ\Station\Core\Model.cs" Link="Shared\Model.cs" />
+    <Compile Include="..\АКЖТ\Station\Core\DispatchLink.cs" Link="Shared\DispatchLink.cs" />
+    <!-- [ДОБАВЛЕНО 22.10.2026, этап 5] данные учебного расписания -->
+    <Compile Include="..\АКЖТ\Station\Core\ScheduleData.cs" Link="Shared\ScheduleData.cs" />
+    <!-- [ДОБАВЛЕНО 22.10.2026, этап 8] языки: перевод и словари — те же, что у станций -->
+    <Compile Include="..\АКЖТ\Station\Core\Lang.cs" Link="Shared\Lang.cs" />
+    <Compile Include="..\АКЖТ\Station\Ui\LangUi.cs" Link="Shared\LangUi.cs" />
+    <EmbeddedResource Include="..\АКЖТ\Station\Lang\Strings.kk.json" Link="Shared\Strings.kk.json" LogicalName="Strings.kk.json" WithCulture="false" />
+    <EmbeddedResource Include="..\АКЖТ\Station\Lang\Strings.en.json" Link="Shared\Strings.en.json" LogicalName="Strings.en.json" WithCulture="false" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Programmer guide — station operator trainer</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+<nav class="lang"><a href="index.html">All guides</a> · <a href="programmer_ru.html">Русский</a> · <a href="programmer_kk.html">Қазақша</a> · <b>English</b></nav>
+<h1>Programmer guide</h1>
+<p class="sub">Source layout, build, core, protocol, layout hardware, translation, tests. For those who will develop the trainer further.</p>
+
+<nav class="toc"><b>Contents</b>
+<ol>
+<li><a href="#repo">Sources</a></li>
+<li><a href="#build">Build</a></li>
+<li><a href="#core">Core: model and interlocking</a></li>
+<li><a href="#modules">Modules by feature</a></li>
+<li><a href="#net">Network and lesson protocol</a></li>
+<li><a href="#teacher">Teacher program</a></li>
+<li><a href="#arduino">Layout and Arduino</a></li>
+<li><a href="#i18n">Translation</a></li>
+<li><a href="#tests">Tests</a></li>
+<li><a href="#rules">Editing rules</a></li>
+<li><a href="#todo">Not verified / next steps</a></li>
+</ol></nav>
+
+<h2 id="repo">1. Sources</h2>
+<p>Everything is in the <code>arnur</code> folder (git, branch <code>main</code>). <code>.gitattributes</code> = <code>* -text</code>: git does not touch line endings.</p>
+<table>
+<tr><th>Path</th><th>What</th></tr>
+<tr><td><code>Исходники\АКЖТ\Station</code></td><td>«АКЖТ + junction post» program (C#, .NET 8, WinForms), <code>Station.csproj</code>, solution <code>..\Station.sln</code>. <code>Исходники\АКЖТ\CHANGES.md</code> — change log, <code>Arduino</code> — firmware.</td></tr>
+<tr><td><code>Исходники\Алгабас\Algabas</code></td><td>«Алгабас» program (same core), <code>Algabas.csproj</code>, <code>Исходники\Алгабас\CHANGES.md</code>.</td></tr>
+<tr><td><code>Исходники\Преподаватель</code></td><td>«Teacher» program (C#, WinForms). Some core files are linked from АКЖТ.</td></tr>
+<tr><td><code>Исходники\Сервер</code></td><td>PromServer connection server in Go (WebSocket, port 8090).</td></tr>
+<tr><td><code>Инструменты</code></td><td>Tests and tools (section 9), translation (<code>Инструменты\i18n</code>).</td></tr>
+<tr><td><code>готовая_программа</code></td><td>Built exe files, firmware, teacher data, guides. exe files are not in git.</td></tr>
+<tr><td><code>Документы</code></td><td>Reference trainer (ДСП/ДНЦ, PDF), requirements, customer answers, plan and stage history, signal pin table.</td></tr>
+<tr><td><code>Архив</code></td><td>Old: Python version, old source copies, former git of the GitHub repository «AKZHT-station» (<code>Архив\Station_AKZH-main_GitHub\.git_github</code> — do not touch).</td></tr>
+</table>
+
+<h2 id="build">2. Build</h2>
+<ul>
+<li>Needed: .NET SDK 8 or newer (SDK 10 builds net8), Go 1.23+ for the server.</li>
+<li>Each project has a <code>build_exe.bat</code>: a self-contained single-file exe (win-x64) straight into <code>готовая_программа\&lt;folder&gt;</code>. With a parameter (<code>build_exe.bat x</code>) — no pause at the end.</li>
+<li>Everything: <code>собрать_всё.bat</code> (without Go the server will not build — build the others one by one).</li>
+<li>Quick compile check: <code>dotnet build Station.csproj -v q -nologo</code>.</li>
+<li>User files next to the exe (<code>scheme_style.ini</code>, <code>датчики.txt</code>, <code>Arduino</code>) are not overwritten.</li>
+<li>bat files must be CRLF and UTF-8 (cmd breaks on LF with Cyrillic).</li>
+</ul>
+
+<h2 id="core">3. Core: model and interlocking</h2>
+<p><b>Shared files are byte-identical in АКЖТ and Алгабас.</b> Edit in АКЖТ, copy to Алгабас (<code>cp</code>), check with <code>cmp</code>. Exceptions (own in each program): <code>Core/ArduinoLink.cs</code>, <code>Ui/SchemeGeometry.cs</code>, <code>Ui/SchemeStyle.cs</code>, <code>Ui/StationView.cs</code>, <code>SchemePanel.cs</code> (АКЖТ — project root, Алгабас — <code>Ui</code>; edit both).</p>
+<table>
+<tr><th>File</th><th>What</th></tr>
+<tr><td><code>Core/Model.cs</code></td><td><code>TrackSection</code> (occupancy: manual, sensor, trains, neighbour, fault; locking; warning, possession, layout train number), <code>RailSwitch</code>, <code>RailSignal</code>, <code>RailRoute</code>, <code>DirectionLine</code>, <code>LevelCrossing</code>.</td></tr>
+<tr><td><code>Core/Interlocking.cs</code> + <code>Core/Panel.cs</code></td><td>Interlocking (<code>partial class Interlocking</code>): routes, delayed cancellation, artificial release, switches, call-on signal, direction, <code>Tick(dt)</code>. <code>Panel.cs</code> — operator panel functions (switch locking, caps, crank, disconnection, automatic operation, key staff, crossing, trailing, separate control), <code>Ticked</code> event.</td></tr>
+<tr><td><code>Core/TrainSim.cs</code></td><td>Virtual trains: <code>VirtualTrain</code> (number, category, wagons <code>Consist</code>, radio and form flags), <code>Wagon</code>, movement by sections. Hooks: <code>Hold</code> (stop), <code>SpeedFactor</code> (warnings), <code>Permit</code> (order, form), <code>Blocked</code> (possession), events <code>Spawned</code>, <code>Exited</code>, <code>BackedUp</code>, <code>PassedAtDanger</code>.</td></tr>
+<tr><td><code>Model/ModelHost.cs</code></td><td>0.1 s timer: <code>il.Tick</code>, <code>Trains.Tick</code>, <code>Training.Tick</code>; model step — <code>Training.ModelDt(dt)</code> (lesson pause and speed-up).</td></tr>
+<tr><td><code>Akzht/AkzhtLayout.cs</code>, <code>Post/PostLayout.cs</code>, <code>Algabas/AlgabasLayout.cs</code></td><td>Station diagrams: sections, switches, signals, routes, topology (<code>NextStep</code>), drawing geometry.</td></tr>
+<tr><td><code>SchemePanel.cs</code>, <code>Ui/StationPane.cs</code> (shared: station pane), <code>Ui/StationForm.cs</code> (Алгабас window), <code>MainForm.cs</code> (АКЖТ window)</td><td>Diagram drawing, mouse and menus, station window, button columns.</td></tr>
+</table>
+
+<h2 id="modules">4. Modules by feature</h2>
+<table>
+<tr><th>Feature</th><th>Core</th><th>Windows</th></tr>
+<tr><td>Lesson with the teacher, assessment</td><td><code>Core/Training.cs</code></td><td><code>Ui/TrainingUi.cs</code> (lesson bar, login, screenshots, remote input)</td></tr>
+<tr><td>Faults (express inputs)</td><td><code>Core/Faults.cs</code></td><td>—</td></tr>
+<tr><td>ДУ-46, workers, counter buttons</td><td><code>Core/Du46.cs</code></td><td><code>Ui/Du46Ui.cs</code></td></tr>
+<tr><td>Operator panel</td><td><code>Core/Panel.cs</code></td><td><code>Ui/PanelUi.cs</code></td></tr>
+<tr><td>Timetable, train graph events</td><td><code>Core/ScheduleData.cs</code>, <code>Core/Schedule.cs</code>, <code>Model/ScheduleSetup.cs</code></td><td><code>Ui/ScheduleUi.cs</code></td></tr>
+<tr><td>Train as an object, radio, warnings and possessions, layout train</td><td><code>Core/Radio.cs</code></td><td><code>Ui/RadioUi.cs</code></td></tr>
+<tr><td>Logs ДУ-2/47/58/60, forms, automatic check</td><td><code>Core/Journals.cs</code></td><td><code>Ui/JournalsUi.cs</code></td></tr>
+<tr><td>Wagons, shunting, private siding</td><td><code>Core/Shunting.cs</code> (the program's siding — in <code>Model/ScheduleSetup.cs</code>)</td><td><code>Ui/ShuntUi.cs</code></td></tr>
+<tr><td>Recovery train</td><td><code>Core/Recovery.cs</code></td><td><code>Ui/ShuntUi.cs</code></td></tr>
+<tr><td>Neighbouring station link</td><td><code>Core/DispatchLink.cs</code>, <code>Core/DispatchMirror.cs</code></td><td><code>Ui/ServerDialog.cs</code>, <code>Ui/DirectionConsentDialog.cs</code></td></tr>
+<tr><td>Languages</td><td><code>Core/Lang.cs</code></td><td><code>Ui/LangUi.cs</code></td></tr>
+<tr><td>AI assistant (student questions ru/kk, route step by step, refusal hints, Wikipedia, Ollama optional)</td><td><code>Ai/AiAssistant.cs</code>, <code>Ai/AiKnowledge.cs</code>, <code>Ai/AiText.cs</code>, <code>Ai/AiStation.cs</code>, <code>Ai/AiWiki.cs</code>, <code>Ai/AiLlm.cs</code>, <code>Ai/AiDefaults.cs</code></td><td><code>Ai/AiChatWindow.cs</code>, «ЖИ» button in <code>MainForm.cs</code>; test <code>Инструменты\AiTest</code></td></tr>
+<tr><td>Interface modes (engineering, training, working, Pavlodar), «Settings», colours</td><td><code>Ui/UiSettings.cs</code> (panels per mode, file <code>интерфейс.txt</code>), <code>Ui/SchemePalette.cs</code></td><td><code>Ui/StationPane.cs</code> (layout per mode), <code>Ui/UiParamsForm.cs</code>, <code>Ui/ClassicPanel.cs</code> («Енисей» push-button panel)</td></tr>
+</table>
+<p>All modules are initialised in <code>Training.Init</code>. New violations go through <code>Training.AddEvent(critical, code, text, penalty)</code>, penalty caps — <code>PenaltyCap</code>. Teacher-only notes — <code>Training.Note</code>. Worker messages — <code>Du46.Message</code>.</p>
+
+<h2 id="net">5. Network and lesson protocol</h2>
+<p>PromServer relays one-off messages <code>{"type":"event","to":…,"data":{…}}</code> (up to 4 MB) without parsing <code>data</code>. Stations and the teacher (<code>station = "teacher"</code>) are clients. The lesson protocol is the <code>data.kind</code> field; the full list is in the header of <code>Core/Training.cs</code>:</p>
+<table>
+<tr><th>Teacher → station</th><th>Station → teacher</th></tr>
+<tr><td><code>t_hello</code>, <code>t_login</code>, <code>t_session</code> (lesson, student, time, language, timetable), <code>t_time</code>, <code>t_take</code>, <code>t_stop</code>, <code>t_screen</code> (window region), <code>t_input</code>, <code>t_objects</code>, <code>t_fault_add</code>, <code>t_fault_remove</code>, <code>t_lang</code></td>
+<td><code>s_hello</code>, <code>s_login</code>, <code>s_register</code>, <code>s_progress</code>, <code>s_screen</code>, <code>s_objects</code>, <code>s_faults</code>, <code>s_train_event</code> (train graph), <code>s_result</code> (events, action log, faults, ДУ-46, trains, <code>docs</code> — log and form tables, <code>supplied / removed / localDeparted</code>)</td></tr>
+</table>
+<p>Between stations: <code>DispatchMirror</code> — occupancy of shared line sections, neighbour signals, direction change consent, train hand-over (<code>kind = "train"</code> with number and passport: category, index, train list).</p>
+<p>Add new messages the same way (<code>t_*</code> / <code>s_*</code>); handlers: <code>Training.OnEvent</code> at the station, <code>Classroom.OnEvent</code> in the teacher program.</p>
+
+<h2 id="teacher">6. Teacher program</h2>
+<ul>
+<li><code>Data.cs</code> — students (password hash), lessons (<code>Lesson</code> — PropertyGrid editor; <code>Wire</code> goes to the stations), results (<code>GameResult</code>, <code>DocTable</code>), settings, <code>Db</code> (the <code>данные</code> folder next to the exe).</li>
+<li><code>Classroom.cs</code> — stations, login, lesson, time, server. <code>TeacherForm.cs</code> — tabs. <code>Reports.cs</code> — HTML reports and CSV sheet. <code>StationScreenWindow.cs</code>, <code>ScreenView.cs</code> — station screen. <code>FaultDialog.cs</code> — express inputs. <code>ScheduleTab.cs</code>, <code>Gid.cs</code>, <code>GidTab.cs</code> — timetable and train graph.</li>
+<li>A new lesson property: in <code>Lesson</code> (category, caption) + in <code>Wire</code> + the same in <code>LessonTask</code> (<code>Core/Training.cs</code>).</li>
+</ul>
+
+<h2 id="arduino">7. Layout and Arduino</h2>
+<pre>PC → Arduino, signals:   'L' + N bytes (1 bit = 1 lamp, 0 = ON)
+PC → Arduino, switches:  "W &lt;channel&gt; &lt;1|2&gt;\n"   1 = normal, 2 = reverse, PCA9685 channel
+Arduino → PC, sensors:   "Data: 1011…\n"  (74HC165, '0' = section OCCUPIED)
+Arduino → PC, sensors:   "Occ: 101\n"     (АКЖТ: sensors directly on pins)</pre>
+<ul>
+<li>Алгабас: lamp and switch map — <code>Algabas/AlgabasHardware.cs</code>. Since 22.10.2026 switches are on shield sockets 0–4 (1 → 0, 4/6 → 1 and 2, 8 → 3, 2 → 4); calibration — in the sketch <code>готовая_программа\Алгабас\Arduino\StationMain\Switches.h</code>. Sensors — <code>датчики.txt</code> next to the exe (section = bit number).</li>
+<li>АКЖТ: firmware <code>готовая_программа\АКЖТ\Arduino\StationMain_AKZHT</code>, notes — <code>ИНСТРУКЦИЯ.txt</code> there; backup of the old firmware — <code>Backup</code>. The sketch was made by the technicians on 27.10.2026 after the Алгабас sketch; servo channels — <code>AkzhtHardware.cs</code>, <code>Post/PostHardware.cs</code>, calibration — <code>Switches.h</code>. Board traffic is written to <code>arduino_diag.log</code> next to the exe.</li>
+<li>АКЖТ: the signal lamp map follows the pin table (<code>Документы</code>), variant «АКЖТ + intermediate», 13 bytes; built into <code>AkzhtHardware.cs</code> and written to <code>светофоры.txt</code> next to the exe («АКЖТ Н5 жёлтый = 0.6», «ПОСТ 1-I красный = 7.3»), editable without rebuilding. Firmware <code>StationMain_AKZHT</code> (<code>LIGHT_FRAME_BYTES = 13</code>). Wiring check — «Lamps one by one» button (<code>Ui/LampTestForm.cs</code>).</li>
+<li><code>Core/ArduinoLink.cs</code> differs between the programs — do not copy it.</li>
+<li>Without a board everything works: switches move only on screen, trains are virtual.</li>
+</ul>
+
+<h2 id="i18n">8. Translation</h2>
+<p>Strings in the code stay Russian — they are the keys. Translation happens on display: windows, menus, MessageBox, tables translate themselves (<code>Ui/LangUi.cs</code>); own drawing — <code>L.T(text)</code>, formats — <code>L.F("…{0}…", …)</code>, HTML — <code>L.Html</code>. Data and protocol stay Russian.</p>
+<ol>
+<li>Write the interface in Russian, preferably as whole templates (<code>$"Поезд №{n} на {s}"</code>, not glued pieces).</li>
+<li><code>python Инструменты\i18n\check.py --todo new.tsv</code> — new strings without translation.</li>
+<li>Add Kazakh and English, move them into <code>Инструменты\i18n\strings.tsv</code> (unneeded ones — into <code>skip.txt</code>).</li>
+<li><code>python Инструменты\i18n\check.py --build</code> → dictionaries <code>Lang\Strings.kk.json / en.json</code> in both stations → rebuild.</li>
+</ol>
+<p>Kazakh railway terms must be checked by a native speaker: <code>Инструменты\i18n\ПРОВЕРИТЬ_КАЗАХСКИЙ.md</code>.</p>
+
+<h2 id="tests">9. Tests</h2>
+<table>
+<tr><th>Command</th><th>What it checks</th></tr>
+<tr><td><code>dotnet run --project Инструменты\PanelTest</code></td><td>Operator panel (stage 6) on the АКЖТ core.</td></tr>
+<tr><td><code>dotnet run --project Инструменты\FaultFlowTest</code></td><td>Faults, ДУ-46, counter buttons (Алгабас).</td></tr>
+<tr><td><code>dotnet run --project Инструменты\ScheduleTest</code></td><td>Timetable, train graph events.</td></tr>
+<tr><td><code>dotnet run --project Инструменты\JournalsTest</code></td><td>Train, radio, logs, forms, warnings, possessions, layout train, automatic check.</td></tr>
+<tr><td><code>dotnet run --project Инструменты\ShuntTest</code></td><td>Wagons, uncoupling, securing, siding, forming, inspection, recovery train.</td></tr>
+<tr><td><code>dotnet run --project Инструменты\LangTest</code></td><td>Translation.</td></tr>
+<tr><td><code>dotnet run --project Инструменты\LampMapTest</code></td><td>АКЖТ lamp map: светофоры.txt, 13 bytes, bits per the pin table, «lamps one by one».</td></tr>
+<tr><td><code>dotnet run --project Инструменты\UiModesTest</code></td><td>Interface modes: panels, интерфейс.txt, station window in each mode, route set with «Енисей» panel buttons.</td></tr>
+<tr><td><code>dotnet run --project Инструменты\AlgabasShots &lt;folder&gt;</code></td><td>Screenshots of the Алгабас window in all modes (<code>DocShots &lt;folder&gt; modes</code> — same for АКЖТ).</td></tr>
+<tr><td><code>Инструменты\e2e_*.ps1</code></td><td>End-to-end tests on built exe files: the script plays the teacher through the server on port 8091.</td></tr>
+<tr><td><code>Инструменты\DocShots</code>, <code>Инструменты\Stage5Shots &lt;folder&gt; ru|kk|en all</code></td><td>Screenshots for these guides.</td></tr>
+</table>
+<p>Window-less tests feed teacher messages directly into <code>Training.OnEvent</code> (reflection) and step the time by hand; windows are captured to PNG with <code>DrawToBitmap</code>.</p>
+
+<h2 id="rules">10. Editing rules</h2>
+<ul>
+<li>Mark changes with <code>// [ДОБАВЛЕНО date, этап N]</code> or <code>[ИЗМЕНЕНО …]</code>; comments and interface are in Russian.</li>
+<li>Shared files stay identical in both stations (after editing — <code>cp</code> and <code>cmp</code>).</li>
+<li>Do not change line endings or encoding of files (check CRLF / LF before editing).</li>
+<li>Every version gets an entry in <code>CHANGES.md</code> of both stations: «What / How / Files» table, «Verified» and «Not verified».</li>
+<li>Do not break earlier tests; new features come with their own test.</li>
+</ul>
+
+<h2 id="todo">11. Not verified / next steps</h2>
+<ul>
+<li>Not verified live: clicks in every window, work across several PCs, the layout with real sensors and train numbers, sound, two monitors for АКЖТ.</li>
+<li>Kazakh terminology — native speaker review.</li>
+<li>Postponed by the customer: the train dispatcher (ДНЦ) program.</li>
+</ul>
+</main>
+</body>
+</html>

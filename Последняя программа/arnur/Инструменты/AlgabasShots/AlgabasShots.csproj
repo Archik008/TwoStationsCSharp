@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- [ДОБАВЛЕНО 28.10.2026] Снимки окна Алгабаса во всех режимах интерфейса (проверка раскладки) -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\Исходники\Алгабас\Algabas\Algabas.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <AssemblyName>Algabas</AssemblyName>
+    <RootNamespace>StationApp</RootNamespace>
+    <ApplicationHighDpiMode>SystemAware</ApplicationHighDpiMode>
+    <ForceDesignerDpiUnaware>true</ForceDesignerDpiUnaware>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- SerialPort (связь с Arduino) -->
+    <PackageReference Include="System.IO.Ports" Version="8.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- [ДОБАВЛЕНО 22.10.2026, этап 8] словари перевода интерфейса (казахский, английский) — внутри exe -->
+    <EmbeddedResource Include="Lang\Strings.kk.json" LogicalName="Strings.kk.json" WithCulture="false" />
+    <EmbeddedResource Include="Lang\Strings.en.json" LogicalName="Strings.en.json" WithCulture="false" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,32 @@
+/* Общий стиль инструкций тренажёра ДСП (23.10.2026) */
+:root { --fg: #1b1f23; --muted: #5a6470; --accent: #0b5cad; --bg: #ffffff; --box: #f3f6f9; --border: #d6dde4; --note: #fff8e1; --noteb: #e0a800; --crit: #b00020; }
+* { box-sizing: border-box; }
+body { margin: 0; font-family: "Segoe UI", Arial, sans-serif; color: var(--fg); background: var(--bg); line-height: 1.55; font-size: 16px; }
+main { max-width: 1040px; margin: 0 auto; padding: 24px 16px 64px; }
+a { color: var(--accent); }
+h1 { font-size: 28px; margin: 8px 0 4px; }
+.sub { color: var(--muted); margin: 0 0 16px; }
+h2 { font-size: 21px; margin: 36px 0 10px; padding-bottom: 4px; border-bottom: 2px solid var(--border); }
+h3 { font-size: 17px; margin: 22px 0 6px; }
+nav.lang { text-align: right; font-size: 14px; color: var(--muted); }
+nav.toc { background: var(--box); border: 1px solid var(--border); border-radius: 6px; padding: 10px 18px; margin: 12px 0 8px; }
+nav.toc ol { margin: 6px 0; padding-left: 22px; columns: 2; column-gap: 32px; }
+figure { margin: 14px 0; }
+figure img { max-width: 100%; height: auto; border: 1px solid var(--border); border-radius: 4px; display: block; }
+figure.small img { max-width: 520px; }
+figcaption { color: var(--muted); font-size: 13px; margin-top: 4px; }
+table { border-collapse: collapse; width: 100%; font-size: 14.5px; margin: 10px 0; }
+th, td { border: 1px solid var(--border); padding: 6px 9px; text-align: left; vertical-align: top; }
+th { background: var(--box); }
+td.crit { color: var(--crit); font-weight: 600; }
+.note { background: var(--note); border-left: 4px solid var(--noteb); padding: 9px 13px; margin: 12px 0; border-radius: 0 4px 4px 0; }
+.btn { background: #eef1f4; border: 1px solid #c3ccd5; border-radius: 3px; padding: 0 5px; font-size: 92%; white-space: nowrap; }
+code { background: #f1f3f5; padding: 0 4px; border-radius: 3px; font-size: 92%; }
+pre { background: #f6f8fa; border: 1px solid var(--border); padding: 10px 12px; overflow-x: auto; font-size: 13.5px; border-radius: 4px; }
+dt { font-weight: 600; margin-top: 10px; }
+dd { margin: 2px 0 0 18px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin: 18px 0; }
+.card { border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; background: var(--box); }
+.card h3 { margin-top: 0; }
+@media (max-width: 640px) { nav.toc ol { columns: 1; } figure.small img { max-width: 100%; } table { font-size: 13px; } }
+@media print { nav.lang { display: none; } main { max-width: none; } h2 { page-break-after: avoid; } figure { page-break-inside: avoid; } }
