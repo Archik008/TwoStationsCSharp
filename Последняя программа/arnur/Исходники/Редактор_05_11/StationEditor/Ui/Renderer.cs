@@ -28,6 +28,7 @@ public static class Pal
     public static readonly Color LampOther = H("#6b7472");
     public static readonly Color LampYellow = H("#ffd21f");     // [ДОБАВЛЕНО 05.11.2026] показания в «Испытании»
     public static readonly Color LampOff = H("#2f3b38");
+    public static readonly Color LampPaper = H("#f6f3e8");     // [ДОБАВЛЕНО 09.11.2026] «бумага» огня в знаках ГОСТ 2.749-84
     public static readonly Color Building = H("#f3eddc");
     public static readonly Color Stone = H("#d8cdb0");
     public static readonly Color Road = H("#3c4b47");
@@ -41,6 +42,28 @@ public sealed class SigGeom
     public PointF[] Lamps;
     public PointF Label;
     public RectangleF Box;
+    /// <summary>[ДОБАВЛЕНО 09.11.2026] Мачтовый в виде «Огни по ГОСТ»: знак мачты «⊢», ножка, огни в ряд (РУ-30-80)</summary>
+    public bool MastRow;
+    /// <summary>Промежуток перед второй лампой (пригласительный входного — отдельно, через чёрточку)</summary>
+    public float Gap;
+    /// <summary>[ДОБАВЛЕНО 09.11.2026] Карликовый в виде ГОСТ: огни блоком у основания «|», основание — от Bar0 до Bar1 по Y</summary>
+    public bool DwarfBlock;
+    public float Bar0, Bar1;
+    /// <summary>[ДОБАВЛЕНО 09.11.2026] Поворот светофора вокруг точки (Ax, Ay), градусы: светофор лежит параллельно пути
+    /// у края клетки (на наклонном пути и на изгибе — тоже, как Ч22 на стр. 89 РУ-30-80). Box и всё остальное — до поворота.</summary>
+    public float Angle;
+
+    /// <summary>Попадает ли точка экрана в светофор (с учётом поворота).</summary>
+    public bool Hit(float mx, float my)
+    {
+        if (Angle != 0)
+        {
+            double a = -Angle * Math.PI / 180, dx = mx - Ax, dy = my - Ay;
+            mx = (float)(Ax + dx * Math.Cos(a) - dy * Math.Sin(a));
+            my = (float)(Ay + dx * Math.Sin(a) + dy * Math.Cos(a));
+        }
+        return Box.Contains(mx, my);
+    }
 }
 
 public static class Renderer
@@ -99,6 +122,9 @@ public static class Renderer
     // ---------------------------------------------------------------------
     /// <summary>Мигающие огни горят в первую половину секунды.</summary>
     public static bool BlinkOn => Environment.TickCount64 / 500 % 2 == 0;
+
+    /// <summary>[ДОБАВЛЕНО 09.11.2026] Огни светофоров — графическими знаками ГОСТ 2.749-84 (табл. 6) вместо цвета.</summary>
+    public static bool GostLamps;
 
     /// <summary>Нарисовать путь кубика. color — цвет пути, width — толщина.
     /// noControl — стрелка без контроля положения (переводится): оба направления с разрывом;
@@ -188,33 +214,90 @@ public static class Renderer
     //  СВЕТОФОРЫ: «→» — под путём, «←» — над путём (как в SchemeGeometry.Sig);
     //  мачта — на краю клетки по ходу движения, лампы уходят от мачты по ходу движения
     // ---------------------------------------------------------------------
-    public static PointF SigAnchor(Tile t, float x, float y, float cs, string dir)
+    /// <summary>Выход клетки, у которого стоит светофор (по ходу движения).</summary>
+    static string SigOutDir(Tile t, string dir)
     {
         string want = dir == "R" ? "E" : "W";
         var ends = Core.EndsOf(t).Where(d => (dir == "R") == Core.IsRight(d)).ToList();
-        string d = ends.Contains(want) ? want : (ends.Count > 0 ? ends[0] : want);
-        return Pnt(x, y, cs, d);
+        return ends.Contains(want) ? want : (ends.Count > 0 ? ends[0] : want);
     }
 
-    public static SigGeom GetSigGeom(Tile t, Signal sig, float x, float y, float cs)
+    public static PointF SigAnchor(Tile t, float x, float y, float cs, string dir) => Pnt(x, y, cs, SigOutDir(t, dir));
+
+    /// <summary>[ДОБАВЛЕНО 09.11.2026] Угол пути у светофора, градусы (0 — горизонталь; ±45 — наклонный путь).</summary>
+    public static float SigAngle(Tile t, string dir)
+    {
+        var d = Core.Dirs[SigOutDir(t, dir)];
+        double a = Math.Atan2(d.Dy, d.Dx) - Math.Atan2(0, dir == "R" ? 1 : -1);    // путь против «горизонтального» хода
+        double deg = a * 180 / Math.PI;
+        while (deg > 180) deg -= 360;
+        while (deg <= -180) deg += 360;
+        return (float)deg;
+    }
+
+    public static SigGeom GetSigGeom(Tile t, Signal sig, float x, float y, float cs, bool diamond = false)
+    {
+        var gm = GetSigGeomFlat(t, sig, x, y, cs, diamond);
+        gm.Angle = SigAngle(t, sig.Dir);
+        return gm;
+    }
+
+    static SigGeom GetSigGeomFlat(Tile t, Signal sig, float x, float y, float cs, bool diamond)
     {
         var a = SigAnchor(t, x, y, cs, sig.Dir);
         float side = sig.Dir == "R" ? 1 : -1, fwd = side;
         float r = cs * 0.12f, leg = cs * 0.12f;
-        float sy = a.Y + side * cs * 0.4f;
-        int n = Aspects.LampCount(sig.Kind);
+        bool dwarf = Aspects.IsDwarf(sig, t);
+        // [ИЗМЕНЕНО 09.11.2026] в виде «Огни по ГОСТ» — все лампы головки вплотную, как цельные светофоры в РУ-30-80:
+        // мачтовый — «⊢» и ножка, огни в ряд вдоль пути («1 ⊢●○⊘», «Н1 ⊢◎⊘●○⊘», «◆—⊣З», стр. 9, 49);
+        // у входного пригласительный отделён чёрточкой («Н ⊢◎-⊘●○⊘», стр. 9, 49); карликовый — см. ниже
+        int n = GostLamps ? Aspects.FullHead(sig, t, diamond).Length : Aspects.LampCount(sig, t);
+        float gap = GostLamps && Aspects.InvitationApart(sig) && n > 1 ? r * 0.8f : 0;
+        float Off(int i) => (diamond ? r * 1.3f : r) + i * 2 * r + (i >= 1 ? gap : 0);    // от конца ножки до центра i-й лампы
         var lamps = new PointF[n];
-        for (int i = 0; i < n; i++) lamps[i] = new PointF(a.X + fwd * (leg + r + i * 2 * r), sy);
+        if (GostLamps && dwarf)
+        {
+            // [ДОБАВЛЕНО 09.11.2026] карликовый: огни сразу у основания «|», без ножки.
+            // 1–3 огня — в ряд («НД |○○» стр. 9, «М1 |◎◎», «Нд |◎●⊘» стр. 49); 4 — квадратом 2×2 (как Н3 на стр. 9:
+            // у пути красный и зелёный, дальше лунно-белый и жёлтый, у основания красный и лунно-белый); 5 — три слева, два справа.
+            // (столбец от основания, ряд от пути) для каждой лампы головки
+            (int C, int Rw)[] cells = n switch
+            {
+                1 => new[] { (0, 0) },
+                2 => new[] { (0, 0), (1, 0) },
+                3 => new[] { (0, 0), (1, 0), (2, 0) },
+                4 => new[] { (0, 1), (0, 0), (1, 0), (1, 1) },
+                5 => new[] { (0, 0), (0, 1), (0, 2), (1, 0), (1, 1) },
+                _ => Enumerable.Range(0, n).Select(i => (i, 0)).ToArray(),
+            };
+            float start = a.Y + side * cs * 0.15f;    // край огней, ближний к пути
+            int cols = cells.Max(c => c.C) + 1, rows = cells.Max(c => c.Rw) + 1;
+            for (int i = 0; i < n; i++)
+                lamps[i] = new PointF(a.X + fwd * (r + cells[i].C * 2 * r), start + side * (r + cells[i].Rw * 2 * r));
+            float end = start + side * rows * 2 * r;
+            var lab = new PointF(a.X + fwd * cols * r, end + side * cs * 0.2f);
+            float bx0 = Math.Min(a.X, a.X + fwd * cols * 2 * r), bx1 = Math.Max(a.X, a.X + fwd * cols * 2 * r);
+            return new SigGeom
+            {
+                Ax = a.X, Ay = a.Y, Sy = start, Side = side, Fwd = fwd, R = r, Lamps = lamps, Label = lab,
+                DwarfBlock = true, Bar0 = start, Bar1 = end,
+                Box = RectangleF.FromLTRB(bx0 - 3, Math.Min(a.Y, lab.Y) - cs * 0.15f, bx1 + 3, Math.Max(a.Y, lab.Y) + cs * 0.15f),
+            };
+        }
+        // карликовый — ниже, у самого пути; мачтовый в виде ГОСТ — ряд огней на уровне знака мачты «⊢»
+        float sy = a.Y + side * cs * (dwarf ? 0.27f : GostLamps ? 0.34f : 0.4f);
+        for (int i = 0; i < n; i++) lamps[i] = new PointF(a.X + fwd * (leg + Off(i)), sy);
         float minX = a.X, maxX = a.X;
         foreach (var l in lamps)
         {
             float lx = l.X + fwd * r;
             minX = Math.Min(minX, lx); maxX = Math.Max(maxX, lx);
         }
-        var label = new PointF(a.X + fwd * (leg + r * n), sy + side * (r + cs * 0.22f));
+        var label = new PointF(a.X + fwd * (leg + (Off(0) + Off(n - 1)) / 2), sy + side * (r + cs * 0.22f));
         return new SigGeom
         {
             Ax = a.X, Ay = a.Y, Sy = sy, Side = side, Fwd = fwd, R = r, Lamps = lamps, Label = label,
+            MastRow = GostLamps && !dwarf, Gap = gap,
             Box = RectangleF.FromLTRB(minX - 3, Math.Min(a.Y, label.Y) - cs * 0.15f, maxX + 3, Math.Max(a.Y, label.Y) + cs * 0.15f),
         };
     }
@@ -229,15 +312,37 @@ public static class Renderer
     /// [ИЗМЕНЕНО 05.11.2026] огни по показанию (мигающие мигают), мачта заградительного — в чёрно-белые полосы,
     /// у повторительного одна, у предупредительного две поперечные черты на мачте.</summary>
     public static void DrawSignal(Graphics g, Tile t, Signal sig, float x, float y, float cs,
-        Aspect aspect = null, bool label = true, bool ring = false, Color? ringColor = null, int alpha = 255)
+        Aspect aspect = null, bool label = true, bool ring = false, Color? ringColor = null, int alpha = 255, bool? diamond = null)
     {
-        var gm = GetSigGeom(t, sig, x, y, cs);
-        aspect ??= Aspects.Static(sig);
+        // огонь ромбом: по умолчанию — заградительный и повторительный; предупредительный к заградительному
+        // зависит от схемы (что впереди), поэтому его передаёт Render (Aspects.IsDiamond)
+        bool dia = diamond ?? (sig.Kind is "barrier" or "repeater");
+        var gm = GetSigGeom(t, sig, x, y, cs, dia);
+        // [ДОБАВЛЕНО 09.11.2026] светофор лежит параллельно пути: поворачиваем всё (огни, мачту, подпись) вокруг точки привязки
+        var turned = gm.Angle != 0 ? g.Save() : null;
+        if (turned != null)
+        {
+            g.TranslateTransform(gm.Ax, gm.Ay);
+            g.RotateTransform(gm.Angle);
+            g.TranslateTransform(-gm.Ax, -gm.Ay);
+        }
+        aspect ??= Aspects.Static(sig, t);
+        // в виде «Огни по ГОСТ» — полная головка: горящие огни раскладываются по её лампам
+        var fullHead = GostLamps ? Aspects.FullHead(sig, t, dia) : null;
+        var shown = GostLamps ? Aspects.OnFullHead(fullHead, aspect.Lamps) : aspect.Lamps;
         float lw = Math.Max(1f, cs * 0.045f);
         using var pen = new Pen(A(Pal.Dark, alpha), lw);
         var foot = new PointF(gm.Ax, gm.Ay + gm.Side * cs * 0.1f);
         var top = new PointF(gm.Ax, gm.Sy);
-        if (sig.Kind == "barrier")
+        if (gm.MastRow)
+        {
+            // мачтовый как в РУ-30-80: знак мачты «⊢» (поперечная черта) и ножка до огней; пригласительный — через чёрточку
+            g.DrawLine(pen, gm.Ax, gm.Sy - gm.R, gm.Ax, gm.Sy + gm.R);
+            g.DrawLine(pen, gm.Ax, gm.Sy, gm.Ax + gm.Fwd * cs * 0.12f, gm.Sy);
+            if (gm.Gap > 0 && gm.Lamps.Length > 1)
+                g.DrawLine(pen, gm.Lamps[0].X + gm.Fwd * gm.R, gm.Sy, gm.Lamps[1].X - gm.Fwd * gm.R, gm.Sy);
+        }
+        else if (sig.Kind == "barrier")
         {
             using var white = new Pen(A(Color.White, alpha), lw * 2.2f);
             using var black = new Pen(A(Pal.Dark, alpha), lw * 2.2f) { DashPattern = new[] { 1.2f, 1.2f } };
@@ -245,9 +350,18 @@ public static class Renderer
             g.DrawLine(black, foot, top);
             g.DrawLine(pen, top, new PointF(gm.Ax + gm.Fwd * cs * 0.12f, gm.Sy));
         }
+        else if (gm.DwarfBlock)
+            g.DrawLine(pen, gm.Ax, gm.Bar0, gm.Ax, gm.Bar1);    // основание во всю высоту огней, без ножки
+        else if (Aspects.IsDwarf(sig, t))
+        {
+            // [ДОБАВЛЕНО 09.11.2026] карликовый — без мачты: основание «|» у ламп, как на схемах РУ-30-80
+            g.DrawLine(pen, gm.Ax, gm.Sy - gm.R, gm.Ax, gm.Sy + gm.R);
+            g.DrawLine(pen, gm.Ax, gm.Sy, gm.Ax + gm.Fwd * cs * 0.12f, gm.Sy);
+        }
         else
             g.DrawLines(pen, new[] { foot, top, new PointF(gm.Ax + gm.Fwd * cs * 0.12f, gm.Sy) });
-        int ticks = sig.Kind == "repeater" ? 1 : sig.Kind == "warning" ? 2 : 0;
+        // черты на мачте — только в цветном виде (в РУ-30-80 и ГОСТ предупредительный и повторительный без черт)
+        int ticks = gm.MastRow ? 0 : sig.Kind == "repeater" ? 1 : sig.Kind == "warning" ? 2 : 0;
         for (int i = 0; i < ticks; i++)
         {
             float ty = foot.Y + (top.Y - foot.Y) * (0.45f + 0.25f * i);
@@ -256,10 +370,27 @@ public static class Renderer
         for (int i = 0; i < gm.Lamps.Length; i++)
         {
             var l = gm.Lamps[i];
-            var lit = i < aspect.Lamps.Length ? aspect.Lamps[i] : new LampLit(Lamp.Off);
+            var lit = i < shown.Length ? shown[i] : new LampLit(Lamp.Off);
+            if (GostLamps)
+            {
+                // негорящая лампа рисуется бледно знаком своего цвета из полной головки
+                bool on = lit.Color != Lamp.Off;
+                DrawGostLamp(g, on ? lit.Color : fullHead[i], on, lit.Blink, l, gm.R, dia, lw, alpha);
+                continue;
+            }
             var col = lit.Blink && !BlinkOn ? Pal.LampOff : LampColor(lit.Color);
-            var rc = new RectangleF(l.X - gm.R, l.Y - gm.R, 2 * gm.R, 2 * gm.R);
             using var fill = new SolidBrush(A(col, alpha));
+            if (dia)
+            {
+                // [ИЗМЕНЕНО 09.11.2026] заградительный и повторительный — ромб: «◆⊣З» в РУ-30-80, стр. 49;
+                // «фоновые щиты повторительных и заградительных светофоров имеют форму ромба» (caredenis.ru, les03)
+                float d = gm.R * 1.3f;
+                var rh = new[] { new PointF(l.X - d, l.Y), new PointF(l.X, l.Y - d * 0.8f), new PointF(l.X + d, l.Y), new PointF(l.X, l.Y + d * 0.8f) };
+                g.FillPolygon(fill, rh);
+                g.DrawPolygon(pen, rh);
+                continue;
+            }
+            var rc = new RectangleF(l.X - gm.R, l.Y - gm.R, 2 * gm.R, 2 * gm.R);
             g.FillEllipse(fill, rc);
             g.DrawEllipse(pen, rc);
         }
@@ -267,12 +398,75 @@ public static class Renderer
         {
             bool named = !string.IsNullOrEmpty(sig.Name);
             using var tb = new SolidBrush(A(named ? Pal.Text : Pal.Bad, alpha));
-            g.DrawString(named ? sig.Name : "?", GetFont(cs * 0.27f, true), tb, gm.Label, Center);
+            // [ДОБАВЛЕНО 09.11.2026] «только чтение» (показание с другой станции) — значок ↔ у имени
+            var text = (named ? sig.Name : "?") + (sig.IsReadOnly ? " ↔" : "");
+            g.DrawString(text, GetFont(cs * 0.27f, true), tb, gm.Label, Center);
         }
         if (ring)
         {
             using var rp = new Pen(ringColor ?? Pal.Sel, 2) { DashPattern = new[] { 2f, 1.5f } };
             g.DrawRectangle(rp, gm.Box.X, gm.Box.Y, gm.Box.Width, gm.Box.Height);
+        }
+        if (turned != null) g.Restore(turned);
+    }
+
+    /// <summary>[ДОБАВЛЕНО 09.11.2026] Огонь знаком ГОСТ 2.749-84, табл. 6 (как на чертежах РУ-30-80):
+    /// красный — залитый круг; зелёный — пустой круг; жёлтый — заштрихованный; лунно-белый — круг с меньшим кругом внутри;
+    /// синий — круг с залитым меньшим кругом внутри; мигающий — четыре коротких луча от круга.
+    /// Ромб (заградительный, повторительный — табл. 5, п. 7, 9) заполняется так же.
+    /// Горящий огонь — чёрным по светлому, негорящий — бледно (видно, какая это лампа).</summary>
+    static void DrawGostLamp(Graphics g, Lamp c, bool on, bool blink, PointF p, float r, bool diamond, float lw, int alpha)
+    {
+        int a = on ? alpha : alpha * 40 / 100;
+        lw = Math.Max(1f, lw * 0.6f);    // знаки — тонкой линией, иначе круг в круге и точка в круге сливаются
+        using var ink = new SolidBrush(A(Pal.Dark, a));
+        using var pen = new Pen(A(Pal.Dark, a), lw);
+        using var paper = new SolidBrush(A(Pal.LampPaper, on ? alpha : alpha * 55 / 100));
+        using var path = new GraphicsPath();
+        float d = r * 1.3f;
+        if (diamond) path.AddPolygon(new[] { new PointF(p.X - d, p.Y), new PointF(p.X, p.Y - d * 0.8f), new PointF(p.X + d, p.Y), new PointF(p.X, p.Y + d * 0.8f) });
+        else path.AddEllipse(p.X - r, p.Y - r, 2 * r, 2 * r);
+        g.FillPath(paper, path);
+        float ir = r * 0.52f;    // меньший круг внутри (у синего — залитая точка поменьше)
+        switch (c)
+        {
+            case Lamp.Red:
+                g.FillPath(ink, path);
+                break;
+            case Lamp.Yellow:
+            {
+                var clip = g.Clip;
+                g.SetClip(path, CombineMode.Intersect);
+                using var hp = new Pen(A(Pal.Dark, a), Math.Max(1f, lw * 0.8f));
+                float step = Math.Max(2.5f, r * 0.55f), span = diamond ? d : r;
+                for (float k = -2 * span; k <= 2 * span; k += step)
+                    g.DrawLine(hp, p.X + k - span, p.Y + span, p.X + k + span, p.Y - span);
+                g.Clip = clip;
+                break;
+            }
+            case Lamp.White:
+                g.DrawEllipse(pen, p.X - ir, p.Y - ir, 2 * ir, 2 * ir);
+                break;
+            case Lamp.Blue:
+            {
+                float br = r * 0.4f;
+                g.FillEllipse(ink, p.X - br, p.Y - br, 2 * br, 2 * br);
+                break;
+            }
+            case Lamp.Gray:    // соседний — неизвестно, что горит
+                pen.DashPattern = new[] { 1.5f, 1.5f };
+                break;
+        }
+        g.DrawPath(pen, path);
+        if (blink)
+        {
+            using var rp = new Pen(A(Pal.Dark, a), lw);
+            float r1 = (diamond ? d * 0.75f : r) * 1.12f, r2 = r1 + r * 0.5f;
+            foreach (var (dx, dy) in new[] { (1, 1), (1, -1), (-1, 1), (-1, -1) })
+            {
+                float k = 0.7071f;
+                g.DrawLine(rp, p.X + dx * r1 * k, p.Y + dy * r1 * k, p.X + dx * r2 * k, p.Y + dy * r2 * k);
+            }
         }
     }
 
@@ -458,7 +652,10 @@ public static class Renderer
         g.SetClip(r);
         DrawTrack(g, t, x, y, cs, width: size * 0.08f);
         DrawTrack(g, t, x + cs, y, cs, width: size * 0.08f);
-        DrawSignal(g, t, new Signal { Dir = "R", Kind = "entry", Name = "" }, x, y, cs, label: false);
+        bool gost = GostLamps;
+        GostLamps = false;    // значок инструмента — всегда в прежнем виде (столбик ГОСТ в него не помещается)
+        try { DrawSignal(g, t, new Signal { Dir = "R", Kind = "entry", Name = "" }, x, y, cs, label: false); }
+        finally { GostLamps = gost; }
         g.Clip = clip;
     }
 
@@ -639,7 +836,8 @@ public static class Renderer
                 DrawSignal(g, e.T, e.T.Sigs[i], SX(e.X), SY(e.Y), cs,
                     aspect: test && T.Aspects.TryGetValue(e.K + "#" + i, out var asp) ? asp : null,
                     ring: selected || pending,
-                    ringColor: pending ? Color.White : Pal.Sel);
+                    ringColor: pending ? Color.White : Pal.Sel,
+                    diamond: Aspects.IsDiamond(st, new SignalEntry { Key = e.K, Idx = i, Sig = e.T.Sigs[i], Tile = e.T }));
             }
         }
 

@@ -187,7 +187,10 @@ public sealed partial class MainForm
             var id = s.Key + "#" + s.Idx;
             var name = sig.Name;
             var set = T.Set.FirstOrDefault(r => r.Start == s);
-            if (sig.Kind == "barrier")
+            if (sig.IsReadOnly)    // [ДОБАВЛЕНО 09.11.2026]
+                Msg($"{Core.SigKindName(sig.Kind)} {name} — только чтение: его открывает другая станция (id {sig.Id}). " +
+                    "Без связи с ней он погашен.", true);
+            else if (sig.Kind == "barrier")
             {
                 // заградительный включает и выключает дежурный (или его включает занятый переезд впереди)
                 if (!T.BarrierOn.Remove(id)) T.BarrierOn.Add(id);

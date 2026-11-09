@@ -32,7 +32,7 @@ public sealed partial class MainForm : Form
     // ---------------- элементы окна ----------------
     ToolStrip top;
     ToolStripTextBox tbName;
-    ToolStripButton bUndo, bRedo, bEdit, bTest, vGrid, vColors, vNames;
+    ToolStripButton bUndo, bRedo, bEdit, bTest, vGrid, vColors, vNames, vGost;
     ToolStripComboBox cbExample;
     Panel left;
     FlowLayoutPanel palettePanel, optsPanel;
@@ -111,6 +111,14 @@ public sealed partial class MainForm : Form
         vGrid = Toggle("Сетка", "Показать / скрыть сетку", v => ui.ShowGrid = v);
         vColors = Toggle("Цвета", "Показать / скрыть цвета участков", v => ui.ShowSecColors = v);
         vNames = Toggle("Названия", "Показать / скрыть названия участков", v => ui.ShowSecNames = v);
+        // [ДОБАВЛЕНО 09.11.2026] огни светофоров: в цвете или графическими знаками ГОСТ 2.749-84 (табл. 6)
+        var vGost = new ToolStripButton("Огни по ГОСТ") { CheckOnClick = true, Checked = false, DisplayStyle = ToolStripItemDisplayStyle.Text,
+            ToolTipText = "Огни светофоров: в цвете / графическими знаками ГОСТ 2.749-84 (G)\n" +
+                          "красный — залитый круг, зелёный — пустой, жёлтый — заштрихованный,\n" +
+                          "лунно-белый — круг в круге, синий — точка в круге, мигающий — четыре луча" };
+        vGost.CheckedChanged += (_, _) => { Renderer.GostLamps = vGost.Checked; Draw(); };
+        top.Items.Add(vGost);
+        this.vGost = vGost;
         var help = Btn("Справка", "Справка и горячие клавиши (F1)", ShowHelp);
         help.Alignment = ToolStripItemAlignment.Right;
 
@@ -574,6 +582,7 @@ public sealed partial class MainForm : Form
                 return true;
             case Keys.F: FitView(); return true;
             case Keys.M: SetMode(ui.IsTest ? "edit" : "test"); return true;
+            case Keys.G: vGost.Checked = !vGost.Checked; return true;    // [ДОБАВЛЕНО 09.11.2026] огни: цвет / ГОСТ
             case Keys.Escape:
                 if (ui.IsTest) { ui.Test.Pending = null; Msg("Набор маршрута отменён"); Draw(); return true; }
                 ui.Sel.Clear(); ui.SelSig = null; ui.SelObj = null; ui.FlashSec = null;

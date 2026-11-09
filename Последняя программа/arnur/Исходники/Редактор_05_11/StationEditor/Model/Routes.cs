@@ -66,6 +66,7 @@ public static class RouteFinder
         foreach (var s in Core.AllSignals(st))
         {
             var modes = new List<bool>();
+            if (s.Sig.IsReadOnly) continue;    // [ДОБАВЛЕНО 09.11.2026] только чтение — открывает другая станция, маршрутов здесь нет
             if (Core.IsTrainStart(s.Sig.Kind)) modes.Add(false);
             if (Core.IsShuntStart(s.Sig.Kind)) modes.Add(true);
             foreach (var shunt in modes) Search(s, shunt);
@@ -242,6 +243,18 @@ public static class Validator
         }
         foreach (var (n, ks) in names)
             if (ks.Count > 1) Add("err", $"Два светофора с названием «{n}»: {string.Join("; ", ks)}", ks[0]);
+        // [ДОБАВЛЕНО 09.11.2026] id — для связи станций, должен быть у каждого и не повторяться
+        foreach (var grp in sigs.GroupBy(s => s.Sig.Id))
+        {
+            var l = grp.ToList();
+            if (grp.Key <= 0) Add("err", $"Светофор {Nz(l[0].Sig.Name)} ({l[0].Key}) без id — задайте номер в свойствах", l[0].Key);
+            else if (l.Count > 1)
+                Add("err", $"id {grp.Key} у нескольких светофоров: {string.Join(", ", l.Select(s => Nz(s.Sig.Name)))} — другая станция их не различит", l[0].Key);
+        }
+        var ro = sigs.Where(s => s.Sig.IsReadOnly).ToList();
+        if (ro.Count > 0)
+            Add("info", "Только чтение (показание присылает другая станция): " +
+                string.Join(", ", ro.Select(s => $"{Nz(s.Sig.Name)} — id {s.Sig.Id}")));
 
         // участок, разорванный на куски
         foreach (var (sec, keys) in Core.TilesBySection(st))
@@ -276,7 +289,7 @@ public static class Validator
             Add("info", $"Найдено маршрутов: поездных {train}, маневровых {shunt}.");
             foreach (var s in sigs)
             {
-                if (!Core.IsTrainStart(s.Sig.Kind) && !Core.IsShuntStart(s.Sig.Kind)) continue;
+                if (!Core.IsTrainStart(s.Sig.Kind) && !Core.IsShuntStart(s.Sig.Kind) || s.Sig.IsReadOnly) continue;
                 if (!routes.Any(r => r.Start == s.Ref))
                     Add("warn", $"От светофора {Nz(s.Sig.Name)} не найдено ни одного маршрута — проверьте разрывы и типы участков впереди (есть ли «путь»)", s.Key);
             }

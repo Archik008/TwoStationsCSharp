@@ -34,8 +34,9 @@ public sealed partial class MainForm
                 if (!st.Tiles.TryGetValue(k, out var t) || !t.HasSigs) continue;
                 for (int i = 0; i < t.Sigs.Count; i++)
                 {
-                    var b = Renderer.GetSigGeom(t, t.Sigs[i], ui.Cam.X + (p.X + dx) * c, ui.Cam.Y + (p.Y + dy) * c, c).Box;
-                    if (mx >= b.Left && mx <= b.Right && my >= b.Top && my <= b.Bottom) return new SigRef(k, i);
+                    // [ИЗМЕНЕНО 09.11.2026] с учётом поворота светофора вдоль наклонного пути
+                    if (Renderer.GetSigGeom(t, t.Sigs[i], ui.Cam.X + (p.X + dx) * c, ui.Cam.Y + (p.Y + dy) * c, c).Hit(mx, my))
+                        return new SigRef(k, i);
                 }
             }
         return null;
@@ -268,7 +269,7 @@ public sealed partial class MainForm
         if (!st.Tiles.TryGetValue(k, out var t)) { Msg("Светофор ставится на путь — сначала поставьте кубик пути", true); return; }
         int i = t.Sigs?.FindIndex(s => s.Dir == dir) ?? -1;
         if (i >= 0) { SelectSignal(k, i); Msg("Здесь уже есть светофор этого направления — выбран"); return; }
-        // предупредительный и повторительный получают имя по светофору впереди: ПЧ, ПвН1
+        // предупредительный и повторительный получают имя по светофору впереди: ПЧ, ПН1; выходной — по номеру пути
         string mainAhead = null;
         if (kind is "warning" or "repeater")
         {
@@ -277,7 +278,8 @@ public sealed partial class MainForm
         }
         Edit(() =>
         {
-            (t.Sigs ??= new List<Signal>()).Add(new Signal { Dir = dir, Kind = kind, Name = Core.SuggestSignalName(st, kind, dir, mainAhead) });
+            (t.Sigs ??= new List<Signal>()).Add(new Signal { Dir = dir, Kind = kind, Name = Core.SuggestSignalName(st, kind, dir, mainAhead, k),
+                                                            Id = Core.NextSignalId(st) });    // [ДОБАВЛЕНО 09.11.2026] id — автоинкремент
             ui.Sel = new HashSet<string> { k };
             ui.SelSig = new SigRef(k, t.Sigs.Count - 1);
         });

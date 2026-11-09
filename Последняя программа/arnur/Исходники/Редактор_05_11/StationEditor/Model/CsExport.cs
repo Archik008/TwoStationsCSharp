@@ -165,6 +165,19 @@ public static class CsExport
             W("    // участки приближения (на чём стоит поезд перед светофором)");
             foreach (var s in appr) W($"    {Sid(s)}.Approach = {secId[s.Tile.Sec]};");
         }
+        // [ДОБАВЛЕНО 09.11.2026] id светофоров для связи станций и светофоры «только чтение»
+        W("");
+        W("    // id светофоров для связи станций (поле id в схеме): " +
+          string.Join(", ", sigs.Select(s => $"{Sid(s)} = {s.Sig.Id}")));
+        var ro = allSigs.Where(s => s.Sig.IsReadOnly).ToList();
+        if (ro.Count > 0)
+        {
+            W("    // только чтение — показание присылает другая станция (RailSignal.Remote). В DispatchMirror, список mirror:");
+            foreach (var s in ro)
+                W(sigId.ContainsKey(s.Key + "#" + s.Idx)
+                    ? $"    //   (\"{s.Sig.Id}\", {Sid(s)}),"
+                    : $"    //   (\"{s.Sig.Id}\", ?)  — {Core.SigKindName(s.Sig.Kind)} {s.Sig.Name} (в программе станции такого вида нет)");
+        }
         W("}");
         W("");
 

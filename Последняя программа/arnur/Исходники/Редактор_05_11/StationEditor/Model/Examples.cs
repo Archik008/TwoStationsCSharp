@@ -36,7 +36,7 @@ public static class Examples
         public B Sig(int x, int y, string dir, string kind, string name)
         {
             var t = St.Tiles[Core.Key(x, y)];
-            (t.Sigs ??= new List<Signal>()).Add(new Signal { Dir = dir, Kind = kind, Name = name });
+            (t.Sigs ??= new List<Signal>()).Add(new Signal { Dir = dir, Kind = kind, Name = name, Id = Core.NextSignalId(St) });
             return this;
         }
         public B Text(int x, int y, string text, double size = 14)
@@ -58,13 +58,13 @@ public static class Examples
     }
 
     /// <summary>[ДОБАВЛЕНО 05.11.2026] Разъезд со всеми новыми элементами: предупредительный ПЧ перед входным,
-    /// повторительный ПвЧ1 перед выходным, переезд с заградительными З1 и З2, вокзал, часовая башня, амперметр.</summary>
+    /// повторительный ПЧ1 перед выходным (имя — «П» + имя основного, как ПЧМ2А в уроке caredenis.ru les03), переезд с заградительными З1 и З2, вокзал, часовая башня, амперметр.</summary>
     public static Station Novyi()
     {
         var b = new B("Разъезд Новый");
         b.Put(0, 6, "exit", 0, "НП").Run(1, 8, 6, "НП").Sig(2, 6, "R", "warning", "ПЧ").Sig(8, 6, "R", "entry", "Ч");
         b.Put(9, 6, "switch", SW_UP, "1СП", name: "1");
-        b.Run(10, 21, 6, "IП").Sig(10, 6, "L", "exit", "Н1").Sig(15, 6, "R", "repeater", "ПвЧ1").Sig(21, 6, "R", "exit", "Ч1");
+        b.Run(10, 21, 6, "IП").Sig(10, 6, "L", "exit", "Н1").Sig(15, 6, "R", "repeater", "ПЧ1").Sig(21, 6, "R", "exit", "Ч1");
         b.Put(10, 5, "straight", UP, "1СП").Put(11, 4, "curve", E_SW, "1СП");
         b.Run(12, 19, 4, "3П").Sig(12, 4, "L", "exit", "Н3").Sig(19, 4, "R", "exit", "Ч3");
         b.Put(20, 4, "curve", W_SE, "2СП").Put(21, 5, "straight", DOWN, "2СП");

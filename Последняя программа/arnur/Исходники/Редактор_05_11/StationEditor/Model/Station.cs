@@ -11,7 +11,8 @@ namespace StationEditor.Model;
 //  СТАНЦИЯ — то, что сохраняется в файл .station.json (формат тот же, что у веб-макета):
 //    tiles    — "x,y" → { t: тип кубика, v: вариант (поворот), sec: участок,
 //                         name: номер стрелки, group: съезд (спаренные стрелки), plus: положение,
-//                         sigs: [{ dir: 'R' | 'L', kind, name }] }
+//                         sigs: [{ dir: 'R' | 'L', kind, name, id, ro }] }
+//               [ДОБАВЛЕНО 09.11.2026] id — номер светофора для связи станций (автоинкремент), ro: true — только чтение
 //    sections — участок → { type, color }
 //    texts    — "x,y" → { text, size }
 //    objects  — "x,y" (левый верхний угол) → { type: ammeter | building | clock, name, w, h, seconds }
@@ -68,6 +69,14 @@ public sealed class Signal
     /// <summary>entry, exit, route, shunt, block, warning, repeater, barrier, cover, other (см. Core.SigKinds)</summary>
     [JsonPropertyName("kind")] public string Kind { get; set; } = "entry";
     [JsonPropertyName("name")] public string Name { get; set; } = "";
+    /// <summary>[ДОБАВЛЕНО 09.11.2026] Номер светофора для связи станций (1, 2, 3… — автоинкремент, уникальный на схеме):
+    /// по нему другая программа (станция) находит, какому светофору у себя показать присланное показание.</summary>
+    [JsonPropertyName("id")] public int Id { get; set; }
+    /// <summary>[ДОБАВЛЕНО 09.11.2026] Только чтение: показание задаёт другая станция по сети (как Remote в программах
+    /// станций, DispatchMirror). Маршрутов от него нет; без данных от соседа — погашен. null — обычный светофор.</summary>
+    [JsonPropertyName("ro")] public bool? ReadOnly { get; set; }
+
+    [JsonIgnore] public bool IsReadOnly => ReadOnly == true;
 }
 
 public sealed class SectionInfo
@@ -167,10 +176,12 @@ public static class StationFile
                     s.Dir = s.Dir == "L" ? "L" : "R";
                     if (s.Kind == null || Core.SigKindName(s.Kind) == null) s.Kind = "other";
                     s.Name ??= "";
+                    if (s.ReadOnly == false) s.ReadOnly = null;
                 }
                 if (t.Sigs.Count == 0) t.Sigs = null;
             }
         }
+        Core.AssignSignalIds(st);    // [ДОБАВЛЕНО 09.11.2026] старые файлы без id и повторы — получают новые номера
         foreach (var k in st.Sections.Keys.ToList())
             if (st.Sections[k] == null) st.Sections[k] = new SectionInfo { Type = "auto" };
         foreach (var k in st.Texts.Keys.ToList())

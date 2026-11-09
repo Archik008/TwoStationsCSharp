@@ -122,9 +122,13 @@ public static class Core
     /// <summary>Чем светофор занят в «Испытании» (подсказка в свойствах и при щелчке).</summary>
     public static string SigKindHint(string kind) => kind switch
     {
-        "entry" => "Приём с перегона. Красный; жёлтый / зелёный — приём на главный путь; два жёлтых (верхний мигает, если выходной открыт) — на боковой путь.",
-        "exit" => "Отправление на перегон. Красный; жёлтый — свободен один блок-участок, зелёный — два и больше; лунно-белый — манёвры.",
-        "route" => "Маршрутный (НМ, ЧМ): из одного района станции в другой. Огни — как у выходного.",
+        // [ИЗМЕНЕНО 09.11.2026] по РУ-30-80 (стр. 9, 14, 20)
+        "entry" => "Приём с перегона. Красный; жёлтый / зелёный — приём на главный путь; жёлтый мигающий — выходной открыт двумя жёлтыми; " +
+                   "два жёлтых (верхний мигает, если выходной открыт) — с отклонением по стрелкам.",
+        "exit" => "Отправление на перегон. Красный; жёлтый — свободен один блок-участок, зелёный — два и больше; " +
+                  "жёлтый мигающий — следующий показывает два жёлтых; с главного пути (IП, IIП…) с отклонением по стрелкам — " +
+                  "два жёлтых (верхний мигает, если следующий открыт); лунно-белый — манёвры.",
+        "route" => "Маршрутный (НМ, ЧМ): из одного района станции в другой. Огни — как у выходного (два жёлтых — только с главного пути).",
         "shunt" => "Маневровый: синий — манёвры запрещены, лунно-белый — разрешены.",
         "block" => "Проходной автоблокировки: красный — блок-участок впереди занят, жёлтый — следующий светофор закрыт, " +
                    "жёлтый мигающий — следующий входной открыт на боковой путь, зелёный — свободно.",
@@ -135,7 +139,7 @@ public static class Core
                      "В «Испытании» горит красным, когда переезд впереди занят, или включается щелчком.",
         "cover" => "Прикрытия: ограждает пересечение путей, разводной мост. Красный; зелёный — открыт щелчком, если впереди свободно.",
         _ => "Светофор соседней станции: на нашей схеме только показан.",
-    };
+    } + " Галочка «только чтение» — показание задаёт другая станция по id (подходит для любого вида).";
 
     // ---------------------------------------------------------------------
     //  [ДОБАВЛЕНО 05.11.2026] ОБЪЕКТЫ СТАНЦИИ (не пути): занимают прямоугольник W×H клеток
@@ -392,26 +396,81 @@ public static class Core
         return res;
     }
 
-    /// <summary>Имя для нового светофора: Ч / Н, Ч1… / Н1…, маршрутные ЧМ1 / НМ1…, маневровые М2, М4… (→) и М1, М3… (←),
-    /// проходные 1, 2…, заградительные З1…, прикрытия Пр1…; предупредительный и повторительный — «П» / «Пв» + имя
-    /// светофора впереди (mainAhead), если он есть.</summary>
-    public static string SuggestSignalName(Station st, string kind, string dir, string mainAhead = null)
+    // «…СП» — стрелочный участок, не путь
+    /// <summary>[ДОБАВЛЕНО 09.11.2026] Следующий свободный id светофора (автоинкремент: наибольший на схеме + 1).</summary>
+    public static int NextSignalId(Station st)
+    {
+        int max = 0;
+        foreach (var s in AllSignals(st)) max = Math.Max(max, s.Sig.Id);
+        return max + 1;
+    }
+
+    /// <summary>Выдать id светофорам без номера (0) и повторам: по порядку клеток, номера продолжают наибольший.</summary>
+    public static void AssignSignalIds(Station st)
+    {
+        var all = AllSignals(st).OrderBy(s => s.Key, NaturalComparer.Instance).ThenBy(s => s.Idx).ToList();
+        var seen = new HashSet<int>();
+        int next = all.Select(s => s.Sig.Id).DefaultIfEmpty(0).Max() + 1;
+        foreach (var s in all)
+            if (s.Sig.Id <= 0 || !seen.Add(s.Sig.Id)) { s.Sig.Id = next++; seen.Add(s.Sig.Id); }
+    }
+
+    static readonly Regex ReTrackNo = new(@"^((?:[IVX]+)|\d+)([А-ЯA-Z-[С]]?)П$", RegexOptions.Compiled);
+
+    /// <summary>Номер пути из названия участка: «3П» → «3», «IIП» → «II», «2АП» → «2А»; не путь — null.</summary>
+    public static string TrackNo(string sec)
+    {
+        var m = ReTrackNo.Match((sec ?? "").Trim().ToUpperInvariant());
+        return m.Success ? m.Groups[1].Value + m.Groups[2].Value : null;
+    }
+
+    /// <summary>Чётность горловины, где стоит клетка: по ближайшему входному (Н… — нечётная, Ч… — чётная); null — входных нет.</summary>
+    static bool? NeckIsOdd(Station st, string key)
+    {
+        if (key == null) return null;
+        var (x, _) = Parse(key);
+        var e = AllSignals(st).Where(s => s.Sig.Kind == "entry" && !string.IsNullOrEmpty(s.Sig.Name))
+            .OrderBy(s => Math.Abs(Parse(s.Key).X - x)).FirstOrDefault();
+        if (e == null) return null;
+        return e.Sig.Name[0] == 'Н' ? true : e.Sig.Name[0] == 'Ч' ? false : null;
+    }
+
+    /// <summary>Имя для нового светофора. [ИЗМЕНЕНО 09.11.2026] по уроку «Светофорная сигнализация» (caredenis.ru, les03)
+    /// и РУ-30-80 стр. 89–90:
+    ///   входной Н / Ч; выходной — буква направления + номер пути (Н3, ЧII, Н2А); маршрутный — + «М» (ЧМII, НМ5А);
+    ///   маневровый — М + нечётный номер в нечётной горловине (где входной Н…), чётный — в чётной;
+    ///   проходные — нечётные / чётные по направлению; заградительные З1…; прикрытия — буква направления + «П» + номер пути (НП1);
+    ///   предупредительный и повторительный — «П» + имя светофора впереди (ПЧ, ПН5, ПЧМ2А).
+    /// key — клетка светофора (номер пути берётся из её участка), mainAhead — светофор впереди.</summary>
+    public static string SuggestSignalName(Station st, string kind, string dir, string mainAhead = null, string key = null)
     {
         var used = new HashSet<string>(AllSignals(st).Select(s => s.Sig.Name));
         string letter = dir == "R" ? "Ч" : "Н";
-        if (kind == "entry" && !used.Contains(letter)) return letter;
-        if (kind == "warning" && !string.IsNullOrEmpty(mainAhead) && !used.Contains("П" + mainAhead)) return "П" + mainAhead;
-        if (kind == "repeater" && !string.IsNullOrEmpty(mainAhead) && !used.Contains("Пв" + mainAhead)) return "Пв" + mainAhead;
+        string track = key != null && st.Tiles.TryGetValue(key, out var tile) ? TrackNo(tile.Sec) : null;
+        string Try(string name) => !string.IsNullOrEmpty(name) && !used.Contains(name) ? name : null;
+
+        if (kind == "entry" && Try(letter) is string en) return en;
+        if (kind is "warning" or "repeater" && !string.IsNullOrEmpty(mainAhead) && Try("П" + mainAhead) is string pm) return pm;
+        if (track != null)
+        {
+            if (kind == "exit" && Try(letter + track) is string ex) return ex;
+            if (kind == "route" && Try(letter + "М" + track) is string rt) return rt;
+            if (kind == "cover" && Try(letter + "П" + track) is string cv) return cv;
+        }
         string prefix = "";
         int n = 1, step = 1;
         if (kind == "entry" || kind == "exit") prefix = letter;
         else if (kind == "route") prefix = letter + "М";
-        else if (kind == "shunt") { prefix = "М"; n = dir == "R" ? 2 : 1; step = 2; }
+        else if (kind == "shunt")
+        {
+            prefix = "М"; step = 2;
+            bool odd = NeckIsOdd(st, key) ?? dir != "R";    // нет входных — по направлению, как раньше
+            n = odd ? 1 : 2;
+        }
         else if (kind == "block") { n = dir == "R" ? 2 : 1; step = 2; }
-        else if (kind == "warning") prefix = "П";
-        else if (kind == "repeater") prefix = "Пв";
+        else if (kind is "warning" or "repeater") prefix = "П";
         else if (kind == "barrier") prefix = "З";
-        else if (kind == "cover") prefix = "Пр";
+        else if (kind == "cover") prefix = letter + "П";
         else prefix = "С";
         while (used.Contains(prefix + n)) n += step;
         return prefix + n;

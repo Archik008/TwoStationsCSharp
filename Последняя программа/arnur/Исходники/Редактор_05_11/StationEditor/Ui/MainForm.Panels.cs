@@ -563,6 +563,35 @@ public sealed partial class MainForm
                     fc.Enter += (_, _) => { ui.SelSig = new SigRef(k, ii); Draw(); };
                 row.Controls.AddRange(new Control[] { nm, kind, dir, del });
                 f.Controls.Add(row);
+
+                // [ДОБАВЛЕНО 09.11.2026] id для связи станций (автоинкремент, можно поменять) и «только чтение»
+                var row2 = new Panel { Width = w, Height = S(28), Margin = new Padding(0, 0, 0, S(6)), BackColor = row.BackColor };
+                var idl = new Label { Text = "id", AutoSize = false, TextAlign = ContentAlignment.MiddleRight, ForeColor = CHint };
+                idl.SetBounds(S(2), S(3), S(22), S(22));
+                var idn = new NumericUpDown { Minimum = 1, Maximum = 999999, Value = Math.Clamp(s.Id, 1, 999999) };
+                idn.SetBounds(S(26), S(2), S(70), S(24));
+                tips.SetToolTip(idn, "Номер светофора для связи станций: по нему другая программа находит,\n" +
+                                     "какому светофору показать присланное показание. Новые светофоры получают следующий номер сами.");
+                var ro = new CheckBox { Text = "только чтение (с другой станции)", Checked = s.IsReadOnly, AutoSize = true };
+                ro.Location = new Point(S(104), S(4));
+                tips.SetToolTip(ro, "Показание этого светофора задаёт другая станция по сети: здесь он только показывает.\n" +
+                                    "Маршрутов от него нет; в «Испытании» (без связи) он погашен.");
+                idn.ValueChanged += (_, _) =>
+                {
+                    int v = (int)idn.Value;
+                    var other = Core.AllSignals(st).FirstOrDefault(q => q.Sig.Id == v && !(q.Key == k && q.Idx == ii));
+                    Edit(() => { if (SigAt(k, ii) is Signal c) c.Id = v; }, false);
+                    if (other != null) Msg($"id {v} уже у светофора {other.Sig.Name} — другая станция их не различит", true);
+                };
+                ro.CheckedChanged += (_, _) =>
+                {
+                    bool v = ro.Checked;
+                    Edit(() => { if (SigAt(k, ii) is Signal c) c.ReadOnly = v ? true : null; }, false);
+                };
+                foreach (Control fc in new Control[] { idn, ro })
+                    fc.Enter += (_, _) => { ui.SelSig = new SigRef(k, ii); Draw(); };
+                row2.Controls.AddRange(new Control[] { idl, idn, ro });
+                f.Controls.Add(row2);
             }
             if (ui.SelSig is SigRef ss && ss.Key == k && SigAt(k, ss.Idx) is Signal sel)
                 Hint(f, w, $"{Core.SigKindName(sel.Kind)}: {Core.SigKindHint(sel.Kind)}");
