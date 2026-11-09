@@ -118,10 +118,11 @@ public class StationScreenWindow : Form
     {
         if (IsDisposed) return;
         string who = st.Student?.ToString() ?? "студент не вошёл";
-        Text = $"Экран станции — {st.Name} ({who})";
-        lbl.Text = $"{st.Name}: {who}" + (st.Online ? "" : " — НЕТ СВЯЗИ");
+        // [ИЗМЕНЕНО 09.11.2026] через LangUi.SetText — на kk / en подписи не мигают
+        StationApp.Ui.LangUi.SetText(this, $"Экран станции — {st.Name} ({who})");
+        StationApp.Ui.LangUi.SetText(lbl, $"{st.Name}: {who}" + (st.Online ? "" : " — НЕТ СВЯЗИ"));
         bTake.Enabled = st.Online;
-        bTake.Text = st.Take ? "Вернуть управление студенту" : "Забрать управление";
+        StationApp.Ui.LangUi.SetText(bTake, st.Take ? "Вернуть управление студенту" : "Забрать управление");
         bTake.BackColor = st.Take ? Color.FromArgb(255, 170, 160) : Color.FromArgb(240, 240, 255);
         view.InputEnabled = st is { Take: true, Online: true };
         bar.BackColor = view.InputEnabled ? Color.FromArgb(150, 40, 30) : Color.FromArgb(35, 60, 80);

@@ -81,7 +81,8 @@ public class Lesson
     public double IrSec { get; set; } = 180;
     [Category("4. Пульт"), DisplayName("Курбель, замок, заслонка (работник), с"), Description("Сколько монтёр пути выполняет указание")]
     public double CrankSec { get; set; } = 60;
-    [Category("4. Пульт"), DisplayName("Раздельное управление (как «Енисей»)"), Description("Стрелки маршрутом не переводятся: студент ставит их сам, потом задаёт маршрут")]
+    [Category("4. Пульт"), DisplayName("Раздельное управление (как «Енисей»)"), Description("Стрелки маршрутом не переводятся: студент ставит их сам, потом задаёт маршрут"),
+     TypeConverter(typeof(YesNoConverter))]   // [ДОБАВЛЕНО 09.11.2026] «Да / Нет» на языке интерфейса вместо True / False
     public bool SeparateControl { get; set; }
 
     // [ДОБАВЛЕНО 22.10.2026, этап 5] учебное расписание (вкладка «Расписание»), поезда по нему появляются сами
@@ -113,6 +114,7 @@ public class Lesson
     public override string ToString() => $"{Level}. {Name}";
 
     /// <summary>Что уходит на станции.</summary>
+    [Browsable(false)]   // [ДОБАВЛЕНО 09.11.2026] служебное — было видно в списке свойств урока строкой «Misc»
     public object Wire => new { id = Id, name = Name, description = Description, receive = Receive, depart = Depart,
                                 maxCritical = MaxCritical, passScore = PassScore, autoTrains = AutoTrains, everyMin = EveryMin,
                                 minutes = Minutes, startClock = StartClock,

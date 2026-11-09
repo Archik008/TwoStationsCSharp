@@ -50,15 +50,15 @@ public static class UiSettings
         (Journals, "Кнопки «ДУ-46» и «Журналы»", "Журналы и бланки"),
         (Hw, "Порт Arduino и строка датчиков", "Выбор платы макета и что присылают датчики"),
         (Test, "Проверка ламп", "Кнопки «Проверка» и «Лампы по одной»"),
-        (Ai, "ИИ-помощник (окно вопросов)", "Открывается при запуске; отвечает про программу, маршруты и термины, сам подсказывает при отказах"),
+        // [ИЗМЕНЕНО 09.11.2026] галочки «ИИ-помощник» больше нет: окно открывается только кнопкой «ИИ»
     };
 
     static readonly Dictionary<UiMode, HashSet<string>> defaults = new()
     {
         [UiMode.Engineer] = new() { Hint, Sections, Routes, Switches, Panel, Log, Sim, ManualOcc, Journals, Hw, Test },
-        [UiMode.Training] = new() { Hint, Routes, Switches, Panel, Log, Sim, ManualOcc, Journals, Ai },
+        [UiMode.Training] = new() { Hint, Routes, Switches, Panel, Log, Sim, ManualOcc, Journals },
         [UiMode.Work] = new() { Clock, Panel, Journals, Hw },
-        [UiMode.Classic] = new() { Clock, Panel, Classic, ManualOcc, Journals, Ai },
+        [UiMode.Classic] = new() { Clock, Panel, Classic, ManualOcc, Journals },
     };
 
     public static UiMode Mode { get; private set; } = UiMode.Engineer;

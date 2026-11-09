@@ -276,6 +276,30 @@ public static class ScheduleTab
 }
 
 /// <summary>Выбор расписания в свойствах урока: хранится Id, показывается название.</summary>
+/// <summary>[ДОБАВЛЕНО 09.11.2026] Галочка в свойствах урока: «Да / Нет» (на языке интерфейса) вместо True / False.</summary>
+public class YesNoConverter : BooleanConverter
+{
+    static string Yes => StationApp.Core.L.T("Да");
+    static string No => StationApp.Core.L.T("Нет");
+
+    public override object ConvertTo(ITypeDescriptorContext context, CultureInfo culture, object value, Type destinationType)
+    {
+        if (destinationType == typeof(string) && value is bool b) return b ? Yes : No;
+        return base.ConvertTo(context, culture, value, destinationType);
+    }
+
+    public override object ConvertFrom(ITypeDescriptorContext context, CultureInfo culture, object value)
+    {
+        if (value is string s)
+        {
+            s = s.Trim();
+            if (s == Yes || s == "Да") return true;
+            if (s == No || s == "Нет") return false;
+        }
+        return base.ConvertFrom(context, culture, value);
+    }
+}
+
 public class ScheduleRefConverter : StringConverter
 {
     const string None = "(без расписания)";

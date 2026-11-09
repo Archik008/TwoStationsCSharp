@@ -82,7 +82,9 @@ public static class ShuntUi
             var m = new PointF((pts[0].X + pts[^1].X) / 2, (pts[0].Y + pts[^1].Y) / 2);
             string text = L.T($"ПНП «{p.Name}»");
             var size = g.MeasureString(text, font);
-            var r = new RectangleF(m.X - size.Width / 2 - 6, m.Y + 16, size.Width + 12, size.Height + 4);
+            // [ИЗМЕНЕНО 09.11.2026] табличка ПНП — НАД путём (была под ним и наезжала на М10 и соседний путь), лампы — над табличкой
+            // [ИЗМЕНЕНО 09.11.2026, вторая правка] ещё на высоту таблички выше — над тупиковым упором, не касаясь пути и упора
+            var r = new RectangleF(m.X - size.Width / 2 - 6, m.Y - 12 - 2 * (size.Height + 4), size.Width + 12, size.Height + 4);
             using var pen = new Pen(Color.FromArgb(60, 60, 60), 1.5f);
             using var back = new SolidBrush(Color.FromArgb(245, 245, 235));
             using var tb = new SolidBrush(Color.FromArgb(40, 40, 40));

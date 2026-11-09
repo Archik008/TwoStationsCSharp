@@ -270,16 +270,18 @@ public class TeacherForm : Form
     void RefreshSession()
     {
         if (IsDisposed) return;
-        lblConn.Text = DispatchLink.IsConnected ? $"Сервер на связи ({Db.Settings.Server}). Адрес для станций: {Classroom.LocalAddresses()}"
-                                                : $"Нет связи с сервером: {DispatchLink.LastError}";
+        // [ИЗМЕНЕНО 09.11.2026] подписи — через LangUi.SetText (как у станций): раньше на kk / en они раз в 0,5 с
+        // ставились русскими и тут же переводились обратно — мигали, и раскрытый список языков закрывался
+        StationApp.Ui.LangUi.SetText(lblConn, DispatchLink.IsConnected ? $"Сервер на связи ({Db.Settings.Server}). Адрес для станций: {Classroom.LocalAddresses()}"
+                                                : $"Нет связи с сервером: {DispatchLink.LastError}");
         lblConn.ForeColor = DispatchLink.IsConnected ? Color.DarkGreen : Color.DarkRed;
 
         bool active = Classroom.Active;
         btnRun.Enabled = active && !Classroom.Running;
         btnPause.Enabled = active && Classroom.Running;
         btnFinish.Enabled = active;
-        btnBegin.Text = active ? "Начать заново" : "Начать урок";
-        lblClock.Text = active ? $"{Reports.Clock(Classroom.Clock)}:{(int)Classroom.Clock % 60:00}  {(Classroom.Running ? "×" + Classroom.Speed : "пауза")}" : "";
+        StationApp.Ui.LangUi.SetText(btnBegin, active ? "Начать заново" : "Начать урок");
+        StationApp.Ui.LangUi.SetText(lblClock, active ? $"{Reports.Clock(Classroom.Clock)}:{(int)Classroom.Clock % 60:00}  {(Classroom.Running ? "×" + Classroom.Speed : "пауза")}" : "");
         lblClock.ForeColor = Classroom.Running ? Color.DarkGreen : Color.DarkOrange;
 
         var sel = SelectedStation()?.Id;
@@ -303,13 +305,13 @@ public class TeacherForm : Form
 
         var st = SelectedStation();
         btnTake.Enabled = st is { Online: true };
-        btnTake.Text = st is { Take: true } ? "Вернуть управление студенту" : "Забрать управление";
+        StationApp.Ui.LangUi.SetText(btnTake, st is { Take: true } ? "Вернуть управление студенту" : "Забрать управление");
         btnAssign.Enabled = st != null;
         btnBig.Enabled = st is { Online: true };
         screen.InputEnabled = st is { Take: true, Online: true };
-        lblScreen.Text = st == null ? "Экран станции" :
+        StationApp.Ui.LangUi.SetText(lblScreen, st == null ? "Экран станции" :
             $"Экран: {st.Name} — {(st.Online ? (st.Take ? "управляете вы (мышь и клавиатура над картинкой)" : "только просмотр") : "нет связи")}" +
-            (st.Online ? "   ·   двойной клик по таблице — экран на весь экран" : "");
+            (st.Online ? "   ·   двойной клик по таблице — экран на весь экран" : ""));
         lblScreen.ForeColor = screen.InputEnabled ? Color.OrangeRed : Color.Black;
     }
 

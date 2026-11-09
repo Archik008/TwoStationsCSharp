@@ -35,7 +35,6 @@ class MainForm : Form
     // [ДОБАВЛЕНО 28.10.2026] ЖИ-помощник (папка Ai): окно вопросов, кнопка «ЖИ» вверху
     readonly Button btnAi;
     Ai.AiChatWindow aiWindow;
-    bool aiShownByMode;
     readonly Panel topBar;
     SchemePalette shownPalette = SchemePalette.Current;
     readonly ToolTip tips = new();
@@ -177,7 +176,7 @@ class MainForm : Form
     {
         if (IsDisposed) return;
         var d = ModelHost.Dispatch;
-        if (lblServer.Text != d.StatusText) lblServer.Text = d.StatusText;
+        LangUi.SetText(lblServer, d.StatusText);   // [ИЗМЕНЕНО 09.11.2026] не мигать на kk / en
         var c = d.StatusLevel switch { 2 => Color.FromArgb(0, 140, 60), 1 => Color.Red, _ => Color.Gray };
         if (lblServer.ForeColor != c) lblServer.ForeColor = c;
     }
@@ -317,9 +316,7 @@ class MainForm : Form
         // депо — проектный вариант схемы: переключается в инженерном режиме (или чтобы скрыть уже показанное)
         btnDepot.Visible = mode == UiMode.Engineer || ModelHost.Model.Akzht.Depot;
         btnParams.Text = $"Параметры: {UiSettings.ModeName(mode)}";
-        // ЖИ-помощник: в режимах, где включена его панель, окно открывается само
-        if (UiSettings.Show(UiSettings.Ai) && !aiShownByMode) { aiShownByMode = true; BeginInvoke(new Action(() => ShowAi(true))); }
-        else if (!UiSettings.Show(UiSettings.Ai) && aiShownByMode) { aiShownByMode = false; aiWindow?.Hide(); }
+        // [ИЗМЕНЕНО 09.11.2026] окно ИИ-помощника само не открывается ни в одном режиме — только кнопкой «ИИ»
         RefreshTop();
         Invalidate(true);
     }
@@ -395,9 +392,10 @@ class MainForm : Form
     void RefreshTop()
     {
         string s = akzht.Simple ? "Выключить упрощённый" : "Включить упрощённый";
-        if (btnSimple.Text != s) btnSimple.Text = s;
+        // [ИЗМЕНЕНО 09.11.2026] LangUi.SetText: на kk / en подпись больше не мигает и не сдвигает полосу (закрывался список языков)
+        LangUi.SetText(btnSimple, s);
         string sens = ModelHost.SensorStatusText;
-        if (lblSensors.Text != sens) lblSensors.Text = sens;
+        LangUi.SetText(lblSensors, sens);
         RefreshServer();     // «направление не совпадает» зависит и от нашего направления
     }
 
