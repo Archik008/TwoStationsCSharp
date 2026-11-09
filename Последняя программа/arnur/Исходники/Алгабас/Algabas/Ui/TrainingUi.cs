@@ -79,19 +79,20 @@ public class TrainingBar : FlowLayoutPanel
 
         if (Training.TeacherControl)
         {
-            lblLesson.Text = "УПРАВЛЕНИЕ У ПРЕПОДАВАТЕЛЯ";
+            // [ИЗМЕНЕНО 09.11.2026] подписи полосы — через LangUi.SetText: на kk / en не мигают при каждом обновлении
+            LangUi.SetText(lblLesson, "УПРАВЛЕНИЕ У ПРЕПОДАВАТЕЛЯ");
             lblLesson.ForeColor = Color.FromArgb(255, 120, 120);
         }
         else
         {
-            lblLesson.Text = Training.Active ? $"Урок: {Training.Lesson?.Name}" : "Преподаватель на связи";
+            LangUi.SetText(lblLesson, Training.Active ? $"Урок: {Training.Lesson?.Name}" : "Преподаватель на связи");
             lblLesson.ForeColor = Color.White;
         }
-        lblStudent.Text = "Студент: " + (Training.Student?.ToString() ?? "—");
-        btnLogin.Text = Training.Student == null ? "Вход" : "Сменить";
+        LangUi.SetText(lblStudent, "Студент: " + (Training.Student?.ToString() ?? "—"));
+        LangUi.SetText(btnLogin, Training.Student == null ? "Вход" : "Сменить");
         lblClock.Visible = btnTask.Visible = Training.Active;
         btnSched.Visible = Training.Active && Schedule.Data != null;   // [ДОБАВЛЕНО 22.10.2026, этап 5]
-        lblClock.Text = Training.Running ? $"{Training.ClockText}  ×{Training.Speed}" : $"{Training.ClockText}  ПАУЗА";
+        LangUi.SetText(lblClock, Training.Running ? $"{Training.ClockText}  ×{Training.Speed}" : $"{Training.ClockText}  ПАУЗА");
         lblClock.ForeColor = Training.Running ? Color.FromArgb(160, 255, 160) : Color.FromArgb(255, 210, 90);
     }
 }

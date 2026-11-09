@@ -43,7 +43,6 @@ class StationForm : Form
     // [ДОБАВЛЕНО 06.11.2026] ИИ-помощник (папка Ai, как у АКЖТ): окно вопросов, кнопка «ИИ» вверху
     readonly Button btnAi;
     Ai.AiChatWindow aiWindow;
-    bool aiShownByMode;
     readonly FlowLayoutPanel topRight;
     readonly ToolTip tips = new();
     SchemePalette shownPalette = SchemePalette.Current;
@@ -183,9 +182,7 @@ class StationForm : Form
         btnDu46.Visible = btnJournals.Visible = UiSettings.Show(UiSettings.Journals);
         btnTest.Visible = UiSettings.Show(UiSettings.Test);
         btnParams.Text = $"Параметры: {UiSettings.ModeName(mode)}";
-        // [ДОБАВЛЕНО 06.11.2026] ИИ-помощник: в режимах, где включена его панель, окно открывается само
-        if (UiSettings.Show(UiSettings.Ai) && !aiShownByMode) { aiShownByMode = true; BeginInvoke(new Action(() => ShowAi(true))); }
-        else if (!UiSettings.Show(UiSettings.Ai) && aiShownByMode) { aiShownByMode = false; aiWindow?.Hide(); }
+        // [ИЗМЕНЕНО 09.11.2026] окно ИИ-помощника само не открывается ни в одном режиме — только кнопкой «ИИ»
         RefreshTop();
         Invalidate(true);
     }
@@ -224,7 +221,7 @@ class StationForm : Form
         RefreshServer();     // «направление не совпадает» зависит и от нашего направления
     }
 
-    static void SetText(Control c, string t) { if (c.Text != t) c.Text = t; }
+    static void SetText(Control c, string t) => LangUi.SetText(c, t);   // [ИЗМЕНЕНО 09.11.2026] не мигать на kk / en
 
     // =================================================================
     //  КНОПКИ ВЕРХНЕЙ ПАНЕЛИ

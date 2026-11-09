@@ -180,7 +180,10 @@ class StationPane : UserControl
         bool strip = mode is UiMode.Work or UiMode.Classic;          // пульт ДСП — полосой над схемой
         bool logCol = showLog && Show(UiSettings.Log);
         bool classicOn = Show(UiSettings.Classic);
-        bool modeBar = !Show(UiSettings.Routes) && !classicOn;      // ПОЕЗДНЫЕ / МАНЕВРОВЫЕ под схемой
+        // ПОЕЗДНЫЕ / МАНЕВРОВЫЕ под схемой. [ИЗМЕНЕНО 09.11.2026] В рабочем режиме кнопок нет: вид маршрута выбирается
+        // по клику сам (shuntMode = false → Find берёт поездной, а если его между этими светофорами нет — маневровый;
+        // маневровый там, где есть оба, — правой кнопкой по светофору).
+        bool modeBar = mode != UiMode.Work && !Show(UiSettings.Routes) && !classicOn;
         bool msgLine = showLog && !logCol;                          // журнал скрыт — одна строка сообщения
 
         root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 0, BackColor = Bg };
@@ -220,7 +223,11 @@ class StationPane : UserControl
             UpdateClock();
         }
         top.Controls.Add(headerButtons, 2, 0);
-        AddRow(top, new RowStyle(SizeType.Absolute, clock ? 48 : 40));
+        // [ИЗМЕНЕНО 09.11.2026] в рабочем режиме сверху — кнопки пульта ДСП и пригласительных,
+        // а строка «название станции, время, Отмена набора, Отменить маршрут» — под ними, над схемой
+        var topStyle = new RowStyle(SizeType.Absolute, clock ? 48 : 40);
+        bool panelFirst = mode == UiMode.Work && strip && Show(UiSettings.Panel);
+        if (!panelFirst) AddRow(top, topStyle);
 
         // ---------- пульт ДСП полосой (рабочий и павлодарский режимы) ----------
         FlowLayoutPanel panelCol = null;
@@ -236,6 +243,7 @@ class StationPane : UserControl
                 // в полосе ряды кнопок идут друг за другом, без переноса строк
                 panelRefresh = PanelUi.Build(panelCol, View, this, tips, FlatButton, c => { c.Margin = new Padding(c.Margin.Left, 2, 10, 2); return c; }, StripTitle);
                 AddRow(panelCol, new RowStyle(SizeType.AutoSize));
+                if (panelFirst) AddRow(top, topStyle);
             }
             else panelRefresh = PanelUi.Build(panelCol, View, this, tips, FlatButton, Breaker, SmallTitle);
         }
@@ -431,6 +439,7 @@ class StationPane : UserControl
         // 4) имитация
         if (simOn) bottom.Controls.Add(BuildSim(), col++, 0);
 
+        if (mode == UiMode.Work) shuntMode = false;   // [ДОБАВЛЕНО 09.11.2026] рабочий режим — вид маршрута по клику
         SetMode(shuntMode);
     }
 
@@ -687,7 +696,7 @@ class StationPane : UserControl
             else if (IL.CanOpen(r)) { state = "  — открыт"; c = r.Shunting ? RouteShuntOpen : RouteOpen; }
             else { state = "  — задан, светофор закрыт"; c = RouteSet; }
             string text = r.Name + state;
-            if (b.Text != text) b.Text = text;
+            SetText(b, text);   // [ИЗМЕНЕНО 09.11.2026] через LangUi.SetText — не мигать на kk / en
             if (b.BackColor != c) b.BackColor = c;
             bool vis = r.Shunting == shuntMode || r.Active;
             if (b.Visible != vis) b.Visible = vis;
@@ -740,7 +749,7 @@ class StationPane : UserControl
     }
 
     // менять свойства только если они реально изменились — меньше мерцания и перерасчёта раскладки
-    static void SetText(Control c, string t) { if (c.Text != t) c.Text = t; }
+    static void SetText(Control c, string t) => LangUi.SetText(c, t);   // [ИЗМЕНЕНО 09.11.2026] не мигать на kk / en
     static void SetBack(Control c, Color col) { if (c.BackColor != col) c.BackColor = col; }
     // =================================================================
     //  ЖУРНАЛ (общий для обоих окон)

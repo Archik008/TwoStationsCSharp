@@ -173,6 +173,9 @@ public static class PanelUi
                 lLoco.BackColor = p.Loco == null ? Off : p.Working ? Color.FromArgb(60, 110, 255) : Color.White;
                 lLoco.ForeColor = p.Working ? Color.White : Dark;
                 lReady.BackColor = p.HasReady ? Color.FromArgb(255, 210, 0) : Off;
+                // [ДОБАВЛЕНО 09.11.2026] при смене режима SchemePalette.Recolor перекрашивал тёмный текст лампы (он равен Title
+                // стандартной палитры) в светлый — на жёлтой «Уборке» в рабочем режиме букв было не видно
+                if (lReady.ForeColor != Dark) lReady.ForeColor = Dark;
             });
         }
 
@@ -213,7 +216,7 @@ public static class PanelUi
 
     static void Paint(Control c, string text, bool on)
     {
-        if (c.Text != text) c.Text = text;
+        LangUi.SetText(c, text);   // [ИЗМЕНЕНО 09.11.2026] на kk / en кнопки пульта не мигают
         var bc = on ? RedOn : Off;
         if (c.BackColor != bc) c.BackColor = bc;
         var fc = on ? Color.White : Dark;

@@ -100,12 +100,23 @@ class RailSchemePanel : Panel
         if (group == null || group.Count < 2 || !group.Contains(this)) group = new List<RailSchemePanel> { this };
         float designH = group.Max(p => p.G.DesignH);
 
-        float usableH = Height - 30;
-        scale = group.Min(p => Math.Min(p.Width / p.G.DesignW, (p.Height - 30) / designH));
+        // [ИЗМЕНЕНО 09.11.2026] Раньше каждая схема центрировалась по высоте СВОЕЙ панели. В рабочем режиме полоса
+        // пульта у поста на ряд выше, чем у АКЖТ, панель поста начинается ниже — и пути I и II на стыке расходились.
+        // Теперь вся группа центрируется по общей полосе экрана (от нижнего из верхних краёв до верхнего из нижних).
+        float bandTop = 0, bandH = Height;
+        if (group.Count > 1)
+        {
+            int myTop = PointToScreen(Point.Empty).Y;
+            int top = group.Max(p => p.PointToScreen(Point.Empty).Y);
+            int bottom = group.Min(p => p.PointToScreen(Point.Empty).Y + p.Height);
+            if (bottom - top > 60) { bandTop = top - myTop; bandH = bottom - top; }
+        }
+        float usableH = bandH - 30;
+        scale = group.Min(p => Math.Min(p.Width / p.G.DesignW, usableH / designH));
         if (scale <= 0) scale = 1;
         float freeW = Width - G.DesignW * scale;
         float offX = HAlign switch { StringAlignment.Near => 0, StringAlignment.Far => freeW, _ => freeW / 2f };
-        off = new PointF(offX, (usableH - designH * scale) / 2f);
+        off = new PointF(offX, bandTop + (usableH - designH * scale) / 2f);
     }
 
     protected override void OnResize(EventArgs e)
@@ -114,6 +125,16 @@ class RailSchemePanel : Panel
         if (LevelGroup == null) return;
         foreach (var p in LevelGroup)
             if (p != this) p.Invalidate();      // масштаб соседа зависит и от нашего размера
+    }
+
+    /// <summary>[ДОБАВЛЕНО 09.11.2026] Панель сдвинулась (поменялась высота полосы над ней) — общая полоса группы другая.</summary>
+    protected override void OnLocationChanged(EventArgs e)
+    {
+        base.OnLocationChanged(e);
+        Invalidate();
+        if (LevelGroup == null) return;
+        foreach (var p in LevelGroup)
+            if (p != this) p.Invalidate();
     }
 
     PointF ToDesign(Point p) => new((p.X - off.X) / scale, (p.Y - off.Y) / scale);
@@ -180,10 +201,13 @@ class RailSchemePanel : Panel
 
     void BoundarySign(Graphics g, float x, float y)
     {
-        using var p = new Pen(TextDark, 1.5f);
+        // [ИЗМЕНЕНО 09.11.2026] табличка всегда белая — текст и рамка всегда тёмные: в рабочем режиме цвет текста
+        // схемы светлый (TextDark почти белый), и надпись на белом не была видна
+        var ink = Color.FromArgb(25, 30, 30);
+        using var p = new Pen(ink, 1.5f);
         using var b = new SolidBrush(Color.White);
-        using var t = new SolidBrush(TextDark);
-        var r = new RectangleF(x - 36, y, 72, 22);
+        using var t = new SolidBrush(ink);
+        var r = new RectangleF(x - 36, y, 72, 25);   // [ИЗМЕНЕНО 09.11.2026] было 22 — верх двух строк обрезался
         g.FillRectangle(b, r);
         g.DrawRectangle(p, r.X, r.Y, r.Width, r.Height);
         g.DrawString(L.T("граница станции"), fTiny, t, r, center);
@@ -706,7 +730,9 @@ class RailSchemePanel : Panel
             }
             selected = s;
             bool shunt = ShuntMode();
-            var ends = IL.Routes.Where(r => r.Start == s && r.Shunting == shunt).Select(r => r.Name).ToList();
+            // [ИЗМЕНЕНО 09.11.2026] в рабочем режиме кнопок ПОЕЗДНЫЕ / МАНЕВРОВЫЕ нет — показываем маршруты обоих видов
+            bool any = UiSettings.Mode == UiMode.Work;
+            var ends = IL.Routes.Where(r => r.Start == s && (any || r.Shunting == shunt)).Select(r => r.Name).ToList();
             if (ends.Count == 0) ends = IL.Routes.Where(r => r.Start == s).Select(r => r.Name).ToList();
             IL.Say($"Выбран {s.Label}. Кликните светофор конца или путь назначения. Возможные маршруты: {string.Join("; ", ends)}");
             Invalidate();

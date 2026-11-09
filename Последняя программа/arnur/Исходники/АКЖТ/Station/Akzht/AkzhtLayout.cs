@@ -661,7 +661,7 @@ public class AkzhtLayout
         g.Text("1", 1150, Y1 - 34, 16f, true, true);
         g.Text("2", 1050, Y2 - 34, 16f, true, true);
         g.Text("4", 1050, Y4 - 34, 16f, true, true);
-        g.Text("6", 590, Y3 - 34, 14f, true, true);
+        g.Text("6", 548, Y3 - 12, 14f, true, true);   // [ИЗМЕНЕНО 09.11.2026] было (590, Y3-34) — закрывала поднятая табличка ПНП «Стройкомплект»; теперь слева от упора
         g.Text("к путевому посту →", 2590, Y2 + 70, 9.5f, true, align: StringAlignment.Far);
         g.Text("← от путевого поста", 2590, Y1 - 78, 9.5f, true, align: StringAlignment.Far);
         g.Boundaries.Add(new PointF(1990, Y2 + 36));
