@@ -35,7 +35,7 @@ public sealed class AiKnowledge
 
     public AiKnowledge()
     {
-        KnowledgePath = Path.Combine(AppContext.BaseDirectory, "Knowledge");
+        KnowledgePath = AiProfile.KnowledgeFolder;   // [ИЗМЕНЕНО 10.11.2026] у «Станции по схеме» — своя папка на каждую станцию
         try { Directory.CreateDirectory(KnowledgePath); } catch { }
         Ensure(AiDefaults.HelpFile, AiDefaults.Help, AiDefaults.HelpVersion);
         Ensure(AiDefaults.GlossaryFile, AiDefaults.Glossary, AiDefaults.GlossaryVersion);

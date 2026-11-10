@@ -99,6 +99,7 @@ public sealed partial class MainForm : Form
         };
         top.Items.Add(cbExample);
         Btn("Экспорт в C#", "Черновик C#-кода схемы для программы станции", ExportCmd);
+        Btn("Нумерация", "Перенумеровать пути и стрелки по правилам (ВСН 56-78, РУ-30-80)", RenumberCmd);   // [ДОБАВЛЕНО 11.11.2026]
         top.Items.Add(new ToolStripSeparator());
         bUndo = Btn("↶", "Отменить (Ctrl+Z)", Undo);
         bRedo = Btn("↷", "Вернуть (Ctrl+Y)", Redo);
