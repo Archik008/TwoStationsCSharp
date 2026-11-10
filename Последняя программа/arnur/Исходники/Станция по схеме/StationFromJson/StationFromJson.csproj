@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- [ДОБАВЛЕНО 10.11.2026] «Станция по схеме»: пульт ДСП любой станции из файла .station.json.
+       Ядро, окно, пульт, журналы, ИИ-помощник — ОБЩИЕ файлы Алгабаса (подключены ссылками, не копиями):
+       правка там сразу попадает и сюда. Чтение схемы — файлы модели Редактора_05_11 (тоже ссылками).
+       Свои файлы: Scheme\JsonLayout.cs, Model\*, Ui\SchemeStationForm.cs, Ai\AiProfile.cs, Program.cs. -->
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <AssemblyName>StationFromJson</AssemblyName>
+    <RootNamespace>StationApp</RootNamespace>
+    <ApplicationHighDpiMode>SystemAware</ApplicationHighDpiMode>
+    <ForceDesignerDpiUnaware>true</ForceDesignerDpiUnaware>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.IO.Ports" Version="8.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- общие файлы станций (как у Алгабаса) -->
+    <Compile Include="..\..\Алгабас\Algabas\Core\*.cs" Link="Shared\Core\%(Filename)%(Extension)" />
+    <Compile Include="..\..\Алгабас\Algabas\Ui\*.cs" Link="Shared\Ui\%(Filename)%(Extension)" />
+    <Compile Include="..\..\Алгабас\Algabas\Ai\*.cs" Exclude="..\..\Алгабас\Algabas\Ai\AiProfile.cs" Link="Shared\Ai\%(Filename)%(Extension)" />
+    <!-- чтение схемы: формат и автопоиск маршрутов редактора станций -->
+    <Compile Include="..\..\Редактор_05_11\StationEditor\Model\*.cs" Link="Editor\%(Filename)%(Extension)" />
+    <!-- словари перевода интерфейса — те же, что у Алгабаса -->
+    <EmbeddedResource Include="..\..\Алгабас\Algabas\Lang\Strings.kk.json" Link="Lang\Strings.kk.json" LogicalName="Strings.kk.json" WithCulture="false" />
+    <EmbeddedResource Include="..\..\Алгабас\Algabas\Lang\Strings.en.json" Link="Lang\Strings.en.json" LogicalName="Strings.en.json" WithCulture="false" />
+  </ItemGroup>
+
+</Project>

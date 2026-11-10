@@ -93,7 +93,7 @@ public sealed partial class MainForm
 
     Tile MakeTile(string type, int v, Tile old)
     {
-        var t = new Tile { T = type, V = v, Sec = old != null ? old.Sec : ui.BrushSec };
+        var t = new Tile { T = type, V = v, Sec = old != null ? old.Sec : ui.BrushSec == AutoPath ? "" : ui.BrushSec };   // [ИЗМЕНЕНО 11.11.2026] «путь по правилам» — только у кисти
         if (old?.Sigs != null) t.Sigs = old.Sigs;
         if (type == "switch")
         {
@@ -109,6 +109,9 @@ public sealed partial class MainForm
         var k = Core.Key(x, y);
         st.Tiles.TryGetValue(k, out var old);
         st.Tiles[k] = MakeTile(ui.PlaceType, v ?? CurVariant, old);
+        // [ДОБАВЛЕНО 11.11.2026] новая стрелка — сразу номер по правилам (чётные со стороны прибытия чётных поездов)
+        if (st.AutoNumbers && ui.PlaceType == "switch" && old?.T != "switch")
+            st.Tiles[k].Name = Numbering.NextSwitchNumber(st, k);
     }
 
     void EraseAt(int x, int y)
@@ -243,7 +246,33 @@ public sealed partial class MainForm
 
     void PaintAt(int x, int y)
     {
-        if (st.Tiles.TryGetValue(Core.Key(x, y), out var t)) t.Sec = ui.BrushSec;
+        if (st.Tiles.TryGetValue(Core.Key(x, y), out var t)) t.Sec = autoPathTemp ?? ui.BrushSec;
+    }
+
+    // [ДОБАВЛЕНО 11.11.2026] кисть «+ путь (номер по правилам)»: мазок рисует новый путь под временным именем,
+    // а когда кнопку мыши отпустили — путь получает номер по правилам (IП, 3П, 4П…) в зависимости от того, где лежит
+    public const string AutoPath = "__autopath";
+    string autoPathTemp;
+
+    void StartAutoPath()
+    {
+        if (ui.BrushSec != AutoPath) return;
+        int i = 1;
+        while (st.Sections.ContainsKey("~путь" + i) || st.Tiles.Values.Any(t => t.Sec == "~путь" + i)) i++;
+        autoPathTemp = "~путь" + i;
+        st.Sections[autoPathTemp] = new SectionInfo { Type = "path" };
+    }
+
+    void FinishAutoPath()
+    {
+        if (autoPathTemp == null) return;
+        var temp = autoPathTemp;
+        autoPathTemp = null;
+        if (!st.Tiles.Values.Any(t => t.Sec == temp)) { st.Sections.Remove(temp); return; }
+        var name = Numbering.NameNewPath(st, temp);
+        if (name == null) { Msg("Номер пути не подобрался — участок назван " + temp + ", переименуйте его", true); return; }
+        Numbering.RenameSections(st, new Dictionary<string, string> { [temp] = name });
+        Msg($"Путь {name} — номер по правилам (чётные со стороны чётного главного пути)");
     }
 
     /// <summary>Клетки на отрезке (для протягивания мышью без пропусков).</summary>
@@ -520,6 +549,7 @@ public sealed partial class MainForm
                 if (string.IsNullOrEmpty(ui.BrushSec) &&
                     !Confirm("Участок не выбран — кисть будет СНИМАТЬ участок с клеток. Продолжить?")) return;
                 Begin();
+                StartAutoPath();
                 PaintAt(gx, gy);
                 drag = new Drag { Kind = "brush", Last = p };
                 break;
@@ -631,6 +661,7 @@ public sealed partial class MainForm
         }
         else if (d.Kind != "pan")
         {
+            if (d.Kind == "brush") FinishAutoPath();
             End();
             RefreshPanels();
         }

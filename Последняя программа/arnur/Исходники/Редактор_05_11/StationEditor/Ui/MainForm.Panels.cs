@@ -193,12 +193,13 @@ public sealed partial class MainForm
         return cb;
     }
 
-    IEnumerable<Opt> SecOptions(bool withNew, bool keep = false)
+    IEnumerable<Opt> SecOptions(bool withNew, bool keep = false, bool autoPath = false)
     {
         if (keep) yield return new Opt { V = "__keep", T = "— не менять —" };
         yield return new Opt { V = "", T = "— без участка —" };
         foreach (var n in Core.SectionNames(st)) yield return new Opt { V = n, T = n };
         if (withNew) yield return new Opt { V = "__new", T = "+ новый участок…" };
+        if (autoPath) yield return new Opt { V = AutoPath, T = "+ путь (номер по правилам)" };   // [ДОБАВЛЕНО 11.11.2026] только у кисти
     }
 
     static string OptV(ComboBox cb) => (cb.SelectedItem as Opt)?.V;
@@ -398,7 +399,7 @@ public sealed partial class MainForm
         else if (ui.Tool == "brush")
         {
             Hint(optsPanel, w, "Участок:").Margin = new Padding(0, 0, 0, S(2));
-            var cb = AddTo(optsPanel, Combo(SecOptions(true), ui.BrushSec));
+            var cb = AddTo(optsPanel, Combo(SecOptions(true, autoPath: true), ui.BrushSec));
             cb.Width = w;
             OnSecChosen(cb, v => { ui.BrushSec = v; UpdateGhost(); RefreshToolOpts(); });
             Hint(optsPanel, w, hints["brush"]).Margin = new Padding(0, S(6), 0, 0);
@@ -516,6 +517,7 @@ public sealed partial class MainForm
                        "5. «Сохранить» (Ctrl+S) — схема записывается в файл .station.json.\n" +
                        "6. «Экспорт в C#» — черновик кода схемы для программы станции.");
             AddButton(f, "Открыть пример «Алгабас»", () => LoadExample("algabas"));
+            RenderNumberingProps(f, w);   // [ДОБАВЛЕНО 11.11.2026]
             H4(f, w, "Файл");
             Hint(f, w, currentFile ?? "ещё не сохранён — нажмите «Сохранить» (по умолчанию — папка «Станции» рядом с программой)");
             return;
@@ -1064,5 +1066,40 @@ public sealed partial class MainForm
             f.Controls.Add(l);
         }
         if (N("err") == 0 && N("warn") == 0 && probs.Count > 0) Hint(f, w, "Замечаний нет.", CAccent);
+    }
+
+    // =================================================================
+    //  [ДОБАВЛЕНО 11.11.2026] НУМЕРАЦИЯ ПО ПРАВИЛАМ (Model/Numbering.cs: ВСН 56-78 прил. 2, РУ-30-80 листы 89–90)
+    // =================================================================
+    void RenderNumberingProps(Control f, int w)
+    {
+        H4(f, w, "Нумерация (ВСН 56-78)");
+        var cbEven = Row(f, w, "Чётные поезда", Combo(new[]
+        {
+            new Opt { V = "R", T = "идут вправо →" }, new Opt { V = "L", T = "идут влево ←" },
+        }, st.Even == "L" ? "L" : "R"));
+        cbEven.SelectedIndexChanged += (_, _) => { var v = OptV(cbEven); if (v != null && v != st.Even) Edit(() => st.Even = v); };
+        var cbMode = Row(f, w, "Боковые пути", Combo(new[]
+        {
+            new Opt { V = "parity", T = "по чётности (чётные — со стороны чётного главного)" },
+            new Opt { V = "row", T = "подряд от вокзала (малая станция)" },
+        }, st.Numbering == "row" ? "row" : "parity"));
+        cbMode.SelectedIndexChanged += (_, _) => { var v = OptV(cbMode); if (v != null && v != st.Numbering) Edit(() => st.Numbering = v); };
+        var cbAuto = new CheckBox { Text = "Номера при рисовании", Checked = st.AutoNumbers, AutoSize = true, MaximumSize = new Size(w, 0), Margin = new Padding(0, S(4), 0, S(4)) };
+        cbAuto.CheckedChanged += (_, _) => Edit(() => st.AutoNumbers = cbAuto.Checked, false);
+        f.Controls.Add(cbAuto);
+        bool evenLeft = Numbering.EvenRight(st);
+        Hint(f, w, $"Ось станции: {Numbering.AxisSource(st)}. Стрелки {(evenLeft ? "слева" : "справа")} от оси — чётные (2, 4…), " +
+                   $"{(evenLeft ? "справа" : "слева")} — нечётные (1, 3…), от входа к оси. Главные пути: I — нечётный, II — чётный. " +
+                   "Ось задаёт объект «Вокзал» (клавиша 9).");
+        AddButton(f, "Перенумеровать всё по правилам", RenumberCmd);
+    }
+
+    void RenumberCmd()
+    {
+        if (ui.IsTest) { Msg("Нумерация меняется в режиме «Редактор»", true); return; }
+        Numbering.Report rep = null;
+        Edit(() => rep = Numbering.RenumberAll(st));
+        Msg("Перенумеровано по правилам — " + rep + ". Отменить — Ctrl+Z");
     }
 }

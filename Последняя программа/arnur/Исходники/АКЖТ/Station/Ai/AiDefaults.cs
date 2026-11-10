@@ -11,10 +11,12 @@ namespace StationApp.Ai;
 static class AiDefaults
 {
     public const string HelpFile = "Справка_по_интерфейсу.txt";
-    public const string HelpVersion = "# версия справки: 3.4 (" + AiProfile.Station + ", 06.11.2026)";
+    // [ИЗМЕНЕНО 10.11.2026] не const, а свойства: у программы «Станция по схеме» название станции известно только
+    // после чтения JSON (у АКЖТ и Алгабаса AiProfile по-прежнему константы — для них ничего не меняется)
+    public static string HelpVersion => "# версия справки: 3.4 (" + AiProfile.Station + ", 06.11.2026)";
 
     // [ИЗМЕНЕНО 06.11.2026] строки, свои у АКЖТ и Алгабаса (Arduino, связь, переезд, «Вид»…), — в AiProfile.HelpLines
-    public const string Help = HelpVersion + @"
+    public static string Help => HelpVersion + @"
 # Справка ИИ-помощника (ЖИ-көмекші) по программе станции " + AiProfile.Station + @" (новый интерфейс: режимы, «Параметры», пульт ДСП).
 # Формат строки:  слова (синонимы, через запятую) | ответ по-русски | жауап қазақша
 # Правьте, добавляйте строки — перезапуск не нужен (файл перечитывается при изменении). Кодировка UTF-8.

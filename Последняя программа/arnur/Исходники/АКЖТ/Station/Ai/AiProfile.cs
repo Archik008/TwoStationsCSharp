@@ -10,6 +10,9 @@
 public static class AiProfile
 {
     public const string Station = "АКЖТ";
+    /// <summary>[ДОБАВЛЕНО 10.11.2026] Папка базы знаний (справка, глоссарий, подсказки) — рядом с программой.</summary>
+    public static string KnowledgeFolder => Path.Combine(AppContext.BaseDirectory, "Knowledge");
+
     /// <summary>Пример вопроса про маршрут с названиями (окно помощника, подсказки).</summary>
     public const string RouteExampleRu = "маршрут Н на путь 3";
     public const string RouteExampleKk = "Н-нан 3 жолға маршрут";

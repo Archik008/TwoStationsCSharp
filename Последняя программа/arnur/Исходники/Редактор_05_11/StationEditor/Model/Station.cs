@@ -63,6 +63,15 @@ public sealed class NamingSettings
     /// <summary>Тип участка (path, plain, line, dead, switch) → вид нового светофора; "auto-line" — входной перед станцией,
     /// иначе проходной; "" — тот, что выбран в панели.</summary>
     [JsonPropertyName("kindBySec")] public Dictionary<string, string> KindBySec { get; set; }
+
+    // ---- [ДОБАВЛЕНО 11.11.2026] нумерация по правилам (Model/Numbering.cs; ВСН 56-78 прил. 2, РУ-30-80 листы 89–90) ----
+    /// <summary>Куда идут чётные поезда: "R" — вправо (→, как было в редакторе всегда), "L" — влево (←).</summary>
+    [JsonPropertyName("even")] public string Even { get; set; } = "R";
+    /// <summary>Боковые приёмо-отправочные пути: "parity" — чётные со стороны чётного главного, нечётные — со стороны нечётного;
+    /// "row" — подряд от пассажирского здания в сторону поля (малые станции, где пути принимают поезда обоих направлений).</summary>
+    [JsonPropertyName("numbering")] public string Numbering { get; set; } = "parity";
+    /// <summary>Номера новым путям, стрелкам и светофорам — сами при рисовании.</summary>
+    [JsonPropertyName("autoNumbers")] public bool AutoNumbers { get; set; } = true;
 }
 
 /// <summary>[ДОБАВЛЕНО 05.11.2026] Объект на схеме размером W×H клеток (не путь): амперметр, вокзал, часовая башня.</summary>

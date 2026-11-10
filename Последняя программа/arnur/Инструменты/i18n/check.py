@@ -14,7 +14,8 @@ import json, os, re, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.normpath(os.path.join(HERE, '..', '..'))
-SRC = [os.path.join(ROOT, p) for p in ('Исходники/АКЖТ/Station', 'Исходники/Алгабас/Algabas', 'Исходники/Преподаватель')]
+SRC = [os.path.join(ROOT, p) for p in ('Исходники/АКЖТ/Station', 'Исходники/Алгабас/Algabas', 'Исходники/Преподаватель',
+                                       'Исходники/Станция по схеме/StationFromJson')]   # [ДОБАВЛЕНО 10.11.2026] берёт словари Алгабаса
 OUT = [os.path.join(ROOT, 'Исходники/АКЖТ/Station/Lang'), os.path.join(ROOT, 'Исходники/Алгабас/Algabas/Lang')]
 TSV = os.path.join(HERE, 'strings.tsv')
 SKIP = os.path.join(HERE, 'skip.txt')
