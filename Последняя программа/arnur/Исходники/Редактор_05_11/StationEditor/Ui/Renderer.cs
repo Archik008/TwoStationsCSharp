@@ -94,6 +94,18 @@ public static class Renderer
         return f;
     }
 
+    // ---------------- [ДОБАВЛЕНО 10.11.2026] свободный текст ----------------
+    static readonly Graphics measure = Graphics.FromImage(new Bitmap(1, 1));
+
+    public static Font LabelFont(FreeLabel l, float zoom) => GetFont(Math.Max(6, (float)Math.Round((l.Size > 0 ? l.Size : 14) * zoom)), l.IsBold);
+
+    /// <summary>Прямоугольник свободного текста на экране (ox, oy — сдвиг камеры, cs — размер клетки).</summary>
+    public static RectangleF LabelRect(FreeLabel l, float ox, float oy, float cs, float zoom)
+    {
+        var sz = measure.MeasureString(string.IsNullOrEmpty(l.Text) ? " " : l.Text, LabelFont(l, zoom), PointF.Empty, StringFormat.GenericTypographic);
+        return new RectangleF(ox + (float)l.X * cs, oy + (float)l.Y * cs, Math.Max(sz.Width, 6), Math.Max(sz.Height, 6));
+    }
+
     static void TrimFonts()
     {
         if (fonts.Count < 80) return;
@@ -838,6 +850,21 @@ public static class Renderer
                     ring: selected || pending,
                     ringColor: pending ? Color.White : Pal.Sel,
                     diamond: Aspects.IsDiamond(st, new SignalEntry { Key = e.K, Idx = i, Sig = e.T.Sigs[i], Tile = e.T }));
+            }
+        }
+
+        // ---- [ДОБАВЛЕНО 10.11.2026] свободный текст (не по клеткам) ----
+        for (int i = 0; i < st.Labels.Count; i++)
+        {
+            var l = st.Labels[i];
+            var r = LabelRect(l, ox, oy, cs, ui.Cam.Z);
+            if (r.Right < 0 || r.Bottom < 0 || r.Left > W || r.Top > H) continue;
+            using var lb = new SolidBrush(Pal.Text);
+            g.DrawString(l.Text, LabelFont(l, ui.Cam.Z), lb, r.Location, StringFormat.GenericTypographic);
+            if (!test && ui.SelLabel == i)
+            {
+                using var lp = new Pen(Pal.Sel, 2) { DashPattern = new[] { 2.5f, 1.5f } };
+                g.DrawRectangle(lp, r.X - 3, r.Y - 2, r.Width + 6, r.Height + 4);
             }
         }
 

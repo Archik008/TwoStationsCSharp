@@ -14,6 +14,8 @@ public sealed partial class MainForm
         public float Cx, Cy;
         public Point Last, First, Start;
         public int Placed;
+        public int Label;                   // [10.11.2026] перетаскиваемый свободный текст
+        public double Lx, Ly;               //   и где он был в начале
     }
 
     Drag drag;
@@ -123,6 +125,8 @@ public sealed partial class MainForm
             st.Objects.Remove(ok);
             if (ui.SelObj == ok) ui.SelObj = null;
         }
+        // [ДОБАВЛЕНО 10.11.2026] и свободный текст, который начинается в этой клетке
+        if (st.Labels.RemoveAll(l => (int)Math.Floor(l.X) == x && (int)Math.Floor(l.Y + 0.25) == y) > 0) ui.SelLabel = null;
     }
 
     // =================================================================
@@ -149,6 +153,7 @@ public sealed partial class MainForm
     {
         ui.Sel.Clear();
         ui.SelSig = null;
+        ui.SelLabel = null;
         ui.SelObj = k;
         ShowTab("props");
         Draw();
@@ -165,6 +170,75 @@ public sealed partial class MainForm
             ui.SelObj = Core.Key(x + dx, y + dy);
             st.Objects[ui.SelObj] = o;
         });
+    }
+
+    // =================================================================
+    //  [ДОБАВЛЕНО 10.11.2026] СВОБОДНЫЙ ТЕКСТ — подпись в любом месте, двигается мышью не по клеткам
+    // =================================================================
+    int? LabelAt(float mx, float my)
+    {
+        for (int i = st.Labels.Count - 1; i >= 0; i--)
+        {
+            var r = Renderer.LabelRect(st.Labels[i], ui.Cam.X, ui.Cam.Y, CS, ui.Cam.Z);
+            r.Inflate(4, 3);
+            if (r.Contains(mx, my)) return i;
+        }
+        return null;
+    }
+
+    void SelectLabel(int i)
+    {
+        ui.Sel.Clear();
+        ui.SelSig = null;
+        ui.SelObj = null;
+        ui.SelLabel = i;
+        ShowTab("props");
+        RefreshPanels();
+        Draw();
+    }
+
+    void StartLabelDrag(int i, MouseEventArgs e)
+    {
+        SelectLabel(i);
+        Begin();
+        drag = new Drag { Kind = "label", Sx = e.X, Sy = e.Y, Label = i, Lx = st.Labels[i].X, Ly = st.Labels[i].Y };
+    }
+
+    void AddLabel(float mx, float my)
+    {
+        var s = InputBox.Show(this, "Свободный текст", "Текст подписи:", "");
+        if (string.IsNullOrWhiteSpace(s)) return;
+        var l = new FreeLabel { Text = s.Trim() };
+        // щёлкнули — там будет левый край текста, по высоте — его середина
+        float h = Renderer.LabelRect(l, 0, 0, CS, ui.Cam.Z).Height / CS;
+        l.X = Math.Round((mx - ui.Cam.X) / CS, 3);
+        l.Y = Math.Round((my - ui.Cam.Y) / CS - h / 2, 3);
+        Edit(() =>
+        {
+            st.Labels.Add(l);
+            ui.Sel.Clear(); ui.SelSig = null; ui.SelObj = null;
+            ui.SelLabel = st.Labels.Count - 1;
+        });
+        ShowTab("props");
+        Msg("Свободный текст поставлен. Тяните мышью — подвинуть, двойной щелчок — поправить");
+    }
+
+    void EditLabel(int i)
+    {
+        if (i < 0 || i >= st.Labels.Count) return;
+        var s = InputBox.Show(this, "Свободный текст", "Текст подписи (пусто — удалить):", st.Labels[i].Text);
+        if (s == null) return;
+        Edit(() =>
+        {
+            if (string.IsNullOrWhiteSpace(s)) { st.Labels.RemoveAt(i); ui.SelLabel = null; }
+            else st.Labels[i].Text = s.Trim();
+        });
+    }
+
+    void MoveLabel(double dx, double dy)
+    {
+        if (ui.SelLabel is not int i || i >= st.Labels.Count) return;
+        Edit(() => { st.Labels[i].X = Math.Round(st.Labels[i].X + dx, 3); st.Labels[i].Y = Math.Round(st.Labels[i].Y + dy, 3); }, false);
     }
 
     void PaintAt(int x, int y)
@@ -192,6 +266,12 @@ public sealed partial class MainForm
 
     void DeleteSelection()
     {
+        if (ui.SelLabel is int li && li < st.Labels.Count)    // [ДОБАВЛЕНО 10.11.2026]
+        {
+            Edit(() => { st.Labels.RemoveAt(li); ui.SelLabel = null; });
+            Msg("Свободный текст удалён");
+            return;
+        }
         if (ui.SelObj != null)
         {
             var ok = ui.SelObj;
@@ -269,27 +349,29 @@ public sealed partial class MainForm
         if (!st.Tiles.TryGetValue(k, out var t)) { Msg("Светофор ставится на путь — сначала поставьте кубик пути", true); return; }
         int i = t.Sigs?.FindIndex(s => s.Dir == dir) ?? -1;
         if (i >= 0) { SelectSignal(k, i); Msg("Здесь уже есть светофор этого направления — выбран"); return; }
-        // предупредительный и повторительный получают имя по светофору впереди: ПЧ, ПН1; выходной — по номеру пути
-        string mainAhead = null;
-        if (kind is "warning" or "repeater")
-        {
-            var probe = new SignalEntry { Key = k, Idx = -1, Tile = t, Sig = new Signal { Dir = dir, Kind = kind } };
-            mainAhead = Aspects.MainAhead(st, probe, null)?.Sig.Name;
-        }
+        // [ИЗМЕНЕНО 10.11.2026] вид «Авто» — по участку (путь → выходной, перегон → входной / проходной, тупик → маневровый);
+        // имя — по шаблону из «Обозначений…», буква — от ближайшего светофора (Model\Naming.cs). Остальные светофоры не трогаются.
+        if (kind == "auto") kind = Naming.DefaultKind(st, k, dir) ?? "exit";
+        string note = null;
         Edit(() =>
         {
-            (t.Sigs ??= new List<Signal>()).Add(new Signal { Dir = dir, Kind = kind, Name = Core.SuggestSignalName(st, kind, dir, mainAhead, k),
-                                                            Id = Core.NextSignalId(st) });    // [ДОБАВЛЕНО 09.11.2026] id — автоинкремент
+            var sig = new Signal { Dir = dir, Kind = kind, Id = Core.NextSignalId(st) };    // id — автоинкремент (09.11.2026)
+            (t.Sigs ??= new List<Signal>()).Add(sig);
+            note = Naming.NameNew(st, new SignalEntry { Key = k, Idx = t.Sigs.Count - 1, Sig = sig, Tile = t });
             ui.Sel = new HashSet<string> { k };
             ui.SelSig = new SigRef(k, t.Sigs.Count - 1);
         });
         ShowTab("props");
+        var added = t.Sigs?.LastOrDefault(s => s.Dir == dir);
+        if (added != null)
+            Msg($"{Core.SigKindName(added.Kind)} {added.Name}" + (note != null ? " — " + note : ""), note != null);
     }
 
     void SelectSignal(string k, int i)
     {
         ui.Sel = new HashSet<string> { k };
         ui.SelSig = new SigRef(k, i);
+        ui.SelLabel = null;
         ShowTab("props");
         Draw();
     }
@@ -333,6 +415,12 @@ public sealed partial class MainForm
             Draw();
         };
         canvas.MouseWheel += (_, e) => ZoomAt(e.X, e.Y, ui.Cam.Z * (e.Delta > 0 ? 1.15f : 1 / 1.15f));
+        // [ДОБАВЛЕНО 10.11.2026] двойной щелчок по свободному тексту — поправить
+        canvas.MouseDoubleClick += (_, e) =>
+        {
+            if (ui.IsTest || e.Button != MouseButtons.Left || ui.Tool is not ("select" or "label")) return;
+            if (LabelAt(e.X, e.Y) is int i) EditLabel(i);
+        };
     }
 
     void Canvas_MouseDown(object sender, MouseEventArgs e)
@@ -369,6 +457,9 @@ public sealed partial class MainForm
         {
             case "select":
             {
+                // [ДОБАВЛЕНО 10.11.2026] свободный текст — поверх всего: выбрать и тянуть (не по клеткам)
+                if (!shiftK && LabelAt(e.X, e.Y) is int lb) { StartLabelDrag(lb, e); return; }
+                ui.SelLabel = null;
                 var sg = SignalAt(e.X, e.Y);
                 if (sg is SigRef sr) { ui.SelObj = null; SelectSignal(sr.Key, sr.Idx); RefreshPanels(); return; }
                 ui.SelSig = null;
@@ -441,6 +532,10 @@ public sealed partial class MainForm
             case "object":
                 PlaceObject(gx, gy);
                 break;
+            case "label":    // [ДОБАВЛЕНО 10.11.2026]
+                if (LabelAt(e.X, e.Y) is int li) { StartLabelDrag(li, e); return; }
+                AddLabel(e.X, e.Y);
+                break;
         }
         Draw();
     }
@@ -457,6 +552,16 @@ public sealed partial class MainForm
         {
             ui.Cam.X = drag.Cx + e.X - drag.Sx;
             ui.Cam.Y = drag.Cy + e.Y - drag.Sy;
+            Draw();
+            return;
+        }
+        if (drag.Kind == "label")    // [ДОБАВЛЕНО 10.11.2026] плавно, за мышью, не по клеткам
+        {
+            if (drag.Label < st.Labels.Count)
+            {
+                st.Labels[drag.Label].X = Math.Round(drag.Lx + (e.X - drag.Sx) / CS, 3);
+                st.Labels[drag.Label].Y = Math.Round(drag.Ly + (e.Y - drag.Sy) / CS, 3);
+            }
             Draw();
             return;
         }
@@ -494,7 +599,12 @@ public sealed partial class MainForm
         if (drag == null) return;
         var d = drag;
         drag = null;
-        if (d.Kind == "objmove")
+        if (d.Kind == "label")
+        {
+            End(false);
+            RefreshPanels();
+        }
+        else if (d.Kind == "objmove")
         {
             var m = ui.ObjMove ?? Point.Empty;
             ui.ObjMove = null;

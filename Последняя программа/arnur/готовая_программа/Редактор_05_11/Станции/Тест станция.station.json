@@ -1,0 +1,239 @@
+{
+  "format": "station-editor",
+  "version": 1,
+  "name": "Тест станция",
+  "tiles": {
+    "2,6": {
+      "t": "straight",
+      "v": 0,
+      "sec": "1",
+      "sigs": [
+        {
+          "dir": "R",
+          "kind": "entry",
+          "name": "Ч",
+          "id": 5
+        }
+      ]
+    },
+    "3,6": {
+      "t": "straight",
+      "v": 0,
+      "sec": "2"
+    },
+    "4,6": {
+      "t": "switch",
+      "v": 1,
+      "sec": "2",
+      "name": ""
+    },
+    "5,6": {
+      "t": "straight",
+      "v": 0,
+      "sec": "2"
+    },
+    "6,6": {
+      "t": "straight",
+      "v": 0,
+      "sec": "3",
+      "sigs": [
+        {
+          "dir": "L",
+          "kind": "exit",
+          "name": "Н",
+          "id": 1
+        }
+      ]
+    },
+    "7,6": {
+      "t": "straight",
+      "v": 0,
+      "sec": "3"
+    },
+    "8,6": {
+      "t": "straight",
+      "v": 0,
+      "sec": "3"
+    },
+    "9,6": {
+      "t": "straight",
+      "v": 0,
+      "sec": "3"
+    },
+    "10,6": {
+      "t": "straight",
+      "v": 0,
+      "sec": "3"
+    },
+    "11,6": {
+      "t": "straight",
+      "v": 0,
+      "sec": "3"
+    },
+    "12,6": {
+      "t": "straight",
+      "v": 0,
+      "sec": "3"
+    },
+    "13,6": {
+      "t": "straight",
+      "v": 0,
+      "sec": "3",
+      "sigs": [
+        {
+          "dir": "R",
+          "kind": "exit",
+          "name": "Ч",
+          "id": 3
+        }
+      ]
+    },
+    "14,6": {
+      "t": "straight",
+      "v": 0,
+      "sec": "5"
+    },
+    "15,6": {
+      "t": "straight",
+      "v": 0,
+      "sec": "5"
+    },
+    "6,7": {
+      "t": "straight",
+      "v": 0,
+      "sec": "4"
+    },
+    "19,6": {
+      "t": "straight",
+      "v": 0,
+      "sec": "6"
+    },
+    "17,6": {
+      "t": "straight",
+      "v": 0,
+      "sec": "6",
+      "sigs": [
+        {
+          "dir": "L",
+          "kind": "entry",
+          "name": "Н",
+          "id": 6
+        }
+      ]
+    },
+    "5,7": {
+      "t": "curve",
+      "v": 2,
+      "sec": "2"
+    },
+    "7,7": {
+      "t": "straight",
+      "v": 0,
+      "sec": "4",
+      "sigs": [
+        {
+          "dir": "L",
+          "kind": "exit",
+          "name": "Н",
+          "id": 2
+        }
+      ]
+    },
+    "9,7": {
+      "t": "straight",
+      "v": 0,
+      "sec": "4"
+    },
+    "10,7": {
+      "t": "straight",
+      "v": 0,
+      "sec": "4"
+    },
+    "11,7": {
+      "t": "straight",
+      "v": 0,
+      "sec": "4"
+    },
+    "12,7": {
+      "t": "straight",
+      "v": 0,
+      "sec": "4"
+    },
+    "13,7": {
+      "t": "straight",
+      "v": 0,
+      "sec": "4",
+      "sigs": [
+        {
+          "dir": "R",
+          "kind": "exit",
+          "name": "Ч",
+          "id": 4
+        }
+      ]
+    },
+    "16,6": {
+      "t": "switch",
+      "v": 3,
+      "sec": "5",
+      "name": ""
+    },
+    "15,7": {
+      "t": "curve",
+      "v": 0,
+      "sec": "5"
+    },
+    "14,7": {
+      "t": "straight",
+      "v": 0,
+      "sec": "5"
+    },
+    "18,6": {
+      "t": "straight",
+      "v": 0,
+      "sec": "6"
+    },
+    "1,6": {
+      "t": "straight",
+      "v": 0,
+      "sec": "1"
+    },
+    "0,6": {
+      "t": "straight",
+      "v": 0,
+      "sec": "1"
+    },
+    "8,7": {
+      "t": "straight",
+      "v": 0,
+      "sec": "4"
+    },
+    "20,6": {
+      "t": "exit",
+      "v": 1,
+      "sec": "6"
+    }
+  },
+  "sections": {
+    "1": {
+      "type": "auto"
+    },
+    "2": {
+      "type": "auto"
+    },
+    "3": {
+      "type": "auto"
+    },
+    "4": {
+      "type": "auto"
+    },
+    "5": {
+      "type": "auto"
+    },
+    "6": {
+      "type": "auto"
+    }
+  },
+  "texts": {},
+  "objects": {}
+}

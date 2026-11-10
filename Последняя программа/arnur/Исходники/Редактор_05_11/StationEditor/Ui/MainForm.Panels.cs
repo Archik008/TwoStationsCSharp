@@ -233,6 +233,7 @@ public sealed partial class MainForm
     static readonly (string Id, string Name, string Key)[] Tools =
     {
         ("select", "Выбор", "V"), ("erase", "Ластик", "E"), ("brush", "Участок", "B"), ("signal", "Светофор", "S"), ("text", "Надпись", "T"),
+        ("label", "Свободный текст", "L"),    // [ДОБАВЛЕНО 10.11.2026] подпись в любом месте, тянется мышью не по клеткам
     };
 
     int LeftW => S(214);
@@ -286,6 +287,16 @@ public sealed partial class MainForm
                 using (var ft = new Font(Font.FontFamily, 15f, FontStyle.Bold))
                     TextRenderer.DrawText(g, "Aa", ft, Rectangle.Round(r), CText, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
                 return;
+            case "label":    // [ДОБАВЛЕНО 10.11.2026] свободный текст: «Aa» в пунктирной рамке со стрелками — двигается куда угодно
+            {
+                using (var ft = new Font(Font.FontFamily, 12f, FontStyle.Italic | FontStyle.Bold))
+                    TextRenderer.DrawText(g, "Aa", ft, Rectangle.Round(r), CText, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+                using var p = new Pen(CText, 1.2f) { DashPattern = new[] { 2f, 2f } };
+                g.DrawRectangle(p, r.X + r.Width * 0.12f, r.Y + r.Height * 0.22f, r.Width * 0.76f, r.Height * 0.56f);
+                using var a = new Pen(CText, 1.4f) { EndCap = System.Drawing.Drawing2D.LineCap.ArrowAnchor };
+                g.DrawLine(a, r.X + r.Width * 0.62f, r.Y + r.Height * 0.86f, r.X + r.Width * 0.92f, r.Y + r.Height * 0.98f);
+                return;
+            }
         }
     }
 
@@ -331,7 +342,8 @@ public sealed partial class MainForm
         foreach (var T in Tools)
         {
             var id = T.Id;
-            var it = PalItem(T.Name, T.Key, ui.Tool == id, (g, r) => DrawToolIcon(g, r, id), $"{T.Name} (клавиша {T.Key})");
+            var it = PalItem(id == "label" ? "Своб. текст" : T.Name, T.Key, ui.Tool == id, (g, r) => DrawToolIcon(g, r, id),
+                $"{T.Name} (клавиша {T.Key})" + (id == "label" ? " — подпись в любом месте схемы, тянется мышью не по клеткам" : ""));
             it.Click += (_, _) => SetTool(id);
             grid2.Controls.Add(it);
         }
@@ -355,6 +367,9 @@ public sealed partial class MainForm
                         "Стыки рисуются сами там, где участок меняется.",
             ["signal"] = "Щелчок по кубику пути — поставить светофор. «→» встаёт под путём на правом краю клетки, «←» — над путём на левом.",
             ["text"] = "Щелчок по клетке — написать или поправить надпись (номер пути, «к станции …»).",
+            ["label"] = "Щелчок по свободному месту — новый текст ровно там, где щёлкнули (не по клеткам). Тяните текст мышью — " +
+                        "двигается плавно, куда угодно; двойной щелчок — поправить. Размер, жирность — в «Свойствах»; " +
+                        "стрелки клавиатуры — подвинуть чуть-чуть (Shift — на клетку), Delete — удалить.",
             ["object"] = "Щелчок по сетке — поставить объект (левый верхний угол). Выбрать, перетащить и поменять название или размер — " +
                          "инструментом «Выбор» (V). Амперметр показывает ток перевода стрелок в «Испытании», часы — время компьютера.",
         };
@@ -391,13 +406,21 @@ public sealed partial class MainForm
         else if (ui.Tool == "signal")
         {
             Hint(optsPanel, w, "Тип светофора:").Margin = new Padding(0, 0, 0, S(2));
-            var ck = AddTo(optsPanel, Combo(Core.SigKinds.Select(k => new Opt { V = k.Id, T = k.Name }), ui.SigKind));
+            // [ИЗМЕНЕНО 10.11.2026] «Авто» — вид по участку (окно «Обозначения…»)
+            var kindOpts = new List<Opt> { new() { V = "auto", T = "Авто (по участку)" } };
+            kindOpts.AddRange(Core.SigKinds.Select(k => new Opt { V = k.Id, T = k.Name }));
+            var ck = AddTo(optsPanel, Combo(kindOpts, ui.SigKind));
             ck.Width = w;
             ck.SelectedIndexChanged += (_, _) => { ui.SigKind = OptV(ck); RefreshToolOpts(); };
-            Hint(optsPanel, w, Core.SigKindHint(ui.SigKind)).Margin = new Padding(0, S(4), 0, 0);
+            Hint(optsPanel, w, ui.SigKind == "auto"
+                ? "Вид — по участку: путь → выходной; перегон → входной перед станцией, иначе проходной; тупик, стрелочный → маневровый. " +
+                  "Поменять — «Обозначения…»."
+                : Core.SigKindHint(ui.SigKind)).Margin = new Padding(0, S(4), 0, 0);
             Hint(optsPanel, w, "Направление:").Margin = new Padding(0, S(6), 0, S(2));
             var dirs = new FlowLayoutPanel { AutoSize = true, Margin = Padding.Empty };
-            foreach (var (d, text, tip) in new[] { ("R", "→ Ч", "чётное, вправо"), ("L", "← Н", "нечётное, влево") })
+            string lr = Core.DirLetter(st, "R"), ll = Core.DirLetter(st, "L");
+            foreach (var (d, text, tip) in new[]
+                     { ("R", "→ " + lr, (lr == "Ч" ? "чётное" : "нечётное") + ", вправо"), ("L", "← " + ll, (ll == "Ч" ? "чётное" : "нечётное") + ", влево") })
             {
                 var b = new Button { Text = text, Width = (w - S(8)) / 2, Height = S(30), Margin = new Padding(0, 0, S(4), 0), UseVisualStyleBackColor = ui.SigDir != d };
                 if (ui.SigDir == d) { b.BackColor = Color.FromArgb(0xd8, 0xef, 0xe9); b.Font = FH4; }
@@ -406,7 +429,8 @@ public sealed partial class MainForm
                 dirs.Controls.Add(b);
             }
             optsPanel.Controls.Add(dirs);
-            Hint(optsPanel, w, hints["signal"] + " Имя подставится само (Ч, Н1, М2…) — поменять можно в «Свойствах».").Margin = new Padding(0, S(6), 0, 0);
+            Hint(optsPanel, w, hints["signal"] + " Имя подставится само по «Обозначениям…»: буква — от ближайшего светофора " +
+                               "(рядом с Ч→ новый ← будет Н), выходной — по номеру пути (Н3). Поменять можно в «Свойствах».").Margin = new Padding(0, S(6), 0, 0);
         }
         else if (ui.Tool == "object")
         {
@@ -435,6 +459,7 @@ public sealed partial class MainForm
             "brush" => "Участок: протяните по кубикам",
             "signal" => "Светофор: щелчок по пути",
             "text" => "Надпись: щелчок по клетке",
+            "label" => "Свободный текст: щелчок — новый, тяните — подвинуть, двойной щелчок — поправить",
             "object" => $"Объект «{Core.ObjTypeOf(ui.ObjType).Name}»: щелчок по сетке",
             _ => "",
         };
@@ -458,10 +483,29 @@ public sealed partial class MainForm
             RenderObjectProps(f, w, ui.SelObj, ob);
             return;
         }
+        if (ui.SelLabel is int sli && sli < st.Labels.Count)    // [ДОБАВЛЕНО 10.11.2026]
+        {
+            RenderLabelProps(f, w, sli);
+            return;
+        }
         if (ui.Sel.Count == 0)
         {
             H3(f, w, st.Name);
             Hint(f, w, "Ничего не выбрано. Инструментом «Выбор» (V) щёлкните по клетке или светофору.");
+            // [ДОБАВЛЕНО 10.11.2026] какое направление нечётное — от него буквы Н / Ч в именах светофоров
+            var od = Row(f, w, "Движение →", Combo(new[]
+            {
+                new Opt { V = "even", T = "чётное — светофоры Ч" },
+                new Opt { V = "odd", T = "нечётное — светофоры Н" },
+            }, st.RightOdd == true ? "odd" : "even"));
+            od.SelectedIndexChanged += (_, _) =>
+            {
+                bool odd = OptV(od) == "odd";
+                Later(() => Edit(() => st.RightOdd = odd ? true : null));
+            };
+            Hint(f, w, "Новый светофор получает имя сам: буква — от ближайшего светофора (рядом с Ч→ новый ← будет Н), " +
+                       "выходной — по номеру пути (Н3, ЧII), маневровый — М по горловине. Шаблоны и «Перенумеровать все» — " +
+                       "кнопка «Обозначения…». Имя, введённое вручную, закрепляется (галочка «имя вручную»).");
             Hint(f, w, $"Кубиков: {st.Tiles.Count}, участков: {Core.SectionNames(st).Count}, светофоров: {Core.AllSignals(st).Count}, " +
                        $"маршрутов найдено: {Routes.Count}.");
             H4(f, w, "С чего начать");
@@ -536,7 +580,15 @@ public sealed partial class MainForm
                 bool on = ui.SelSig == new SigRef(k, i);
                 var row = new Panel { Width = w, Height = S(30), Margin = new Padding(0, 0, 0, S(3)), BackColor = on ? Color.FromArgb(0xff, 0xf6, 0xb0) : Color.Transparent };
                 int x = S(2), y = S(3);
-                var nm = CommitBox(s.Name, "имя", v => Edit(() => { if (SigAt(k, ii) is Signal c) c.Name = v.Trim(); }, false));
+                // [ИЗМЕНЕНО 10.11.2026] имя, введённое руками, закрепляется; пустое — снова автоматическое
+                var nm = CommitBox(s.Name, "имя", v => Edit(() =>
+                {
+                    if (SigAt(k, ii) is not Signal c) return;
+                    var n = v.Trim();
+                    if (n == c.Name) return;
+                    c.Name = n;
+                    c.Fixed = n.Length > 0 ? true : null;
+                }, false));
                 nm.SetBounds(x, y, (int)(w * 0.26), nm.Height);
                 x += nm.Width + S(3);
                 var kind = Combo(Core.SigKinds.Select(q => new Opt { V = q.Id, T = q.Name }), s.Kind);
@@ -564,16 +616,51 @@ public sealed partial class MainForm
                 row.Controls.AddRange(new Control[] { nm, kind, dir, del });
                 f.Controls.Add(row);
 
-                // [ДОБАВЛЕНО 09.11.2026] id для связи станций (автоинкремент, можно поменять) и «только чтение»
-                var row2 = new Panel { Width = w, Height = S(28), Margin = new Padding(0, 0, 0, S(6)), BackColor = row.BackColor };
+                // [ДОБАВЛЕНО 10.11.2026] цифра в имени: своя (поле «№») или от названия пути / порядковая
+                var se = new SignalEntry { Key = k, Idx = ii, Sig = s, Tile = t };
+                string autoNum = Naming.AutoNumber(st, se, out var autoFrom);
+                var row2 = new Panel { Width = w, Height = S(28), Margin = new Padding(0, 0, 0, 0), BackColor = row.BackColor };
+                var nl = new Label { Text = "№", AutoSize = false, TextAlign = ContentAlignment.MiddleRight, ForeColor = CHint };
+                nl.SetBounds(S(2), S(3), S(22), S(22));
+                var numBox = CommitBox(s.Num, autoNum.Length > 0 ? $"{autoNum} ({autoFrom})" : "нет", v => Edit(() =>
+                {
+                    if (SigAt(k, ii) is not Signal c) return;
+                    var n = v.Trim();
+                    if ((c.Num ?? "") == n && c.Ltr != null && !c.IsFixed) return;
+                    if (c.Ltr == null || c.IsFixed)    // старое или закреплённое имя — теперь собирается по шаблону с этой цифрой
+                    {
+                        c.Ltr = Naming.LetterOf(c) ?? Naming.LetterFor(st, k, c.Dir, new SignalEntry { Key = k, Idx = ii, Sig = c, Tile = t });
+                        c.Fixed = null;
+                    }
+                    c.Num = n.Length > 0 ? n : null;
+                }, false));
+                numBox.SetBounds(S(26), S(2), (int)(w * 0.30), numBox.Height);
+                tips.SetToolTip(numBox, "Цифра в имени светофора. Пусто — от названия пути (участок 3П → 3; переименуете путь — " +
+                                        "имя поменяется само), а не на пути — порядковая.\nВписали свою — имя собирается по шаблону " +
+                                        "из «Обозначений…» (Ч + 5 → Ч5), буква остаётся.");
                 var idl = new Label { Text = "id", AutoSize = false, TextAlign = ContentAlignment.MiddleRight, ForeColor = CHint };
-                idl.SetBounds(S(2), S(3), S(22), S(22));
+                idl.SetBounds(numBox.Right + S(8), S(3), S(22), S(22));
                 var idn = new NumericUpDown { Minimum = 1, Maximum = 999999, Value = Math.Clamp(s.Id, 1, 999999) };
-                idn.SetBounds(S(26), S(2), S(70), S(24));
+                idn.SetBounds(idl.Right + S(2), S(2), S(70), S(24));
                 tips.SetToolTip(idn, "Номер светофора для связи станций: по нему другая программа находит,\n" +
                                      "какому светофору показать присланное показание. Новые светофоры получают следующий номер сами.");
-                var ro = new CheckBox { Text = "только чтение (с другой станции)", Checked = s.IsReadOnly, AutoSize = true };
-                ro.Location = new Point(S(104), S(4));
+                var row3 = new Panel { Width = w, Height = S(26), Margin = new Padding(0, 0, 0, S(6)), BackColor = row.BackColor };
+                var fx = new CheckBox { Text = "имя вручную", Checked = s.IsFixed, AutoSize = true };
+                fx.Location = new Point(S(26), S(2));
+                tips.SetToolTip(fx, "Имя задано вручную — само не меняется (ни от пути, ни от «Перенумеровать все»).\n" +
+                                    "Снимите галочку — имя снова посчитается само (Н3, Ч4, М1…) и будет следить за названием пути.");
+                fx.CheckedChanged += (_, _) =>
+                {
+                    bool v = fx.Checked;
+                    Later(() => Edit(() =>
+                    {
+                        if (SigAt(k, ii) is not Signal c) return;
+                        if (v) c.Fixed = true;
+                        else Naming.NameNew(st, new SignalEntry { Key = k, Idx = ii, Sig = c, Tile = t });    // [10.11.2026] заново по правилам
+                    }));
+                };
+                var ro = new CheckBox { Text = "только чтение", Checked = s.IsReadOnly, AutoSize = true };
+                ro.Location = new Point(S(140), S(2));
                 tips.SetToolTip(ro, "Показание этого светофора задаёт другая станция по сети: здесь он только показывает.\n" +
                                     "Маршрутов от него нет; в «Испытании» (без связи) он погашен.");
                 idn.ValueChanged += (_, _) =>
@@ -588,10 +675,12 @@ public sealed partial class MainForm
                     bool v = ro.Checked;
                     Edit(() => { if (SigAt(k, ii) is Signal c) c.ReadOnly = v ? true : null; }, false);
                 };
-                foreach (Control fc in new Control[] { idn, ro })
+                foreach (Control fc in new Control[] { numBox, idn, fx, ro })
                     fc.Enter += (_, _) => { ui.SelSig = new SigRef(k, ii); Draw(); };
-                row2.Controls.AddRange(new Control[] { idl, idn, ro });
+                row2.Controls.AddRange(new Control[] { nl, numBox, idl, idn });
+                row3.Controls.AddRange(new Control[] { fx, ro });
                 f.Controls.Add(row2);
+                f.Controls.Add(row3);
             }
             if (ui.SelSig is SigRef ss && ss.Key == k && SigAt(k, ss.Idx) is Signal sel)
                 Hint(f, w, $"{Core.SigKindName(sel.Kind)}: {Core.SigKindHint(sel.Kind)}");
@@ -617,6 +706,31 @@ public sealed partial class MainForm
         Row(f, w, "Размер", size).Width = S(80);
         size.ValueChanged += (_, _) => Edit(() => { if (st.Texts.TryGetValue(k, out var x)) x.Size = (double)size.Value; }, false);
         AddButton(f, "Удалить клетку", () => Edit(() => { var (x, y) = Core.Parse(k); EraseAt(x, y); }), danger: true).Margin = new Padding(0, S(12), 0, 0);
+    }
+
+    /// <summary>[ДОБАВЛЕНО 10.11.2026] Свойства свободного текста: текст, размер, жирный, положение.</summary>
+    void RenderLabelProps(Control f, int w, int i)
+    {
+        var l = st.Labels[i];
+        H3(f, w, "Свободный текст");
+        Hint(f, w, "Подпись в любом месте схемы, не по клеткам. Тяните мышью — двигается плавно; стрелки клавиатуры — " +
+                   "чуть-чуть (Shift — на клетку); двойной щелчок или Enter — поправить; Delete — удалить.");
+        FreeLabel Cur() => ui.SelLabel is int j && j < st.Labels.Count ? st.Labels[j] : null;
+        Row(f, w, "Текст", CommitBox(l.Text, "текст", v =>
+        {
+            var s = v.Trim();
+            if (s.Length == 0) { Edit(() => { if (Cur() != null) st.Labels.RemoveAt(i); ui.SelLabel = null; }); return; }
+            Edit(() => { if (Cur() is FreeLabel c) c.Text = s; }, false);
+        }));
+        var size = new NumericUpDown { Minimum = 6, Maximum = 96, Width = S(70), Value = (decimal)Math.Clamp(l.Size, 6, 96) };
+        Row(f, w, "Размер", size).Width = S(80);
+        size.ValueChanged += (_, _) => Edit(() => { if (Cur() is FreeLabel c) c.Size = (double)size.Value; }, false);
+        var bold = new CheckBox { Text = "Жирный", Checked = l.IsBold, AutoSize = true, Margin = new Padding(0, S(4), 0, S(4)) };
+        bold.CheckedChanged += (_, _) => Edit(() => { if (Cur() is FreeLabel c) c.Bold = bold.Checked ? null : false; }, false);
+        f.Controls.Add(bold);
+        Hint(f, w, $"Положение: x = {l.X:0.##}, y = {l.Y:0.##} (в клетках, левый верхний угол текста).");
+        AddButton(f, "Удалить текст", () => Edit(() => { if (Cur() != null) st.Labels.RemoveAt(i); ui.SelLabel = null; }), danger: true)
+            .Margin = new Padding(0, S(12), 0, 0);
     }
 
     /// <summary>[ДОБАВЛЕНО 05.11.2026] Свойства объекта: название, размер, у часов — секундная стрелка.</summary>

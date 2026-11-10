@@ -13,6 +13,9 @@ namespace StationEditor.Model;
 //                         name: номер стрелки, group: съезд (спаренные стрелки), plus: положение,
 //                         sigs: [{ dir: 'R' | 'L', kind, name, id, ro }] }
 //               [ДОБАВЛЕНО 09.11.2026] id — номер светофора для связи станций (автоинкремент), ro: true — только чтение
+//               [ДОБАВЛЕНО 10.11.2026] fixed: true — имя задано вручную (автонумерация его не трогает)
+//    rightOdd — true: движение → нечётное (Н); autoNames — имена светофоров считаются автоматически
+//    labels   — [ДОБАВЛЕНО 10.11.2026] свободный текст: [{ x, y (клетки, дробные), text, size, bold }]
 //    sections — участок → { type, color }
 //    texts    — "x,y" → { text, size }
 //    objects  — "x,y" (левый верхний угол) → { type: ammeter | building | clock, name, w, h, seconds }
@@ -27,6 +30,39 @@ public sealed class Station
     [JsonPropertyName("sections")] public Dictionary<string, SectionInfo> Sections { get; set; } = new();
     [JsonPropertyName("texts")] public Dictionary<string, TextItem> Texts { get; set; } = new();
     [JsonPropertyName("objects")] public Dictionary<string, StationObject> Objects { get; set; } = new();
+    /// <summary>[ДОБАВЛЕНО 10.11.2026] true — движение вправо (→) нечётное (буква Н, как на чертежах РУ-30-80);
+    /// нет значения — чётное (Ч), как было в редакторе.</summary>
+    [JsonPropertyName("rightOdd")] public bool? RightOdd { get; set; }
+    /// <summary>[ДОБАВЛЕНО 10.11.2026, с 10.11 не используется] Признак «имена считались автоматически» —
+    /// остался в файлах, сохранённых в тот день; имя теперь даётся только новому светофору.</summary>
+    [JsonPropertyName("autoNames")] public bool? AutoNames { get; set; }
+    /// <summary>[ДОБАВЛЕНО 10.11.2026] Настройки обозначений: шаблоны имён по видам, вид светофора по типу участка
+    /// (окно «Обозначения…»). null — всё по умолчанию.</summary>
+    [JsonPropertyName("naming")] public NamingSettings Naming { get; set; }
+    /// <summary>[ДОБАВЛЕНО 10.11.2026] Свободный текст — подписи в любом месте схемы, не по клеткам (инструмент «Свободный текст»).</summary>
+    [JsonPropertyName("labels")] public List<FreeLabel> Labels { get; set; } = new();
+}
+
+/// <summary>[ДОБАВЛЕНО 10.11.2026] Свободный текст: левый верхний угол в клетках (дробные — не по сетке), размер, жирный.</summary>
+public sealed class FreeLabel
+{
+    [JsonPropertyName("x")] public double X { get; set; }
+    [JsonPropertyName("y")] public double Y { get; set; }
+    [JsonPropertyName("text")] public string Text { get; set; } = "";
+    [JsonPropertyName("size")] public double Size { get; set; } = 14;
+    /// <summary>null — жирный (как надписи в клетках), false — обычный</summary>
+    [JsonPropertyName("bold")] public bool? Bold { get; set; }
+    [JsonIgnore] public bool IsBold => Bold != false;
+}
+
+/// <summary>[ДОБАВЛЕНО 10.11.2026] Обозначения светофоров станции. Пустые значения — по умолчанию (Model\Naming.cs).</summary>
+public sealed class NamingSettings
+{
+    /// <summary>Вид светофора → шаблон имени: {Б} — буква Н/Ч, {П} — номер пути, {N} — порядковый номер, {О} — имя основного.</summary>
+    [JsonPropertyName("templates")] public Dictionary<string, string> Templates { get; set; }
+    /// <summary>Тип участка (path, plain, line, dead, switch) → вид нового светофора; "auto-line" — входной перед станцией,
+    /// иначе проходной; "" — тот, что выбран в панели.</summary>
+    [JsonPropertyName("kindBySec")] public Dictionary<string, string> KindBySec { get; set; }
 }
 
 /// <summary>[ДОБАВЛЕНО 05.11.2026] Объект на схеме размером W×H клеток (не путь): амперметр, вокзал, часовая башня.</summary>
@@ -77,6 +113,18 @@ public sealed class Signal
     [JsonPropertyName("ro")] public bool? ReadOnly { get; set; }
 
     [JsonIgnore] public bool IsReadOnly => ReadOnly == true;
+
+    /// <summary>[ДОБАВЛЕНО 10.11.2026] Имя задано вручную и автоматической нумерацией не меняется. null — имя автоматическое.</summary>
+    [JsonPropertyName("fixed")] public bool? Fixed { get; set; }
+    [JsonIgnore] public bool IsFixed => Fixed == true;
+
+    /// <summary>[ДОБАВЛЕНО 10.11.2026] Буква (Н / Ч), с которой светофор назван при добавлении. Есть — имя собирается по шаблону
+    /// и пересобирается само (переименовали путь — поменялась цифра). null — старый светофор, имя не трогается.</summary>
+    [JsonPropertyName("ltr")] public string Ltr { get; set; }
+    /// <summary>Цифра, заданная вручную (поле «№» в свойствах). null — от названия пути, иначе порядковая (Seq).</summary>
+    [JsonPropertyName("num")] public string Num { get; set; }
+    /// <summary>Порядковый номер, выданный при добавлении, — когда светофор стоит не на пути (М1 в горловине, проходной 3).</summary>
+    [JsonPropertyName("seq")] public int? Seq { get; set; }
 }
 
 public sealed class SectionInfo
@@ -177,6 +225,7 @@ public static class StationFile
                     if (s.Kind == null || Core.SigKindName(s.Kind) == null) s.Kind = "other";
                     s.Name ??= "";
                     if (s.ReadOnly == false) s.ReadOnly = null;
+                    if (s.Fixed == false) s.Fixed = null;
                 }
                 if (t.Sigs.Count == 0) t.Sigs = null;
             }
@@ -190,6 +239,9 @@ public static class StationFile
             if (tx == null || string.IsNullOrEmpty(tx.Text) || !Core.TryParse(k, out _, out _)) { st.Texts.Remove(k); continue; }
             if (!(tx.Size > 0)) tx.Size = 14;
         }
+        st.Labels ??= new();    // [ДОБАВЛЕНО 10.11.2026] свободный текст
+        st.Labels.RemoveAll(l => l == null || string.IsNullOrWhiteSpace(l.Text) || double.IsNaN(l.X) || double.IsNaN(l.Y));
+        foreach (var l in st.Labels) if (!(l.Size > 0)) l.Size = 14;
         st.Objects ??= new();
         foreach (var k in st.Objects.Keys.ToList())
         {

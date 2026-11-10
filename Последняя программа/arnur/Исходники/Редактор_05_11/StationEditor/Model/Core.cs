@@ -295,7 +295,10 @@ public static class Core
     // ---------------------------------------------------------------------
     //  СТАНЦИЯ
     // ---------------------------------------------------------------------
-    public static Station NewStation() => new();
+    public static Station NewStation() => new() { AutoNames = true };
+
+    /// <summary>[ДОБАВЛЕНО 10.11.2026] Буква направления светофора: Ч (чётное) или Н (нечётное) — по настройке станции RightOdd.</summary>
+    public static string DirLetter(Station st, string dir) => (dir == "R") == (st.RightOdd == true) ? "Н" : "Ч";
 
     public static Dictionary<string, List<string>> TilesBySection(Station st)
     {
@@ -415,66 +418,17 @@ public static class Core
             if (s.Sig.Id <= 0 || !seen.Add(s.Sig.Id)) { s.Sig.Id = next++; seen.Add(s.Sig.Id); }
     }
 
-    static readonly Regex ReTrackNo = new(@"^((?:[IVX]+)|\d+)([А-ЯA-Z-[С]]?)П$", RegexOptions.Compiled);
+    // «…СП» — стрелочный участок, не путь. [ИЗМЕНЕНО 10.11.2026] «П» в конце необязательна: участок «3» — путь 3
+    static readonly Regex ReTrackNo = new(@"^((?:[IVX]+)|\d+)([А-ЯA-Z-[СП]]?)П?$", RegexOptions.Compiled);
 
-    /// <summary>Номер пути из названия участка: «3П» → «3», «IIП» → «II», «2АП» → «2А»; не путь — null.</summary>
+    /// <summary>Номер пути из названия участка: «3П» и «3» → «3», «IIП» и «II» → «II», «2АП» → «2А»; не путь — null.</summary>
     public static string TrackNo(string sec)
     {
         var m = ReTrackNo.Match((sec ?? "").Trim().ToUpperInvariant());
         return m.Success ? m.Groups[1].Value + m.Groups[2].Value : null;
     }
 
-    /// <summary>Чётность горловины, где стоит клетка: по ближайшему входному (Н… — нечётная, Ч… — чётная); null — входных нет.</summary>
-    static bool? NeckIsOdd(Station st, string key)
-    {
-        if (key == null) return null;
-        var (x, _) = Parse(key);
-        var e = AllSignals(st).Where(s => s.Sig.Kind == "entry" && !string.IsNullOrEmpty(s.Sig.Name))
-            .OrderBy(s => Math.Abs(Parse(s.Key).X - x)).FirstOrDefault();
-        if (e == null) return null;
-        return e.Sig.Name[0] == 'Н' ? true : e.Sig.Name[0] == 'Ч' ? false : null;
-    }
-
-    /// <summary>Имя для нового светофора. [ИЗМЕНЕНО 09.11.2026] по уроку «Светофорная сигнализация» (caredenis.ru, les03)
-    /// и РУ-30-80 стр. 89–90:
-    ///   входной Н / Ч; выходной — буква направления + номер пути (Н3, ЧII, Н2А); маршрутный — + «М» (ЧМII, НМ5А);
-    ///   маневровый — М + нечётный номер в нечётной горловине (где входной Н…), чётный — в чётной;
-    ///   проходные — нечётные / чётные по направлению; заградительные З1…; прикрытия — буква направления + «П» + номер пути (НП1);
-    ///   предупредительный и повторительный — «П» + имя светофора впереди (ПЧ, ПН5, ПЧМ2А).
-    /// key — клетка светофора (номер пути берётся из её участка), mainAhead — светофор впереди.</summary>
-    public static string SuggestSignalName(Station st, string kind, string dir, string mainAhead = null, string key = null)
-    {
-        var used = new HashSet<string>(AllSignals(st).Select(s => s.Sig.Name));
-        string letter = dir == "R" ? "Ч" : "Н";
-        string track = key != null && st.Tiles.TryGetValue(key, out var tile) ? TrackNo(tile.Sec) : null;
-        string Try(string name) => !string.IsNullOrEmpty(name) && !used.Contains(name) ? name : null;
-
-        if (kind == "entry" && Try(letter) is string en) return en;
-        if (kind is "warning" or "repeater" && !string.IsNullOrEmpty(mainAhead) && Try("П" + mainAhead) is string pm) return pm;
-        if (track != null)
-        {
-            if (kind == "exit" && Try(letter + track) is string ex) return ex;
-            if (kind == "route" && Try(letter + "М" + track) is string rt) return rt;
-            if (kind == "cover" && Try(letter + "П" + track) is string cv) return cv;
-        }
-        string prefix = "";
-        int n = 1, step = 1;
-        if (kind == "entry" || kind == "exit") prefix = letter;
-        else if (kind == "route") prefix = letter + "М";
-        else if (kind == "shunt")
-        {
-            prefix = "М"; step = 2;
-            bool odd = NeckIsOdd(st, key) ?? dir != "R";    // нет входных — по направлению, как раньше
-            n = odd ? 1 : 2;
-        }
-        else if (kind == "block") { n = dir == "R" ? 2 : 1; step = 2; }
-        else if (kind is "warning" or "repeater") prefix = "П";
-        else if (kind == "barrier") prefix = "З";
-        else if (kind == "cover") prefix = letter + "П";
-        else prefix = "С";
-        while (used.Contains(prefix + n)) n += step;
-        return prefix + n;
-    }
+    // [10.11.2026] имя нового светофора — в Model/Naming.cs (Naming.ForNew)
 }
 
 /// <summary>Сравнение «как в русском алфавите, числа — по значению» (1П, 2П, 10П).</summary>

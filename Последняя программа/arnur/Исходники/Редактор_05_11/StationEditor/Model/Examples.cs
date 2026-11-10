@@ -21,7 +21,7 @@ public static class Examples
     sealed class B
     {
         public readonly Station St = new();
-        public B(string name) { St.Name = name; }
+        public B(string name) { St.Name = name; St.AutoNames = true; }    // [10.11.2026] имена примеров закреплены (Sig: Fixed)
 
         public B Put(int x, int y, string t, int v, string sec, string name = null, string group = null)
         {
@@ -36,7 +36,7 @@ public static class Examples
         public B Sig(int x, int y, string dir, string kind, string name)
         {
             var t = St.Tiles[Core.Key(x, y)];
-            (t.Sigs ??= new List<Signal>()).Add(new Signal { Dir = dir, Kind = kind, Name = name, Id = Core.NextSignalId(St) });
+            (t.Sigs ??= new List<Signal>()).Add(new Signal { Dir = dir, Kind = kind, Name = name, Id = Core.NextSignalId(St), Fixed = true });
             return this;
         }
         public B Text(int x, int y, string text, double size = 14)

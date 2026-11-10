@@ -99,6 +99,7 @@ public sealed partial class MainForm : Form
         };
         top.Items.Add(cbExample);
         Btn("Экспорт в C#", "Черновик C#-кода схемы для программы станции", ExportCmd);
+        Btn("Обозначения…", "Как называются светофоры: буква для →, шаблоны имён по видам, вид по участку; перенумеровать все", NamingCmd);
         top.Items.Add(new ToolStripSeparator());
         bUndo = Btn("↶", "Отменить (Ctrl+Z)", Undo);
         bRedo = Btn("↷", "Вернуть (Ctrl+Y)", Redo);
@@ -240,7 +241,8 @@ public sealed partial class MainForm : Form
         {
             try
             {
-                LoadStation(StationFile.Load(startFile), true);
+                var sf = StationFile.Load(startFile);
+                LoadStation(sf, true);
                 currentFile = Path.GetFullPath(startFile);
                 opened = true;
                 Msg("Открыт файл " + Path.GetFileName(startFile));
@@ -323,6 +325,8 @@ public sealed partial class MainForm : Form
 
     void Changed(bool rebuildTab = true)
     {
+        // [ДОБАВЛЕНО 10.11.2026] «собранные» имена следят за названием пути, шаблоном и цифрой «№»
+        if (Naming.RebuildAll(st) > 0) rebuildTab = true;
         routesCache = null;
         ui.Preview = null;
         dirty = true;
@@ -351,6 +355,7 @@ public sealed partial class MainForm : Form
         ui.Sel.Clear();
         ui.SelSig = null;
         ui.SelObj = null;
+        ui.SelLabel = null;
         ui.ObjMove = null;
         ui.FlashSec = null;
         ui.Preview = null;
@@ -516,6 +521,42 @@ public sealed partial class MainForm : Form
         f.ShowDialog(this);
     }
 
+    /// <summary>[ДОБАВЛЕНО 10.11.2026] Окно «Обозначения…»: буква для →, шаблоны имён, вид по участку, «Перенумеровать все».</summary>
+    void NamingCmd()
+    {
+        CommitFocusedField();
+        if (ui.IsTest) SetMode("edit");
+        using var f = new NamingForm(st, RenumberPreview);
+        if (f.ShowDialog(this) != DialogResult.OK) return;
+        Edit(() =>
+        {
+            st.RightOdd = f.RightOdd ? true : null;
+            st.Naming = f.Result;
+            if (f.RenumberAll) Naming.Apply(st);
+        });
+        RefreshToolOpts();
+        Msg(f.RenumberAll ? "Обозначения сохранены, светофоры перенумерованы" : "Обозначения сохранены — новые светофоры получат имена по ним");
+    }
+
+    /// <summary>Спросить «Перенумеровать все?» со списком изменений (по настройкам из окна). true — да.</summary>
+    bool RenumberPreview(Station draft)
+    {
+        var ch = Naming.Preview(draft);
+        if (ch.Count == 0)
+        {
+            MessageBox.Show(this, "Все имена уже такие, как по правилам (или закреплены «имя вручную»).", "Перенумеровать",
+                MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return false;
+        }
+        const int max = 25;
+        var lines = string.Join("\n", ch.Take(max).Select(c =>
+            $"    {(string.IsNullOrEmpty(c.Old) ? "?" : c.Old)}  →  {c.New}   (клетка {c.Key})"));
+        if (ch.Count > max) lines += $"\n    …и ещё {ch.Count - max}";
+        return MessageBox.Show(this, "Перенумеровать светофоры по правилам? Закреплённые («имя вручную») не меняются.\n\n" + lines +
+                                     "\n\nОтменить потом можно кнопкой «↶ Отменить».", "Перенумеровать",
+                   MessageBoxButtons.OKCancel, MessageBoxIcon.Question) == DialogResult.OK;
+    }
+
     bool Confirm(string text) =>
         MessageBox.Show(this, text, "Редактор станций", MessageBoxButtons.OKCancel, MessageBoxIcon.Question) == DialogResult.OK;
 
@@ -585,7 +626,7 @@ public sealed partial class MainForm : Form
             case Keys.G: vGost.Checked = !vGost.Checked; return true;    // [ДОБАВЛЕНО 09.11.2026] огни: цвет / ГОСТ
             case Keys.Escape:
                 if (ui.IsTest) { ui.Test.Pending = null; Msg("Набор маршрута отменён"); Draw(); return true; }
-                ui.Sel.Clear(); ui.SelSig = null; ui.SelObj = null; ui.FlashSec = null;
+                ui.Sel.Clear(); ui.SelSig = null; ui.SelObj = null; ui.SelLabel = null; ui.FlashSec = null;
                 SetTool("select");
                 RefreshPanels();
                 return true;
@@ -593,6 +634,18 @@ public sealed partial class MainForm : Form
         if (ui.IsTest) return base.ProcessCmdKey(ref m, keyData);
 
         if ((key == Keys.Delete || key == Keys.Back) && !inList) { DeleteSelection(); return true; }
+        if (!inList && ui.SelLabel is int sl && sl < st.Labels.Count)    // [ДОБАВЛЕНО 10.11.2026] свободный текст: чуть-чуть, Shift — на клетку
+        {
+            double d = shift ? 1 : 0.1;
+            switch (key)
+            {
+                case Keys.Left: MoveLabel(-d, 0); return true;
+                case Keys.Right: MoveLabel(d, 0); return true;
+                case Keys.Up: MoveLabel(0, -d); return true;
+                case Keys.Down: MoveLabel(0, d); return true;
+                case Keys.Enter: EditLabel(sl); return true;
+            }
+        }
         if (!inList && ui.SelObj != null)
         {
             switch (key)
@@ -620,6 +673,7 @@ public sealed partial class MainForm : Form
             case Keys.B: SetTool("brush"); return true;
             case Keys.S: SetTool("signal"); return true;
             case Keys.T: SetTool("text"); return true;
+            case Keys.L: SetTool("label"); return true;    // [ДОБАВЛЕНО 10.11.2026] свободный текст
             case Keys.R: RotateSelected(shift ? -1 : 1); return true;
         }
         int digit = key >= Keys.D0 && key <= Keys.D9 ? key - Keys.D0 : key >= Keys.NumPad0 && key <= Keys.NumPad9 ? key - Keys.NumPad0 : -1;

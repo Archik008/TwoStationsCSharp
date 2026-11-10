@@ -1,0 +1,556 @@
+{
+  "format": "station-editor",
+  "version": 1,
+  "name": "Тест станция v2",
+  "tiles": {
+    "4,8": {
+      "t": "exit",
+      "v": 0,
+      "sec": "1П"
+    },
+    "5,8": {
+      "t": "straight",
+      "v": 0,
+      "sec": "1П"
+    },
+    "6,8": {
+      "t": "straight",
+      "v": 0,
+      "sec": "1П"
+    },
+    "7,8": {
+      "t": "straight",
+      "v": 0,
+      "sec": "1П",
+      "sigs": [
+        {
+          "dir": "R",
+          "kind": "entry",
+          "name": "Н",
+          "id": 1,
+          "ltr": "Н"
+        }
+      ]
+    },
+    "8,8": {
+      "t": "straight",
+      "v": 0,
+      "sec": "1П"
+    },
+    "9,8": {
+      "t": "straight",
+      "v": 0,
+      "sec": "1П"
+    },
+    "10,8": {
+      "t": "straight",
+      "v": 0,
+      "sec": "1П",
+      "sigs": [
+        {
+          "dir": "R",
+          "kind": "shunt",
+          "name": "М1",
+          "id": 14,
+          "ltr": "Н"
+        }
+      ]
+    },
+    "11,8": {
+      "t": "switch",
+      "v": 0,
+      "sec": "1П",
+      "name": ""
+    },
+    "12,8": {
+      "t": "switch",
+      "v": 1,
+      "sec": "1П",
+      "name": ""
+    },
+    "14,8": {
+      "t": "straight",
+      "v": 0,
+      "sec": "1П",
+      "sigs": [
+        {
+          "dir": "L",
+          "kind": "exit",
+          "name": "Ч1",
+          "id": 3,
+          "ltr": "Ч"
+        }
+      ]
+    },
+    "16,8": {
+      "t": "straight",
+      "v": 0,
+      "sec": "1П"
+    },
+    "17,8": {
+      "t": "straight",
+      "v": 0,
+      "sec": "1П"
+    },
+    "18,8": {
+      "t": "switch",
+      "v": 2,
+      "sec": "1П",
+      "name": ""
+    },
+    "19,8": {
+      "t": "straight",
+      "v": 0,
+      "sec": "1П"
+    },
+    "20,8": {
+      "t": "straight",
+      "v": 0,
+      "sec": "1П"
+    },
+    "21,8": {
+      "t": "switch",
+      "v": 3,
+      "sec": "1П",
+      "name": ""
+    },
+    "22,8": {
+      "t": "straight",
+      "v": 0,
+      "sec": "1П"
+    },
+    "23,8": {
+      "t": "straight",
+      "v": 0,
+      "sec": "1П"
+    },
+    "24,8": {
+      "t": "straight",
+      "v": 0,
+      "sec": "1П"
+    },
+    "25,8": {
+      "t": "straight",
+      "v": 0,
+      "sec": "1П"
+    },
+    "27,8": {
+      "t": "straight",
+      "v": 0,
+      "sec": "1П"
+    },
+    "28,8": {
+      "t": "straight",
+      "v": 0,
+      "sec": "1П"
+    },
+    "30,8": {
+      "t": "straight",
+      "v": 0,
+      "sec": "1Б",
+      "sigs": [
+        {
+          "dir": "R",
+          "kind": "entry",
+          "name": "НА",
+          "id": 10,
+          "fixed": true
+        }
+      ]
+    },
+    "12,7": {
+      "t": "curve",
+      "v": 3,
+      "sec": "5П"
+    },
+    "13,7": {
+      "t": "straight",
+      "v": 0,
+      "sec": "5П"
+    },
+    "14,7": {
+      "t": "straight",
+      "v": 0,
+      "sec": "5П",
+      "sigs": [
+        {
+          "dir": "L",
+          "kind": "exit",
+          "name": "Ч5",
+          "id": 2,
+          "ltr": "Ч"
+        }
+      ]
+    },
+    "15,7": {
+      "t": "straight",
+      "v": 0,
+      "sec": "5П",
+      "sigs": [
+        {
+          "dir": "R",
+          "kind": "exit",
+          "name": "Н5",
+          "id": 5,
+          "ltr": "Н"
+        }
+      ]
+    },
+    "17,7": {
+      "t": "curve",
+      "v": 1,
+      "sec": "5П"
+    },
+    "13,9": {
+      "t": "curve",
+      "v": 2,
+      "sec": "3П"
+    },
+    "15,9": {
+      "t": "straight",
+      "v": 0,
+      "sec": "3П",
+      "sigs": [
+        {
+          "dir": "L",
+          "kind": "exit",
+          "name": "Ч3",
+          "id": 4,
+          "ltr": "Ч"
+        }
+      ]
+    },
+    "16,9": {
+      "t": "straight",
+      "v": 0,
+      "sec": "3П"
+    },
+    "18,9": {
+      "t": "straight",
+      "v": 0,
+      "sec": "3П",
+      "sigs": [
+        {
+          "dir": "R",
+          "kind": "exit",
+          "name": "Н3",
+          "id": 7,
+          "ltr": "Н"
+        }
+      ]
+    },
+    "19,9": {
+      "t": "straight",
+      "v": 0,
+      "sec": "3П"
+    },
+    "20,9": {
+      "t": "curve",
+      "v": 0,
+      "sec": "3П"
+    },
+    "15,8": {
+      "t": "straight",
+      "v": 0,
+      "sec": "1П",
+      "sigs": [
+        {
+          "dir": "R",
+          "kind": "exit",
+          "name": "Н1",
+          "id": 6,
+          "ltr": "Н"
+        }
+      ]
+    },
+    "17,9": {
+      "t": "straight",
+      "v": 0,
+      "sec": "3П"
+    },
+    "14,9": {
+      "t": "straight",
+      "v": 0,
+      "sec": "3П"
+    },
+    "13,8": {
+      "t": "straight",
+      "v": 0,
+      "sec": "1П"
+    },
+    "16,7": {
+      "t": "straight",
+      "v": 0,
+      "sec": "5П"
+    },
+    "29,8": {
+      "t": "straight",
+      "v": 0,
+      "sec": "1П",
+      "sigs": [
+        {
+          "dir": "L",
+          "kind": "entry",
+          "name": "ЧБ",
+          "id": 9,
+          "fixed": true,
+          "ltr": "Ч"
+        }
+      ]
+    },
+    "35,8": {
+      "t": "straight",
+      "v": 0,
+      "sec": "1Б"
+    },
+    "36,8": {
+      "t": "straight",
+      "v": 0,
+      "sec": "1Б"
+    },
+    "37,8": {
+      "t": "straight",
+      "v": 0,
+      "sec": "1Б"
+    },
+    "38,8": {
+      "t": "straight",
+      "v": 0,
+      "sec": "1Б"
+    },
+    "39,8": {
+      "t": "switch",
+      "v": 0,
+      "sec": "1Б",
+      "name": ""
+    },
+    "40,8": {
+      "t": "straight",
+      "v": 0,
+      "sec": "1Б"
+    },
+    "41,8": {
+      "t": "switch",
+      "v": 1,
+      "sec": "1Б",
+      "name": ""
+    },
+    "42,8": {
+      "t": "straight",
+      "v": 0,
+      "sec": "1Б"
+    },
+    "43,8": {
+      "t": "straight",
+      "v": 0,
+      "sec": "1Б",
+      "sigs": [
+        {
+          "dir": "L",
+          "kind": "exit",
+          "name": "Ч1Б",
+          "id": 12,
+          "ltr": "Ч"
+        }
+      ]
+    },
+    "44,8": {
+      "t": "straight",
+      "v": 0,
+      "sec": "1Б"
+    },
+    "45,8": {
+      "t": "straight",
+      "v": 0,
+      "sec": "1Б"
+    },
+    "46,8": {
+      "t": "straight",
+      "v": 0,
+      "sec": "1Б"
+    },
+    "47,8": {
+      "t": "straight",
+      "v": 0,
+      "sec": "1Б"
+    },
+    "48,8": {
+      "t": "straight",
+      "v": 0,
+      "sec": "1Б"
+    },
+    "40,7": {
+      "t": "curve",
+      "v": 3,
+      "sec": "5Б"
+    },
+    "41,7": {
+      "t": "straight",
+      "v": 0,
+      "sec": "5Б"
+    },
+    "42,7": {
+      "t": "straight",
+      "v": 0,
+      "sec": "5Б"
+    },
+    "43,7": {
+      "t": "straight",
+      "v": 0,
+      "sec": "5Б",
+      "sigs": [
+        {
+          "dir": "L",
+          "kind": "exit",
+          "name": "Ч5Б",
+          "id": 11,
+          "ltr": "Ч"
+        }
+      ]
+    },
+    "44,7": {
+      "t": "straight",
+      "v": 0,
+      "sec": "5Б"
+    },
+    "45,7": {
+      "t": "straight",
+      "v": 0,
+      "sec": "5Б"
+    },
+    "46,7": {
+      "t": "straight",
+      "v": 0,
+      "sec": "5Б"
+    },
+    "47,7": {
+      "t": "straight",
+      "v": 0,
+      "sec": "5Б"
+    },
+    "48,7": {
+      "t": "straight",
+      "v": 0,
+      "sec": "5Б"
+    },
+    "49,7": {
+      "t": "exit",
+      "v": 1,
+      "sec": "5Б"
+    },
+    "49,8": {
+      "t": "exit",
+      "v": 1,
+      "sec": "1Б"
+    },
+    "42,9": {
+      "t": "curve",
+      "v": 2,
+      "sec": "3Б"
+    },
+    "43,9": {
+      "t": "straight",
+      "v": 0,
+      "sec": "3Б"
+    },
+    "44,9": {
+      "t": "straight",
+      "v": 0,
+      "sec": "3Б",
+      "sigs": [
+        {
+          "dir": "L",
+          "kind": "exit",
+          "name": "Ч3Б",
+          "id": 13,
+          "ltr": "Ч"
+        }
+      ]
+    },
+    "45,9": {
+      "t": "straight",
+      "v": 0,
+      "sec": "3Б"
+    },
+    "46,9": {
+      "t": "straight",
+      "v": 0,
+      "sec": "3Б"
+    },
+    "47,9": {
+      "t": "straight",
+      "v": 0,
+      "sec": "3Б"
+    },
+    "48,9": {
+      "t": "straight",
+      "v": 0,
+      "sec": "3Б"
+    },
+    "49,9": {
+      "t": "exit",
+      "v": 1,
+      "sec": "3Б"
+    },
+    "31,8": {
+      "t": "straight",
+      "v": 0,
+      "sec": "1Б"
+    },
+    "32,8": {
+      "t": "straight",
+      "v": 0,
+      "sec": "1Б"
+    },
+    "33,8": {
+      "t": "straight",
+      "v": 0,
+      "sec": "1Б"
+    },
+    "34,8": {
+      "t": "straight",
+      "v": 0,
+      "sec": "1Б"
+    },
+    "26,8": {
+      "t": "straight",
+      "v": 0,
+      "sec": "1П"
+    }
+  },
+  "sections": {
+    "1П": {
+      "type": "auto"
+    },
+    "5П": {
+      "type": "auto"
+    },
+    "3П": {
+      "type": "auto"
+    },
+    "1Б": {
+      "type": "auto"
+    },
+    "5Б": {
+      "type": "auto"
+    },
+    "3Б": {
+      "type": "auto"
+    }
+  },
+  "texts": {
+    "14,5": {
+      "text": "Станция А",
+      "size": 14
+    }
+  },
+  "objects": {},
+  "rightOdd": true,
+  "autoNames": true,
+  "naming": {
+    "templates": {
+      "entry": "{Б}"
+    }
+  },
+  "labels": []
+}

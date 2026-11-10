@@ -51,6 +51,7 @@ public sealed class UiState
     public string ObjType = "building";       // [ДОБАВЛЕНО 05.11.2026] какой объект ставит инструмент «object»
     public string SelObj;                     // выбранный объект (ключ левого верхнего угла)
     public Point? ObjMove;                    // объект перетаскивают: сдвиг в клетках
+    public int? SelLabel;                     // [ДОБАВЛЕНО 10.11.2026] выбранный свободный текст (номер в Station.Labels)
     public readonly Dictionary<string, int> Variant = new();   // тип кубика → выбранный вариант
     public Camera Cam = new();
     public HashSet<string> Sel = new();
@@ -64,7 +65,7 @@ public sealed class UiState
     public string FlashSec;
     public RoutePreview Preview;
     public string BrushSec = "";
-    public string SigKind = "entry", SigDir = "R";
+    public string SigKind = "auto", SigDir = "R";    // [10.11.2026] по умолчанию вид — по участку
     public string Tab = "props";              // props | secs | routes | checks
     public string RouteFilter = "all";        // all | train | shunt
     public readonly TestState Test = new();

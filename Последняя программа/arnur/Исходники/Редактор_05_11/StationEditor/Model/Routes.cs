@@ -293,6 +293,23 @@ public static class Validator
                 if (!routes.Any(r => r.Start == s.Ref))
                     Add("warn", $"От светофора {Nz(s.Sig.Name)} не найдено ни одного маршрута — проверьте разрывы и типы участков впереди (есть ли «путь»)", s.Key);
             }
+
+            // [ДОБАВЛЕНО 09.11.2026] поездной маршрут прошёл мимо другого поездного светофора того же направления —
+            // значит, путь перед ним не распознан как «путь» (поездной маршрут кончается только на пути или на перегоне)
+            var passed = new HashSet<string>();
+            foreach (var r in routes.Where(r => !r.Shunt))
+                foreach (var k in r.Tiles)
+                {
+                    if (k == r.Start.Key || !st.Tiles.TryGetValue(k, out var t) || t.Sigs == null) continue;
+                    if (!r.Exit && t.Sec == r.Dest) continue;    // путь приёма: выходной в его конце — там поезд и остановится
+                    foreach (var o in t.Sigs)
+                    {
+                        if (o.Dir != r.Dir || !Core.IsTrainStart(o.Kind) || !passed.Add(r.StartName + "|" + k + "|" + o.Name)) continue;
+                        Add("warn", $"Поездной маршрут от {r.StartName} проходит мимо светофора {Nz(o.Name)} " +
+                                    $"({Core.SigKindName(o.Kind)?.ToLowerInvariant()}) и идёт дальше: у участка «{Nz(t.Sec)}» не тип «путь»? " +
+                                    "Задайте тип на вкладке «Участки» или назовите участок как путь (3П, IIП)", k);
+                    }
+                }
         }
 
         // [ДОБАВЛЕНО 05.11.2026] предупредительный и повторительный должны видеть свой основной светофор,

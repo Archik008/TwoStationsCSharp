@@ -80,7 +80,7 @@ public static class Aspects
     static readonly Lamp[] HeadSide = { Lamp.White, Lamp.Red, Lamp.Green, Lamp.Yellow };
 
     static readonly System.Text.RegularExpressions.Regex ReMain =
-        new(@"^(I{1,3}|IV|VI{0,3}|IX|X)[А-ЯA-Z]?П$", System.Text.RegularExpressions.RegexOptions.Compiled);
+        new(@"^(I{1,3}|IV|VI{0,3}|IX|X)[А-ЯA-Z]?П?$", System.Text.RegularExpressions.RegexOptions.Compiled);    // [ИЗМЕНЕНО 10.11.2026] «П» необязательна
 
     /// <summary>Главный путь — номер римскими цифрами (IП, IIП, IIАП), как на стр. 89 РУ-30-80.</summary>
     public static bool IsMainTrack(string sec) => !string.IsNullOrEmpty(sec) && ReMain.IsMatch(sec.Trim().ToUpperInvariant());

@@ -67,7 +67,7 @@ public sealed partial class MainForm
         if (m == "test")
         {
             ui.Sel.Clear(); ui.SelSig = null; ui.Ghost = null; ui.Band = null; ui.FlashSec = null; ui.Preview = null;
-            ui.SelObj = null; ui.ObjMove = null;
+            ui.SelObj = null; ui.ObjMove = null; ui.SelLabel = null;
             ui.Moving = null; drag = null;
             T.SavedPlus = new Dictionary<string, bool?>();
             foreach (var (k, t) in st.Tiles) if (t.T == "switch") T.SavedPlus[k] = t.Plus;

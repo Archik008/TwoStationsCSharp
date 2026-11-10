@@ -316,6 +316,13 @@ public static class CsExport
                 W($"    g.Text({CsStr(tx.Text)}, {Num(X(x) + 3)}, {Num(Y(y) + C / 2 - 8)}, {Num((tx.Size > 0 ? tx.Size : 14) * 0.7)}f, true);");
             }
         }
+        if (st.Labels.Count > 0)    // [ДОБАВЛЕНО 10.11.2026] свободный текст — в точных координатах
+        {
+            W("");
+            W("    // свободный текст");
+            foreach (var l in st.Labels)
+                W($"    g.Text({CsStr(l.Text)}, {Num((l.X - minX + 1) * C)}, {Num((l.Y - minY + 1) * C)}, {Num((l.Size > 0 ? l.Size : 14) * 0.7)}f, {(l.IsBold ? "true" : "false")});");
+        }
         W("");
         W("    g.AutoSectionLabels();");
         W("}");
