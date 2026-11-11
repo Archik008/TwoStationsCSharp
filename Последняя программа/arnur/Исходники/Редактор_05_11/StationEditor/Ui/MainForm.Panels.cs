@@ -500,6 +500,13 @@ public sealed partial class MainForm
                                     "Сохраняется в файле станции; действует и в «Станции по схеме». То же — кнопка «Названия» вверху.");
             secLbl.CheckedChanged += (_, _) => { bool v = secLbl.Checked; Later(() => Edit(() => st.SecLabels = v ? true : null)); };
             f.Controls.Add(secLbl);
+            // [ДОБАВЛЕНО 11.11.2026] название пути в разрыве линии со стрелками «→ 3П ←», как на схемах РУ-30-80
+            var gapLbl = new CheckBox { Text = "Названия путей в разрыве пути (→ 3П ←)", Checked = st.TrackGaps != false, AutoSize = true,
+                                        MaximumSize = new Size(w, 0), Margin = new Padding(0, 0, 0, S(4)) };
+            tips.SetToolTip(gapLbl, "Как на схемах РУ-30-80 (стр. 89, 90): линия пути прерывается, в разрыве — название пути,\n" +
+                                    "к нему стрелки. Только для участков типа «путь»; если прямой кусок пути короче надписи — без разрыва.");
+            gapLbl.CheckedChanged += (_, _) => { bool v = gapLbl.Checked; Later(() => Edit(() => st.TrackGaps = v ? null : false)); };
+            f.Controls.Add(gapLbl);
             // [ИЗМЕНЕНО 11.11.2026] направление (буквы Н / Ч) — одна настройка «Чётные поезда» ниже, в «Нумерации»
             Hint(f, w, "Новый светофор получает имя сам: буква — от входного своего направления, а если входных нет — от ближайшего " +
                        "светофора или по настройке «Чётные поезда» (ниже, в «Нумерации»), " +

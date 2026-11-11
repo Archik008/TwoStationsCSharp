@@ -94,6 +94,59 @@ public static class Renderer
         return f;
     }
 
+    // ---------------- [ДОБАВЛЕНО 11.11.2026] название пути в разрыве линии (РУ-30-80, стр. 89–90) ----------------
+    public sealed class TrackGap
+    {
+        public string Sec;
+        /// <summary>Полоска, которую не рисуем (разрыв линии пути)</summary>
+        public RectangleF Cut;
+        public PointF Center;
+        /// <summary>Половина ширины текста с полями — от центра до острия стрелки</summary>
+        public float TextHalf;
+        /// <summary>Длина стрелки; 0 — короткий путь, в разрыве только название (без стрелок)</summary>
+        public float Arrow;
+    }
+
+    /// <summary>Где подписать пути (участки типа «путь»): посередине самого длинного горизонтального прямого куска без светофоров.
+    /// Не помещается надпись со стрелками — [11.11.2026] разрыв только с названием; не помещается и оно — путь без разрыва.</summary>
+    public static List<TrackGap> TrackGapList(Station st, float ox, float oy, float cs)
+    {
+        var res = new List<TrackGap>();
+        var f = GetFont(cs * 0.3f, true);
+        float arrow = cs * 0.2f, pad = cs * 0.07f, cut = Math.Max(4f, cs * 0.13f) + 4;
+        foreach (var (sec, bY, bX0, bX1) in Core.TrackGapRuns(st))    // место — общее с «Станцией по схеме»
+        {
+            var best = (Y: bY, X0: bX0, X1: bX1);
+            float txtW = measure.MeasureString(sec, f, PointF.Empty, StringFormat.GenericTypographic).Width;
+            float textHalf = txtW / 2 + pad, a = arrow, half = textHalf + a, room = (best.X1 - best.X0 + 1) * cs;
+            if (2 * half > room - cs * 0.3f)
+            {
+                a = 0; half = textHalf;                                  // короткий путь: без стрелок
+                if (2 * half > room - cs * 0.1f) continue;               // и название не помещается
+            }
+            float cx = ox + (best.X0 + best.X1 + 1) / 2f * cs, cy = oy + (best.Y + 0.5f) * cs;
+            res.Add(new TrackGap { Sec = sec, Center = new PointF(cx, cy), TextHalf = textHalf, Arrow = a, Cut = new RectangleF(cx - half, cy - cut / 2, 2 * half, cut) });
+        }
+        return res;
+    }
+
+    /// <summary>В разрыве — название пути, по краям — стрелки к нему: «——▶ 3П ◀——».</summary>
+    static void DrawTrackGaps(Graphics g, List<TrackGap> gaps, float cs)
+    {
+        if (gaps.Count == 0) return;
+        var f = GetFont(cs * 0.3f, true);
+        float ah = Math.Max(2.5f, cs * 0.08f);
+        using var tb = new SolidBrush(Pal.Text);
+        using var ab = new SolidBrush(Pal.Track);
+        foreach (var gp in gaps)
+        {
+            float cx = gp.Center.X, cy = gp.Center.Y, tl = cx - gp.TextHalf, tr = cx + gp.TextHalf, arrow = gp.Arrow;
+            if (arrow > 0) g.FillPolygon(ab, new[] { new PointF(tl - arrow, cy - ah), new PointF(tl, cy), new PointF(tl - arrow, cy + ah) });
+            if (arrow > 0) g.FillPolygon(ab, new[] { new PointF(tr + arrow, cy - ah), new PointF(tr, cy), new PointF(tr + arrow, cy + ah) });
+            g.DrawString(gp.Sec, f, tb, gp.Center, Center);
+        }
+    }
+
     // ---------------- [ДОБАВЛЕНО 10.11.2026] свободный текст ----------------
     static readonly Graphics measure = Graphics.FromImage(new Bitmap(1, 1));
 
@@ -752,6 +805,12 @@ public static class Renderer
             DrawObject(g, o, new RectangleF(SX(bx), SY(by), o.W * cs, o.H * cs), test ? T.Drive.Shown : 0);
         }
 
+        // ---- [ДОБАВЛЕНО 11.11.2026] названия путей в разрыве линии («→ 3П ←», РУ-30-80 стр. 89–90):
+        // на время рисования путей вырезаем узкую полоску вдоль линии — цвета участков и стыки не трогаем ----
+        var gaps = st.TrackGaps != false && cs >= 12 ? TrackGapList(st, ox, oy, cs) : new List<TrackGap>();
+        var clipBeforeTracks = g.Clip;
+        foreach (var gp in gaps) g.ExcludeClip(new Region(gp.Cut));
+
         // ---- пути ----
         foreach (var e in entries)
         {
@@ -768,6 +827,8 @@ public static class Renderer
                 crossingClosed: test && e.T.T == "crossing" && hasSec && T.Occ.Contains(e.T.Sec),
                 noControl: test && T.NoControl.Contains(e.K), lost: test && T.Drive.Lost.Contains(e.K));
         }
+        g.Clip = clipBeforeTracks;
+        DrawTrackGaps(g, gaps, cs);
 
         // ---- стыки (где соседние клетки — разные участки) и разрывы ----
         using (var jp = new Pen(Pal.Dark, Math.Max(1.5f, cs * 0.06f)))
@@ -814,8 +875,10 @@ public static class Renderer
         {
             var f = GetFont(cs * 0.26f, false);
             using var b = new SolidBrush(Pal.SecName);
+            var gapSecs = new HashSet<string>(gaps.Select(gp => gp.Sec));    // [11.11.2026] путь уже подписан в разрыве
             foreach (var (sec, keys) in Core.TilesBySection(st))
             {
+                if (gapSecs.Contains(sec)) continue;
                 var flat = keys.Where(k => { var t = st.Tiles[k]; return (t.T == "straight" && t.V == 0) || t.T == "crossing"; }).ToList();
                 var pool = (flat.Count > 0 ? flat : keys).Select(Core.Parse).OrderBy(p => p.X).ThenBy(p => p.Y).ToList();
                 var (x, y) = pool[(pool.Count - 1) / 2];

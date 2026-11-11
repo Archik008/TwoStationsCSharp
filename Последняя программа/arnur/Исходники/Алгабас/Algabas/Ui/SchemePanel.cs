@@ -279,7 +279,46 @@ class RailSchemePanel : Panel
         return TrackColor;
     }
 
+    /// <summary>[ДОБАВЛЕНО 11.11.2026] Пути, подписанные в разрыве линии (их подпись под путём не повторяем).</summary>
+    readonly HashSet<string> gapLabeled = new();
+
     void DrawTracks(Graphics g)
+    {
+        // [ДОБАВЛЕНО 11.11.2026] название пути в разрыве «——▶ 3П ◀——» (РУ-30-80, стр. 89–90): на время рисования путей
+        // вырезаем полоску вдоль линии; список заполняет только «Станция по схеме», у остальных он пустой
+        gapLabeled.Clear();
+        var gaps = new List<(TrackNameGap Gp, float TextHalf, float Arrow)>();
+        foreach (var gp in G.TrackNameGaps)
+        {
+            float textHalf = g.MeasureString(gp.Text, fSection).Width / 2 + 3;
+            if (textHalf + 12 <= gp.MaxHalf - 6) gaps.Add((gp, textHalf, 12));
+            else if (textHalf <= gp.MaxHalf - 2) gaps.Add((gp, textHalf, 0));    // короткий путь: только название, без стрелок
+        }
+        Region clipSave = null;
+        if (gaps.Count > 0)
+        {
+            clipSave = g.Clip;
+            foreach (var (gp, th, ar) in gaps) g.ExcludeClip(new Rectangle((int)(gp.Center.X - th - ar), (int)(gp.Center.Y - 6), (int)(2 * (th + ar)), 12));
+        }
+        try { DrawTrackLines(g); }
+        finally { if (clipSave != null) g.Clip = clipSave; }
+        if (gaps.Count == 0) return;
+        using var ab = new SolidBrush(TrackColor);
+        using var tb = new SolidBrush(Pal.SectionLabel.IsEmpty ? SchemeStyle.SectionLabelColor : Pal.SectionLabel);
+        foreach (var (gp, th, ar) in gaps)
+        {
+            float cx = gp.Center.X, cy = gp.Center.Y;
+            if (ar > 0)
+            {
+                g.FillPolygon(ab, new[] { new PointF(cx - th - ar, cy - 5), new PointF(cx - th, cy), new PointF(cx - th - ar, cy + 5) });
+                g.FillPolygon(ab, new[] { new PointF(cx + th + ar, cy - 5), new PointF(cx + th, cy), new PointF(cx + th + ar, cy + 5) });
+            }
+            g.DrawString(gp.Text, fSection, tb, gp.Center, center);
+            gapLabeled.Add(gp.SectionId);
+        }
+    }
+
+    void DrawTrackLines(Graphics g)
     {
         using (var dp = new Pen(TrackColor, 5f))
             foreach (var pts in G.Decor) g.DrawLines(dp, pts);
@@ -378,7 +417,7 @@ class RailSchemePanel : Panel
         // половина высоты букв + половина толщины пути + зазор
         float need = fSection.Size * 96f / 72f / 2f + 2.5f + SchemeStyle.SectionLabelGap;
         foreach (var (id, pt) in G.SectionLabels)
-            if (IL.Sections.TryGetValue(id, out var s))
+            if (!gapLabeled.Contains(id) && IL.Sections.TryGetValue(id, out var s))    // [11.11.2026] уже подписан в разрыве
                 g.DrawString(s.Label, fSection, b, AwayFromTrack(pt, need), center);
     }
 

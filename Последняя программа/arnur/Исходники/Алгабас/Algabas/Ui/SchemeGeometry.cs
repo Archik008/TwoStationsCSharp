@@ -65,6 +65,16 @@ public class DirectionGeom
     public string RightText = "→", LeftText = "←";
 }
 
+/// <summary>[ДОБАВЛЕНО 11.11.2026] Название пути в разрыве линии со стрелками «——▶ 3П ◀——» (как на схемах РУ-30-80, стр. 89–90).
+/// Заполняет только «Станция по схеме» (JsonLayout); у Алгабаса и АКЖТ список пустой — их схемы не меняются.</summary>
+public class TrackNameGap
+{
+    public string SectionId = "";
+    public string Text = "";
+    public PointF Center;              // середина разрыва на линии пути
+    public float MaxHalf;              // сколько места есть в каждую сторону (полдлины прямого куска); не помещается — без разрыва
+}
+
 public class SchemeGeometry
 {
     public float DesignW = 2400, DesignH = 640;
@@ -85,6 +95,7 @@ public class SchemeGeometry
     public readonly List<TunnelGeom> Tunnels = new();
     public readonly List<CrossingGeom> Crossings = new();
     public readonly List<DirectionGeom> Directions = new();
+    public readonly List<TrackNameGap> TrackNameGaps = new();    // [ДОБАВЛЕНО 11.11.2026] пусто — как раньше
 
     // ---------- помощники для описания схемы ----------
     public static PointF[] P(params (float x, float y)[] pts) => pts.Select(p => new PointF(p.x, p.y)).ToArray();

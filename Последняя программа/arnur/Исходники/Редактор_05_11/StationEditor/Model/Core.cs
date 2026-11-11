@@ -431,6 +431,49 @@ public static class Core
     }
 
     // [10.11.2026] имя нового светофора — в Model/Naming.cs (Naming.ForNew)
+
+    /// <summary>[ДОБАВЛЕНО 11.11.2026] Где подписать пути разрывом «→ 3П ←» (РУ-30-80, стр. 89–90): для каждого участка типа «путь» —
+    /// самый длинный горизонтальный прямой кусок, не занятый огнями светофоров (при равной длине — ближе к середине участка).
+    /// Клетки X0..X1 в ряду Y; поместится ли надпись — решает тот, кто рисует. Общее для редактора и «Станции по схеме».
+    /// [ИЗМЕНЕНО 11.11.2026] мачта светофора стоит на торце своей клетки, а огни уходят в соседнюю клетку по ходу
+    /// («Ч» — влево, «Н» — вправо): занятой считаем соседнюю клетку, а клетку со светофором — свободной.
+    /// Так у короткого пути «Ч5 ⊣ 5П ⊢ Н5» (3 клетки) надпись встаёт между мачтами, а не под огнями.</summary>
+    public static List<(string Sec, int Y, int X0, int X1)> TrackGapRuns(Station st)
+    {
+        var res = new List<(string, int, int, int)>();
+        if (st.TrackGaps == false) return res;
+        var lamps = new HashSet<(int X, int Y)>();
+        foreach (var (k, t) in st.Tiles)
+        {
+            if (!t.HasSigs) continue;
+            var (x, y) = Parse(k);
+            foreach (var s in t.Sigs) lamps.Add((s.Dir == "R" ? x + 1 : x - 1, y));
+        }
+        foreach (var (sec, keys) in TilesBySection(st))
+        {
+            if (SecType(st, sec) != "path") continue;
+            var cells = keys.Where(k => st.Tiles[k].T == "straight" && st.Tiles[k].V == 0).Select(Parse)
+                .Where(c => !lamps.Contains((c.X, c.Y))).ToList();
+            if (cells.Count == 0) continue;
+            double mid = keys.Select(k => Parse(k).X).Average();
+            int bY = 0, b0 = 0, b1 = -1;
+            foreach (var row in cells.GroupBy(c => c.Y))
+            {
+                var xs = row.Select(c => c.X).OrderBy(v => v).ToList();
+                int s0 = xs[0];
+                for (int i = 1; i <= xs.Count; i++)
+                {
+                    if (i < xs.Count && xs[i] == xs[i - 1] + 1) continue;
+                    int e0 = xs[i - 1], len = e0 - s0, bLen = b1 - b0;
+                    if (len > bLen || len == bLen && Math.Abs((s0 + e0) / 2.0 - mid) < Math.Abs((b0 + b1) / 2.0 - mid))
+                        (bY, b0, b1) = (row.Key, s0, e0);
+                    if (i < xs.Count) s0 = xs[i];
+                }
+            }
+            if (b1 >= b0) res.Add((sec, bY, b0, b1));
+        }
+        return res;
+    }
 }
 
 /// <summary>Сравнение «как в русском алфавите, числа — по значению» (1П, 2П, 10П).</summary>

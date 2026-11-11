@@ -654,6 +654,18 @@ public class JsonLayout
             g.DesignH = Math.Max(g.DesignH, textY + 40);
         }
 
+        // [ДОБАВЛЕНО 11.11.2026] название пути в разрыве линии «——▶ 3П ◀——», как в редакторе (галочка trackGaps, по умолчанию вкл.):
+        // место — общее с редактором (TC.TrackGapRuns), поместится ли надпись — решает панель схемы
+        foreach (var (sec, gy, gx0, gx1) in TC.TrackGapRuns(St))
+        {
+            if (!secs.TryGetValue(sec, out var ts)) continue;
+            float x0 = X(gx0), x1 = X(gx1) + CX;
+            g.TrackNameGaps.Add(new TrackNameGap
+            {
+                SectionId = ts.Id, Text = ts.Label, Center = new PointF((x0 + x1) / 2, Y(gy) + CY / 2), MaxHalf = (x1 - x0) / 2,
+            });
+        }
+
         // [ИЗМЕНЕНО 11.11.2026] подписи участков и путей — только если в схеме включена галочка «Подписи участков и путей» (secLabels)
         if (St.SecLabels == true) g.AutoSectionLabels();
     }
