@@ -67,15 +67,17 @@ public sealed class NamingForm : Form
         // ---- буква направления ----
         Head("Буква направления");
         var inferred = Naming.InferRightOdd(st);
-        bool odd = st.RightOdd ?? inferred ?? false;
-        dirBox = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = s(330) };
-        dirBox.Items.Add(new Item { V = "odd", T = "→ нечётное: светофоры Н   (← — Ч)" });
-        dirBox.Items.Add(new Item { V = "even", T = "→ чётное: светофоры Ч   (← — Н)" });
+        // [ИЗМЕНЕНО 11.11.2026] одна настройка станции — «Чётные поезда идут → / ←» (Station.Even), та же, что в «Нумерации»
+        bool odd = st.Even == "L";
+        dirBox = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = s(360) };
+        dirBox.Items.Add(new Item { V = "odd", T = "чётные идут ←: светофоры → Н, ← Ч" });
+        dirBox.Items.Add(new Item { V = "even", T = "чётные идут →: светофоры → Ч, ← Н" });
         dirBox.SelectedIndex = odd ? 0 : 1;
-        Line("Движение →", dirBox);
-        Note("Новый светофор берёт букву от ближайшего светофора на схеме (того же направления — ту же, встречного — " +
-             "противоположную). Эта настройка — когда светофоров рядом ещё нет и для «Перенумеровать все»." +
-             (inferred != null && st.RightOdd == null ? $"\nПо уже названным светофорам схемы: → = {(inferred == true ? "Н" : "Ч")}." : ""));
+        Line("Чётные поезда", dirBox);
+        Note("Та же настройка, что «Чётные поезда» в «Нумерации» (по ней же нумеруются пути и стрелки). Новый светофор берёт букву " +
+             "от входного своего направления, а если входных нет — от ближайшего светофора; эта настройка — когда светофоров ещё нет " +
+             "и для «Перенумеровать все»." +
+             (inferred != null && inferred != odd ? $"\nПо уже названным светофорам схемы: → = {(inferred == true ? "Н" : "Ч")} — не совпадает с настройкой." : ""));
 
         // ---- шаблоны ----
         Head("Шаблоны имён");
@@ -122,7 +124,7 @@ public sealed class NamingForm : Form
             FixHardLetters();
             Collect();
             var draft = StationFile.Clone(st);
-            draft.RightOdd = RightOdd ? true : null;
+            draft.Even = RightOdd ? "L" : "R";    // [11.11.2026] одна настройка направления
             draft.Naming = Result;
             if (!askRenumber(draft)) return;
             RenumberAll = true;

@@ -297,8 +297,10 @@ public static class Core
     // ---------------------------------------------------------------------
     public static Station NewStation() => new() { AutoNames = true };
 
-    /// <summary>[ДОБАВЛЕНО 10.11.2026] Буква направления светофора: Ч (чётное) или Н (нечётное) — по настройке станции RightOdd.</summary>
-    public static string DirLetter(Station st, string dir) => (dir == "R") == (st.RightOdd == true) ? "Н" : "Ч";
+    /// <summary>[ДОБАВЛЕНО 10.11.2026] Буква направления светофора: Ч (чётное) или Н (нечётное).
+    /// [ИЗМЕНЕНО 11.11.2026] по одной настройке станции «Чётные поезда идут → / ←» (Station.Even, Numbering.cs) —
+    /// той же, по которой нумеруются пути и стрелки.</summary>
+    public static string DirLetter(Station st, string dir) => Numbering.Letter(st, dir);
 
     public static Dictionary<string, List<string>> TilesBySection(Station st)
     {

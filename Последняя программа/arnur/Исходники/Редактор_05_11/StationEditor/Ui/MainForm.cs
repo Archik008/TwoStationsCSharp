@@ -531,7 +531,7 @@ public sealed partial class MainForm : Form
         if (f.ShowDialog(this) != DialogResult.OK) return;
         Edit(() =>
         {
-            st.RightOdd = f.RightOdd ? true : null;
+            st.Even = f.RightOdd ? "L" : "R";    // [11.11.2026] одна настройка направления (→ нечётное = чётные идут ←)
             st.Naming = f.Result;
             if (f.RenumberAll) Naming.Apply(st);
         });

@@ -14,7 +14,8 @@ namespace StationEditor.Model;
 //                         sigs: [{ dir: 'R' | 'L', kind, name, id, ro }] }
 //               [ДОБАВЛЕНО 09.11.2026] id — номер светофора для связи станций (автоинкремент), ro: true — только чтение
 //               [ДОБАВЛЕНО 10.11.2026] fixed: true — имя задано вручную (автонумерация его не трогает)
-//    rightOdd — true: движение → нечётное (Н); autoNames — имена светофоров считаются автоматически
+//    even     — [ДОБАВЛЕНО 11.11.2026] куда идут чётные поезда: "R" / "L" — по нему и пути со стрелками, и буквы Н / Ч светофоров
+//    rightOdd — (старое, 10.11) true: движение → нечётное; при открытии переводится в even: "L"
 //    labels   — [ДОБАВЛЕНО 10.11.2026] свободный текст: [{ x, y (клетки, дробные), text, size, bold }]
 //    sections — участок → { type, color }
 //    texts    — "x,y" → { text, size }
@@ -30,8 +31,19 @@ public sealed class Station
     [JsonPropertyName("sections")] public Dictionary<string, SectionInfo> Sections { get; set; } = new();
     [JsonPropertyName("texts")] public Dictionary<string, TextItem> Texts { get; set; } = new();
     [JsonPropertyName("objects")] public Dictionary<string, StationObject> Objects { get; set; } = new();
-    /// <summary>[ДОБАВЛЕНО 10.11.2026] true — движение вправо (→) нечётное (буква Н, как на чертежах РУ-30-80);
-    /// нет значения — чётное (Ч), как было в редакторе.</summary>
+
+    // ---- [ДОБАВЛЕНО 11.11.2026] нумерация по правилам (Model/Numbering.cs; ВСН 56-78 прил. 2, РУ-30-80 листы 89–90) ----
+    // [11.11.2026] при слиянии веток эти три свойства попали в NamingSettings — вернул в Station, где их ищет Numbering.cs
+    /// <summary>Куда идут чётные поезда: "R" — вправо (→, как было в редакторе всегда), "L" — влево (←).</summary>
+    [JsonPropertyName("even")] public string Even { get; set; } = "R";
+    /// <summary>Боковые приёмо-отправочные пути: "parity" — чётные со стороны чётного главного, нечётные — со стороны нечётного;
+    /// "row" — подряд от пассажирского здания в сторону поля (малые станции, где пути принимают поезда обоих направлений).</summary>
+    [JsonPropertyName("numbering")] public string Numbering { get; set; } = "parity";
+    /// <summary>Номера новым путям, стрелкам и светофорам — сами при рисовании.</summary>
+    [JsonPropertyName("autoNumbers")] public bool AutoNumbers { get; set; } = true;
+
+    /// <summary>[ДОБАВЛЕНО 10.11.2026, с 11.11 только для чтения старых файлов] true — движение → нечётное.
+    /// При открытии файла переводится в Even ("L") и больше не пишется — направление задаёт одна настройка Even.</summary>
     [JsonPropertyName("rightOdd")] public bool? RightOdd { get; set; }
     /// <summary>[ДОБАВЛЕНО 10.11.2026, с 10.11 не используется] Признак «имена считались автоматически» —
     /// остался в файлах, сохранённых в тот день; имя теперь даётся только новому светофору.</summary>
@@ -63,15 +75,6 @@ public sealed class NamingSettings
     /// <summary>Тип участка (path, plain, line, dead, switch) → вид нового светофора; "auto-line" — входной перед станцией,
     /// иначе проходной; "" — тот, что выбран в панели.</summary>
     [JsonPropertyName("kindBySec")] public Dictionary<string, string> KindBySec { get; set; }
-
-    // ---- [ДОБАВЛЕНО 11.11.2026] нумерация по правилам (Model/Numbering.cs; ВСН 56-78 прил. 2, РУ-30-80 листы 89–90) ----
-    /// <summary>Куда идут чётные поезда: "R" — вправо (→, как было в редакторе всегда), "L" — влево (←).</summary>
-    [JsonPropertyName("even")] public string Even { get; set; } = "R";
-    /// <summary>Боковые приёмо-отправочные пути: "parity" — чётные со стороны чётного главного, нечётные — со стороны нечётного;
-    /// "row" — подряд от пассажирского здания в сторону поля (малые станции, где пути принимают поезда обоих направлений).</summary>
-    [JsonPropertyName("numbering")] public string Numbering { get; set; } = "parity";
-    /// <summary>Номера новым путям, стрелкам и светофорам — сами при рисовании.</summary>
-    [JsonPropertyName("autoNumbers")] public bool AutoNumbers { get; set; } = true;
 }
 
 /// <summary>[ДОБАВЛЕНО 05.11.2026] Объект на схеме размером W×H клеток (не путь): амперметр, вокзал, часовая башня.</summary>
@@ -240,6 +243,10 @@ public static class StationFile
             }
         }
         Core.AssignSignalIds(st);    // [ДОБАВЛЕНО 09.11.2026] старые файлы без id и повторы — получают новые номера
+        // [ДОБАВЛЕНО 11.11.2026] одна настройка направления: старое «rightOdd: true» (→ нечётное) = «чётные идут ←» (even: "L")
+        if (st.RightOdd == true) st.Even = "L";
+        st.RightOdd = null;
+        if (st.Even != "L") st.Even = "R";
         foreach (var k in st.Sections.Keys.ToList())
             if (st.Sections[k] == null) st.Sections[k] = new SectionInfo { Type = "auto" };
         foreach (var k in st.Texts.Keys.ToList())
