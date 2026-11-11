@@ -42,6 +42,10 @@ public sealed class Station
     /// <summary>Номера новым путям, стрелкам и светофорам — сами при рисовании.</summary>
     [JsonPropertyName("autoNumbers")] public bool AutoNumbers { get; set; } = true;
 
+    /// <summary>[ДОБАВЛЕНО 11.11.2026] Подписи участков и путей (1П, 3П, 1СП…) — авто-текст под путями.
+    /// true — показывать; нет значения — не показывать. Действует и в редакторе, и в «Станции по схеме» (JsonLayout).</summary>
+    [JsonPropertyName("secLabels")] public bool? SecLabels { get; set; }
+
     /// <summary>[ДОБАВЛЕНО 10.11.2026, с 11.11 только для чтения старых файлов] true — движение → нечётное.
     /// При открытии файла переводится в Even ("L") и больше не пишется — направление задаёт одна настройка Even.</summary>
     [JsonPropertyName("rightOdd")] public bool? RightOdd { get; set; }
@@ -75,6 +79,9 @@ public sealed class NamingSettings
     /// <summary>Тип участка (path, plain, line, dead, switch) → вид нового светофора; "auto-line" — входной перед станцией,
     /// иначе проходной; "" — тот, что выбран в панели.</summary>
     [JsonPropertyName("kindBySec")] public Dictionary<string, string> KindBySec { get; set; }
+    /// <summary>[ДОБАВЛЕНО 11.11.2026] Чётность номеров маневровых: null — по направлению светофора (Н — М1, М3…; Ч — М2, М4…);
+    /// "neck" — по горловине (нечётные у входного Н, урок caredenis.ru les03).</summary>
+    [JsonPropertyName("shuntParity")] public string ShuntParity { get; set; }
 }
 
 /// <summary>[ДОБАВЛЕНО 05.11.2026] Объект на схеме размером W×H клеток (не путь): амперметр, вокзал, часовая башня.</summary>

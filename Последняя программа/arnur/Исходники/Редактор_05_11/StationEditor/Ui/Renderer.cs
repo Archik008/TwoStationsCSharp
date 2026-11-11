@@ -810,7 +810,7 @@ public static class Renderer
         }
 
         // ---- названия участков ----
-        if (ui.ShowSecNames && cs >= 14)
+        if (st.SecLabels == true && cs >= 14)    // [ИЗМЕНЕНО 11.11.2026] настройка станции, по умолчанию выкл.
         {
             var f = GetFont(cs * 0.26f, false);
             using var b = new SolidBrush(Pal.SecName);

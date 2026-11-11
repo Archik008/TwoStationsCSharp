@@ -56,7 +56,7 @@ public sealed class UiState
     public Camera Cam = new();
     public HashSet<string> Sel = new();
     public SigRef? SelSig;
-    public bool ShowGrid = true, ShowSecColors = true, ShowSecNames = true;
+    public bool ShowGrid = true, ShowSecColors = true;    // [11.11.2026] подписи участков — Station.SecLabels
     public Point? Hover;
     public Tile Ghost;
     public Color? HoverColor;

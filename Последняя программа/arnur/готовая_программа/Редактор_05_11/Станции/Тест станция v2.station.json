@@ -48,7 +48,7 @@
       "sec": "1П",
       "sigs": [
         {
-          "dir": "R",
+          "dir": "L",
           "kind": "shunt",
           "name": "М1",
           "id": 14,
@@ -60,13 +60,13 @@
       "t": "switch",
       "v": 0,
       "sec": "1П",
-      "name": ""
+      "name": "1"
     },
     "12,8": {
       "t": "switch",
       "v": 1,
       "sec": "1П",
-      "name": ""
+      "name": "3"
     },
     "14,8": {
       "t": "straight",
@@ -96,7 +96,7 @@
       "t": "switch",
       "v": 2,
       "sec": "1П",
-      "name": ""
+      "name": "5"
     },
     "19,8": {
       "t": "straight",
@@ -112,7 +112,7 @@
       "t": "switch",
       "v": 3,
       "sec": "1П",
-      "name": ""
+      "name": "7"
     },
     "22,8": {
       "t": "straight",
@@ -161,22 +161,22 @@
     "12,7": {
       "t": "curve",
       "v": 3,
-      "sec": "5П"
+      "sec": "2П"
     },
     "13,7": {
       "t": "straight",
       "v": 0,
-      "sec": "5П"
+      "sec": "2П"
     },
     "14,7": {
       "t": "straight",
       "v": 0,
-      "sec": "5П",
+      "sec": "2П",
       "sigs": [
         {
           "dir": "L",
           "kind": "exit",
-          "name": "Ч5",
+          "name": "Ч2",
           "id": 2,
           "ltr": "Ч"
         }
@@ -185,12 +185,12 @@
     "15,7": {
       "t": "straight",
       "v": 0,
-      "sec": "5П",
+      "sec": "2П",
       "sigs": [
         {
           "dir": "R",
           "kind": "exit",
-          "name": "Н5",
+          "name": "Н2",
           "id": 5,
           "ltr": "Н"
         }
@@ -199,22 +199,22 @@
     "17,7": {
       "t": "curve",
       "v": 1,
-      "sec": "5П"
+      "sec": "2П"
     },
     "13,9": {
       "t": "curve",
       "v": 2,
-      "sec": "3П"
+      "sec": "IП"
     },
     "15,9": {
       "t": "straight",
       "v": 0,
-      "sec": "3П",
+      "sec": "IП",
       "sigs": [
         {
           "dir": "L",
           "kind": "exit",
-          "name": "Ч3",
+          "name": "ЧI",
           "id": 4,
           "ltr": "Ч"
         }
@@ -223,17 +223,17 @@
     "16,9": {
       "t": "straight",
       "v": 0,
-      "sec": "3П"
+      "sec": "IП"
     },
     "18,9": {
       "t": "straight",
       "v": 0,
-      "sec": "3П",
+      "sec": "IП",
       "sigs": [
         {
           "dir": "R",
           "kind": "exit",
-          "name": "Н3",
+          "name": "НI",
           "id": 7,
           "ltr": "Н"
         }
@@ -242,12 +242,12 @@
     "19,9": {
       "t": "straight",
       "v": 0,
-      "sec": "3П"
+      "sec": "IП"
     },
     "20,9": {
       "t": "curve",
       "v": 0,
-      "sec": "3П"
+      "sec": "IП"
     },
     "15,8": {
       "t": "straight",
@@ -266,12 +266,12 @@
     "17,9": {
       "t": "straight",
       "v": 0,
-      "sec": "3П"
+      "sec": "IП"
     },
     "14,9": {
       "t": "straight",
       "v": 0,
-      "sec": "3П"
+      "sec": "IП"
     },
     "13,8": {
       "t": "straight",
@@ -281,7 +281,7 @@
     "16,7": {
       "t": "straight",
       "v": 0,
-      "sec": "5П"
+      "sec": "2П"
     },
     "29,8": {
       "t": "straight",
@@ -322,7 +322,7 @@
       "t": "switch",
       "v": 0,
       "sec": "1Б",
-      "name": ""
+      "name": "4"
     },
     "40,8": {
       "t": "straight",
@@ -333,7 +333,7 @@
       "t": "switch",
       "v": 1,
       "sec": "1Б",
-      "name": ""
+      "name": "2"
     },
     "42,8": {
       "t": "straight",
@@ -522,11 +522,11 @@
     "1П": {
       "type": "auto"
     },
-    "5П": {
-      "type": "auto"
+    "IП": {
+      "type": "path"
     },
-    "3П": {
-      "type": "auto"
+    "2П": {
+      "type": "path"
     },
     "1Б": {
       "type": "auto"
@@ -545,7 +545,9 @@
     }
   },
   "objects": {},
-  "rightOdd": true,
+  "even": "L",
+  "numbering": "parity",
+  "autoNumbers": false,
   "autoNames": true,
   "naming": {
     "templates": {

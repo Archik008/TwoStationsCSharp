@@ -654,7 +654,8 @@ public class JsonLayout
             g.DesignH = Math.Max(g.DesignH, textY + 40);
         }
 
-        g.AutoSectionLabels();
+        // [ИЗМЕНЕНО 11.11.2026] подписи участков и путей — только если в схеме включена галочка «Подписи участков и путей» (secLabels)
+        if (St.SecLabels == true) g.AutoSectionLabels();
     }
 
     /// <summary>Горизонтальный кусок пути разрезается на мачте светофора (иначе маршрут не подсветится от светофора):

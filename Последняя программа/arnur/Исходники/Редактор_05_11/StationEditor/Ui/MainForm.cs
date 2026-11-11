@@ -112,7 +112,17 @@ public sealed partial class MainForm : Form
         top.Items.Add(new ToolStripSeparator());
         vGrid = Toggle("Сетка", "Показать / скрыть сетку", v => ui.ShowGrid = v);
         vColors = Toggle("Цвета", "Показать / скрыть цвета участков", v => ui.ShowSecColors = v);
-        vNames = Toggle("Названия", "Показать / скрыть названия участков", v => ui.ShowSecNames = v);
+        // [ИЗМЕНЕНО 11.11.2026] подписи участков и путей — настройка станции (Station.SecLabels, сохраняется в файле),
+        // по умолчанию выключены; та же галочка — в «Свойствах», когда ничего не выбрано
+        vNames = new ToolStripButton("Названия") { CheckOnClick = true, Checked = false, DisplayStyle = ToolStripItemDisplayStyle.Text,
+            ToolTipText = "Подписи участков и путей (1П, 3П, 1СП…) — авто-текст под путями. Сохраняется в файле станции" };
+        vNames.CheckedChanged += (_, _) =>
+        {
+            if (syncingNames || st == null || (st.SecLabels == true) == vNames.Checked) return;
+            bool v = vNames.Checked;
+            Edit(() => st.SecLabels = v ? true : null);
+        };
+        top.Items.Add(vNames);
         // [ДОБАВЛЕНО 09.11.2026] огни светофоров: в цвете или графическими знаками ГОСТ 2.749-84 (табл. 6)
         var vGost = new ToolStripButton("Огни по ГОСТ") { CheckOnClick = true, Checked = false, DisplayStyle = ToolStripItemDisplayStyle.Text,
             ToolTipText = "Огни светофоров: в цвете / графическими знаками ГОСТ 2.749-84 (G)\n" +
@@ -324,8 +334,19 @@ public sealed partial class MainForm : Form
         Draw();
     }
 
+    // [ДОБАВЛЕНО 11.11.2026] кнопка «Названия» показывает настройку станции SecLabels (без записи в историю правок)
+    bool syncingNames;
+    void SyncSecLabels()
+    {
+        if (vNames == null || st == null || vNames.Checked == (st.SecLabels == true)) return;
+        syncingNames = true;
+        try { vNames.Checked = st.SecLabels == true; }
+        finally { syncingNames = false; }
+    }
+
     void Changed(bool rebuildTab = true)
     {
+        SyncSecLabels();
         // [ДОБАВЛЕНО 10.11.2026] «собранные» имена следят за названием пути, шаблоном и цифрой «№»
         if (Naming.RebuildAll(st) > 0) rebuildTab = true;
         routesCache = null;
@@ -363,6 +384,7 @@ public sealed partial class MainForm : Form
         routesCache = null;
         gestureSnap = null;
         tbName.Text = st.Name;
+        SyncSecLabels();    // [11.11.2026]
         RefreshPanels();
         RefreshToolOpts();
         if (fit) FitView(); else Draw();

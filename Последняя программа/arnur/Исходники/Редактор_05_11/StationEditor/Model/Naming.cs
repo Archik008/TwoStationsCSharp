@@ -23,11 +23,12 @@ namespace StationEditor.Model;
 
 public static class Naming
 {
-    // [ИЗМЕНЕНО 10.11.2026] цифра пути — у всех видов, где светофор может стоять на пути: входной {Б}{П} (на перегоне — просто Н,
-    // на пути 1П — Н1), маневровый М{П} (на пути 3П — М3, в горловине — порядковый М1, М3…)
+    // [ИЗМЕНЕНО 10.11.2026] цифра пути — у входного {Б}{П} (на перегоне — просто Н, на пути 1П — Н1), выходного, маршрутного.
+    // [ИЗМЕНЕНО 11.11.2026] маневровый — М{N}: порядковый, нечётный / чётный по направлению самого светофора (Н → М1, М3…;
+    // Ч → М2, М4…); «по горловине» (урок caredenis.ru les03) — переключатель в «Обозначениях…» (NamingSettings.ShuntParity)
     public static readonly (string Kind, string Template)[] DefaultTemplates =
     {
-        ("entry", "{Б}{П}"), ("exit", "{Б}{П}"), ("route", "{Б}М{П}"), ("shunt", "М{П}"), ("block", "{N}"),
+        ("entry", "{Б}{П}"), ("exit", "{Б}{П}"), ("route", "{Б}М{П}"), ("shunt", "М{N}"), ("block", "{N}"),
         ("warning", "П{О}"), ("repeater", "П{О}"), ("barrier", "З{N}"), ("cover", "{Б}П{П}"),
     };
 
@@ -182,7 +183,7 @@ public static class Naming
 
         // порядковый номер: чётность по смыслу вида
         int start = 1, step = 1;
-        if (kind == "shunt") { start = NeckOdd(st, s) ? 1 : 2; step = 2; }
+        if (kind == "shunt") { start = (ShuntByNeck(st) ? NeckOdd(st, s) : sig.Ltr == "Н") ? 1 : 2; step = 2; }    // [11.11.2026]
         else if (kind is "block" or "barrier") { start = sig.Ltr == "Н" ? 1 : 2; step = 2; }
         if (kind == "block")
         {
@@ -217,9 +218,17 @@ public static class Naming
         var track = Has(tpl, "П") ? Core.TrackNo(s.Tile.Sec) : null;
         if (track != null) { from = "путь"; return track; }
         if (s.Sig.Seq is int q) { from = "порядковая"; return q.ToString(); }
+        // [11.11.2026] светофор назван по номеру пути, а шаблон его вида теперь без {П} (маневровый был М{П}) —
+        // оставляем номер пути, чтобы имя не потерялось
+        var oldTrack = Core.TrackNo(s.Tile.Sec);
+        if (oldTrack != null) { from = "путь"; return oldTrack; }
         from = "";
         return "";
     }
+
+    /// <summary>[ДОБАВЛЕНО 11.11.2026] Чётность номеров маневровых: true — по горловине (нечётные у входного Н),
+    /// false (по умолчанию) — по направлению самого светофора (буква Н — нечётные, Ч — чётные).</summary>
+    public static bool ShuntByNeck(Station st) => st.Naming?.ShuntParity == "neck";
 
     /// <summary>Собрать имя светофора заново по шаблону (если он «собранный»: есть буква Ltr и имя не закреплено).
     /// true — имя поменялось.</summary>
@@ -374,10 +383,12 @@ public static class Naming
             res[Id(s)] = name != null && !used.Contains(name) ? Take(name) : Seq(n => Render(tpl, b, n.ToString(), n.ToString(), ""));
         }
 
-        // ---- маневровые: нечётные в нечётной горловине, чётные в чётной; от края к оси станции ----
+        // ---- маневровые: нечётные / чётные — по направлению светофора (по умолчанию) или по горловине; от края к оси станции ----
+        bool byNeck = ShuntByNeck(st);
         var shunts = all.Where(s => Auto(s) && s.Sig.Kind == "shunt")
             .Select(s => (s, neck: Neck(s)))
-            .Select(p => (p.s, odd: p.neck?.Odd ?? L(p.s) == "Н", dist: p.neck is { } nk ? Math.Abs(X(p.s) - nk.EntryX) : X(p.s)))
+            .Select(p => (p.s, odd: byNeck ? p.neck?.Odd ?? L(p.s) == "Н" : L(p.s) == "Н",
+                          dist: p.neck is { } nk ? Math.Abs(X(p.s) - nk.EntryX) : X(p.s)))
             .ToList();
         // на пути (шаблон с {П}) — номер пути (М3), если такое имя свободно
         foreach (var p in shunts.ToList())
