@@ -82,6 +82,8 @@ public class JsonLayout
         string bare = Regex.Replace(Name, @"^(станция|ст\.)\s*", "", RegexOptions.IgnoreCase);
         View.Title = $"Станция {bare}";
         View.Caption = $"Ст. {bare}";
+        // [ДОБАВЛЕНО 12.11.2026] большая станция не сжимается мельче, чем у Алгабаса на обычном экране (≈0,6) — прокручивается
+        View.MinScale = 0.6f;
 
         if (St.Tiles.Count == 0) throw new InvalidDataException("в файле нет ни одной клетки пути (tiles)");
         Bounds();

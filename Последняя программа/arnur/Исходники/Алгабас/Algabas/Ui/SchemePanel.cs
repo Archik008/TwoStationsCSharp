@@ -114,9 +114,65 @@ class RailSchemePanel : Panel
         float usableH = bandH - 30;
         scale = group.Min(p => Math.Min(p.Width / p.G.DesignW, usableH / designH));
         if (scale <= 0) scale = 1;
+        if (view.MinScale > 0 && group.Count == 1) { ScrollTransform(scale); return; }   // [ДОБАВЛЕНО 12.11.2026]
+        if (AutoScroll) { AutoScroll = false; AutoScrollMinSize = Size.Empty; }
         float freeW = Width - G.DesignW * scale;
         float offX = HAlign switch { StringAlignment.Near => 0, StringAlignment.Far => freeW, _ => freeW / 2f };
         off = new PointF(offX, bandTop + (usableH - designH * scale) / 2f);
+    }
+
+    // ---- [ДОБАВЛЕНО 12.11.2026] прокрутка вместо мелкого масштаба (StationView.MinScale > 0 — «Станция по схеме») ----
+    /// <summary>Множитель Ctrl+колеса к начальному масштабу (1 — начальный: вписать в окно, но не мельче MinScale).</summary>
+    float zoomMul = 1, lastBase = 1;
+    const float HintH = 46;          // полоса подсказки внизу панели (до двух строк)
+
+    /// <summary>Масштаб = вписанный в окно, но не мельче MinScale (и × Ctrl+колесо, не мельче вписанного); схема крупнее
+    /// окна — полосы прокрутки, меньше — по центру.</summary>
+    void ScrollTransform(float fit)
+    {
+        float baseScale = lastBase = Math.Max(fit, view.MinScale);
+        scale = Math.Clamp(baseScale * zoomMul, fit, Math.Max(fit, 4f));
+        if (!AutoScroll) AutoScroll = true;
+        var need = new Size((int)Math.Ceiling(G.DesignW * scale), (int)Math.Ceiling(G.DesignH * scale + HintH));
+        // полоса прокрутки отнимает место у другой стороны — сравниваем с окном без полос
+        var full = Size;
+        var ms = need.Width > full.Width || need.Height > full.Height ? need : Size.Empty;
+        if (AutoScrollMinSize != ms) AutoScrollMinSize = ms;
+        var cs = ClientSize;
+        float fx = Math.Max(0, (cs.Width - G.DesignW * scale) / 2f);
+        float fy = Math.Max(0, (cs.Height - HintH - G.DesignH * scale) / 2f);
+        off = new PointF(AutoScrollPosition.X + fx, AutoScrollPosition.Y + fy);
+    }
+
+    protected override void OnScroll(ScrollEventArgs se)
+    {
+        base.OnScroll(se);
+        Invalidate();
+    }
+
+    /// <summary>Колесо — вверх / вниз, Shift+колесо — влево / вправо, Ctrl+колесо — масштаб (точка под мышью остаётся на месте).</summary>
+    protected override void OnMouseWheel(MouseEventArgs e)
+    {
+        if (view.MinScale <= 0) { base.OnMouseWheel(e); return; }
+        var sp = new Point(-AutoScrollPosition.X, -AutoScrollPosition.Y);
+        if ((ModifierKeys & Keys.Control) != 0)
+        {
+            UpdateTransform();
+            var dp = ToDesign(e.Location);
+            zoomMul *= e.Delta > 0 ? 1.15f : 1 / 1.15f;
+            UpdateTransform();
+            zoomMul = scale / lastBase;       // упёрлись в пределы (вписанный … 4) — множитель дальше не копится
+            var cs = ClientSize;
+            float fx = Math.Max(0, (cs.Width - G.DesignW * scale) / 2f);
+            float fy = Math.Max(0, (cs.Height - HintH - G.DesignH * scale) / 2f);
+            AutoScrollPosition = new Point((int)(dp.X * scale + fx - e.X), (int)(dp.Y * scale + fy - e.Y));
+        }
+        else if ((ModifierKeys & Keys.Shift) != 0)
+            AutoScrollPosition = new Point(sp.X - e.Delta, sp.Y);
+        else
+            AutoScrollPosition = new Point(sp.X, sp.Y - e.Delta);
+        if (e is HandledMouseEventArgs h) h.Handled = true;
+        Invalidate();
     }
 
     protected override void OnResize(EventArgs e)
@@ -176,8 +232,21 @@ class RailSchemePanel : Panel
         string line = hoverText.Length > 0
             ? hoverText
             : "ЛКМ: светофор начала → светофор конца или путь назначения = маршрут  |  ЛКМ по номеру стрелки — перевод  |  " +
-              "ПКМ по пути, светофору, стрелке или поезду — меню  |  обе кнопки мыши — положение стрелок";
-        g.DrawString(L.T(line), fInfo, hb, new RectangleF(8, Height - 26, Width - 16, 24));   // [ДОБАВЛЕНО 22.10.2026, этап 8] L.T — перевод
+              "ПКМ по пути, светофору, стрелке или поезду — меню  |  обе кнопки мыши — положение стрелок" +
+              (view.MinScale > 0 ? "  |  колесо, Shift+колесо — прокрутка, Ctrl+колесо — масштаб" : "");
+        // [ИЗМЕНЕНО 12.11.2026] ClientSize — без полос прокрутки (у Алгабаса полос нет, то же, что Width / Height)
+        var cl = ClientSize;
+        var hr = new RectangleF(8, cl.Height - 26, cl.Width - 16, 24);
+        if (view.MinScale > 0)
+        {
+            // [ДОБАВЛЕНО 12.11.2026] схема прокручивается под подсказкой — подсказке своя полоса фона, до двух строк
+            var sz = g.MeasureString(L.T(line), fInfo, (int)hr.Width);
+            float h = Math.Min(sz.Height, HintH - 4) + 2;
+            hr = new RectangleF(8, cl.Height - h - 2, cl.Width - 16, h);
+            using var bgb = new SolidBrush(Bg);
+            g.FillRectangle(bgb, 0, hr.Y - 2, cl.Width, cl.Height - hr.Y + 2);
+        }
+        g.DrawString(L.T(line), fInfo, hb, hr);   // [ДОБАВЛЕНО 22.10.2026, этап 8] L.T — перевод
     }
 
     Font TextFont(float size, bool bold)

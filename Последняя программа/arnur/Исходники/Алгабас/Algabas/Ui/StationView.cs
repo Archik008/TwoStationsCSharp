@@ -13,6 +13,10 @@ public class StationView
     public string Title = "";              // заголовок окна
     public string Caption = "";            // большая надпись на схеме
     public SchemeGeometry Geo = new();
+    /// <summary>[ДОБАВЛЕНО 12.11.2026] Самый мелкий масштаб схемы: если вписанная в окно схема выходит мельче, она не
+    /// уменьшается дальше, а прокручивается (полосы по горизонтали и вертикали; Ctrl+колесо — масштаб).
+    /// 0 — всегда вписывать в окно (Алгабас, АКЖТ — как раньше). Ставит «Станция по схеме».</summary>
+    public float MinScale;
 
     public readonly List<RailRoute> Routes = new();
     public readonly List<RailSwitch> Switches = new();
