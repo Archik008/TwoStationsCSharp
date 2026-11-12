@@ -178,6 +178,11 @@ public class RailSwitch
 
     public bool Locked => LockedBy.Count > 0 || InviteLocks > 0;
 
+    /// <summary>[ДОБАВЛЕНО 12.11.2026] Вторая диагональ перекрёстного съезда: в минусе может быть только одна из двух
+    /// (диагонали пересекаются). При переводе в минус она сначала возвращается в плюс. Ставит «Станция по схеме»;
+    /// у Алгабаса и АКЖТ — null.</summary>
+    public RailSwitch Rival;
+
     /// <summary>[ДОБАВЛЕНО 20.10.2026, этап 3] Неисправности (Core/Faults.cs): нет контроля вообще
     /// (потеря контроля, отжим) или стрелка не доходит в «+» / в «−».</summary>
     public bool FaultNoControl, FaultNoPlus, FaultNoMinus;

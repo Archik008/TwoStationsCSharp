@@ -367,6 +367,7 @@ public sealed partial class MainForm : Form
         // [ДОБАВЛЕНО 10.11.2026] «собранные» имена следят за названием пути, шаблоном и цифрой «№»
         if (Naming.RebuildAll(st) > 0) rebuildTab = true;
         Core.AssignBrakes(st, fixRepeats: false);    // [ДОБАВЛЕНО 12.11.2026] новые тормозные позиции — следующий id
+        if (Core.AssignScissors(st)) rebuildTab = true;   // [ДОБАВЛЕНО 12.11.2026] перекрёстный съезд — две диагонали
         routesCache = null;
         ui.Preview = null;
         dirty = true;

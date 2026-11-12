@@ -307,6 +307,7 @@ public static class StationFile
         }
         Core.AssignSignalIds(st);    // [ДОБАВЛЕНО 09.11.2026] старые файлы без id и повторы — получают новые номера
         Core.AssignBrakes(st);       // [ДОБАВЛЕНО 12.11.2026] тормозные позиции: данные и id
+        Core.AssignScissors(st);     // [ДОБАВЛЕНО 12.11.2026] перекрёстный съезд — две спаренные диагонали (16/20, 14/18)
         // [ДОБАВЛЕНО 11.11.2026] одна настройка направления: старое «rightOdd: true» (→ нечётное) = «чётные идут ←» (even: "L")
         if (st.RightOdd == true) st.Even = "L";
         st.RightOdd = null;

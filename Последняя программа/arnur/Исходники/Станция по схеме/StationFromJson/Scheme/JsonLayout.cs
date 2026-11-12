@@ -223,6 +223,15 @@ public class JsonLayout
             swByGroup[g] = sw;
         }
         if (unnamed > 0) Notes.Add($"Стрелок без номера: {unnamed} — им даны номера «?1», «?2»…");
+
+        // [ДОБАВЛЕНО 12.11.2026] перекрёстный съезд (TC.Scissors): две диагонали-съезда, в минусе — только одна
+        foreach (var (ga, gb) in TC.ScissorsRivals(St))
+        {
+            if (!swByGroup.TryGetValue(ga, out var a) || !swByGroup.TryGetValue(gb, out var b)) continue;
+            a.Rival = b;
+            a.Title = $"Перекрёстный съезд, диагональ {a.Label} (вторая — {b.Label}): переводятся вместе, в минусе только одна диагональ";
+            if (!a.Plus && !b.Plus) b.Plus = true;      // в файле обе в минусе — так стоять не могут
+        }
     }
 
     // =================================================================

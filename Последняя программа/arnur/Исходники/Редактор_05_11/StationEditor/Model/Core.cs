@@ -502,6 +502,64 @@ public static class Core
     /// <summary>Группа стрелки: спаренные (одинаковый «съезд») переводятся вместе.</summary>
     public static string SwitchGroup(string key, Tile t) => !string.IsNullOrEmpty(t.Group) ? "g:" + t.Group : "k:" + key;
 
+    // ---- [ДОБАВЛЕНО 12.11.2026] перекрёстный съезд ----
+    // Четыре стрелки квадратом 2×2, минусы которых идут друг к другу крест-накрест, — один перекрёстный съезд из двух
+    // диагоналей: (x,y)↘(x+1,y+1) и (x+1,y)↙(x,y+1). Каждая диагональ — спаренная пара (съезд «16/20»), а в минусе может
+    // быть только одна из двух: диагонали пересекаются в середине (глухое пересечение). В РУ-30-80 (содержание, стр. 2–5)
+    // отдельного листа нет — это не сигнализация, а взаимозависимость стрелок.
+
+    /// <summary>Перекрёстные съезды схемы: A и B — клетки двух диагоналей (по две стрелки).</summary>
+    public static List<(string[] A, string[] B)> Scissors(Station st)
+    {
+        var res = new List<(string[], string[])>();
+        bool M(string k, string minus) => st.Tiles.TryGetValue(k, out var t) && t.T == "switch" && !IsSymSwitch(t) && VariantOf(t).Minus == minus;
+        foreach (var k in st.Tiles.Keys)
+        {
+            if (!M(k, "SE")) continue;
+            var (x, y) = Parse(k);
+            string k11 = Key(x + 1, y + 1), k10 = Key(x + 1, y), k01 = Key(x, y + 1);
+            if (M(k11, "NW") && M(k10, "SW") && M(k01, "NE")) res.Add((new[] { k, k11 }, new[] { k10, k01 }));
+        }
+        return res;
+    }
+
+    /// <summary>Имя диагонали: номера двух её стрелок через «/» по возрастанию (16/20); нет номера — по клетке.</summary>
+    static string ScissorsName(Station st, string[] keys)
+    {
+        var names = keys.Select(k => st.Tiles[k].Name?.Trim()).ToList();
+        if (names.Any(string.IsNullOrEmpty)) return "съезд " + keys[0];
+        return string.Join("/", names.OrderBy(n => n, NaturalComparer.Instance));
+    }
+
+    /// <summary>Спарить стрелки каждой диагонали перекрёстного съезда (поле «Съезд» = «16/20»). Вызывается при открытии
+    /// файла и после каждой правки — переименовали стрелку, имя съезда поменяется само. true — что-то поменялось.</summary>
+    public static bool AssignScissors(Station st)
+    {
+        bool changed = false;
+        foreach (var (a, b) in Scissors(st))
+            foreach (var keys in new[] { a, b })
+            {
+                var name = ScissorsName(st, keys);
+                foreach (var k in keys)
+                    if (st.Tiles[k].Group != name) { st.Tiles[k].Group = name; changed = true; }
+            }
+        return changed;
+    }
+
+    /// <summary>Группа стрелки → группа второй диагонали того же перекрёстного съезда (в обе стороны).</summary>
+    public static Dictionary<string, string> ScissorsRivals(Station st)
+    {
+        var res = new Dictionary<string, string>();
+        foreach (var (a, b) in Scissors(st))
+        {
+            string ga = SwitchGroup(a[0], st.Tiles[a[0]]), gb = SwitchGroup(b[0], st.Tiles[b[0]]);
+            if (ga == gb) continue;
+            res[ga] = gb;
+            res[gb] = ga;
+        }
+        return res;
+    }
+
     public static List<SignalEntry> AllSignals(Station st)
     {
         var res = new List<SignalEntry>();

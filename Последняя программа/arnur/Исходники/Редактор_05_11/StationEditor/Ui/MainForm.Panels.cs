@@ -578,8 +578,21 @@ public sealed partial class MainForm
             {
                 H4(f, w, "Стрелка");
                 Row(f, w, "Номер", CommitBox(t.Name, "например 2", v => Edit(() => { if (TileAt(k) is Tile c) c.Name = v.Trim(); }, false)));
-                Row(f, w, "Съезд", CommitBox(t.Group, "пусто — одиночная; 4/6 — спаренная",
-                    v => Edit(() => { if (TileAt(k) is Tile c) c.Group = string.IsNullOrWhiteSpace(v) ? null : v.Trim(); }, false)));
+                // [ИЗМЕНЕНО 12.11.2026] у перекрёстного съезда пары задаются сами (Core.AssignScissors) — поле только для чтения
+                var sc = Core.Scissors(st).FirstOrDefault(s => s.A.Contains(k) || s.B.Contains(k));
+                if (sc.A != null)
+                {
+                    var mine = sc.A.Contains(k) ? sc.A : sc.B;
+                    var other = sc.A.Contains(k) ? sc.B : sc.A;
+                    Row(f, w, "Съезд", new Label { Text = t.Group, AutoSize = false, Height = S(22), TextAlign = ContentAlignment.MiddleLeft, Font = new Font(Font, FontStyle.Bold) });
+                    Hint(f, w, $"Перекрёстный съезд: диагональ {t.Group} (стрелки {string.Join(" и ", mine.Select(x => st.Tiles[x].Name))}) " +
+                               $"и диагональ {st.Tiles[other[0]].Group}. Стрелки диагонали переводятся вместе; в минусе может быть " +
+                               "только одна диагональ — при переводе другой в минус первая сначала вернётся в плюс. " +
+                               "Имя съезда — из номеров стрелок, меняется само.");
+                }
+                else
+                    Row(f, w, "Съезд", CommitBox(t.Group, "пусто — одиночная; 4/6 — спаренная",
+                        v => Edit(() => { if (TileAt(k) is Tile c) c.Group = string.IsNullOrWhiteSpace(v) ? null : v.Trim(); }, false)));
                 // [ИЗМЕНЕНО 12.11.2026] у симметричной стрелки «прямо» нет — пишем, куда ведёт положение (↗ / ↘)
                 var sv = Core.VariantOf(t);
                 bool sym = Core.IsSymSwitch(t);
