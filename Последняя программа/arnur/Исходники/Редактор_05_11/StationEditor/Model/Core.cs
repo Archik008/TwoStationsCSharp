@@ -31,6 +31,10 @@ public sealed class TileType
 {
     public string Id, Name, Key, Hint;
     public Variant[] Variants;
+    /// <summary>[ДОБАВЛЕНО 12.11.2026] Кнопка палитры, которая ставит другой тип: кубик получает T = Base, V = VBase + вариант
+    /// (симметричная стрелка — это "switch" с вариантами 4–7). null — обычный тип.</summary>
+    public string Base;
+    public int VBase;
 }
 
 public readonly record struct Edge(string A, string B, string Role);
@@ -91,8 +95,16 @@ public static class Core
             Variants = new[] { Ed(P("W", "E")), Ed(P("SW", "NE")), Ed(P("NW", "SE")) } },
         new() { Id = "curve", Name = "Изгиб", Key = "2", Hint = "переход с горизонтали на диагональ (съезд, ответвление)",
             Variants = new[] { Ed(P("W", "NE")), Ed(P("W", "SE")), Ed(P("E", "NW")), Ed(P("E", "SW")) } },
+        // [ИЗМЕНЕНО 12.11.2026] варианты 4–7 — симметричная стрелка (ставится своей кнопкой «Симм. стрелка», см. ниже)
         new() { Id = "switch", Name = "Стрелка", Key = "3", Hint = "остряк, прямое направление (плюс) и отклонение (минус)",
-            Variants = new[] { Sw("W", "E", "NE"), Sw("W", "E", "SE"), Sw("E", "W", "NW"), Sw("E", "W", "SW") } },
+            Variants = new[] { Sw("W", "E", "NE"), Sw("W", "E", "SE"), Sw("E", "W", "NW"), Sw("E", "W", "SW"),
+                               Sw("W", "NE", "SE"), Sw("W", "SE", "NE"), Sw("E", "NW", "SW"), Sw("E", "SW", "NW") } },
+        // [ДОБАВЛЕНО 12.11.2026] симметричный стрелочный перевод (как на горочных горловинах): оба пути расходятся
+        // от остряка под одинаковым углом «<». В файле — обычная стрелка ("switch", варианты 4–7): номер, перевод,
+        // маршруты, «Испытание» и «Станция по схеме» — как у стрелки. Варианты: остряк слева / справа, какой путь — плюс.
+        new() { Id = "symswitch", Name = "Симм. стрелка", Key = "Y", Base = "switch", VBase = 4,
+            Hint = "симметричный стрелочный перевод: оба пути расходятся от остряка под одинаковым углом (горка, пучки)",
+            Variants = new[] { Sw("W", "NE", "SE"), Sw("W", "SE", "NE"), Sw("E", "NW", "SW"), Sw("E", "SW", "NW") } },
         new() { Id = "cross", Name = "Пересечение", Key = "4", Hint = "глухое пересечение путей",
             Variants = new[] { Ed(P("W", "E"), P("SW", "NE")), Ed(P("W", "E"), P("NW", "SE")), Ed(P("SW", "NE"), P("NW", "SE")) } },
         new() { Id = "buffer", Name = "Тупик", Key = "5", Hint = "упор в конце тупикового пути",
@@ -298,6 +310,37 @@ public static class Core
             && int.TryParse(k.AsSpan(0, i), NumberStyles.Integer, CultureInfo.InvariantCulture, out x)
             && int.TryParse(k.AsSpan(i + 1), NumberStyles.Integer, CultureInfo.InvariantCulture, out y);
     }
+
+    /// <summary>[ДОБАВЛЕНО 12.11.2026] Симметричная стрелка: "switch" с вариантами 4–7.</summary>
+    public static bool IsSymSwitch(Tile t) => t != null && t.T == "switch" && t.V >= 4;
+
+    /// <summary>[ДОБАВЛЕНО 12.11.2026] Где номер стрелки — доли клетки (0..1): у обычной — над / под серединой
+    /// (со стороны, куда не уходит отклонение), у симметричной — над остряком (пути расходятся вверх и вниз).</summary>
+    public static (float X, float Y) SwitchLabelAt(Tile t)
+    {
+        var v = VariantOf(t);
+        if (IsSymSwitch(t)) return (v.Trunk == "W" ? 0.22f : 0.78f, 0.16f);
+        return (0.5f, v.Minus.Contains('N') ? 0.9f : 0.1f);
+    }
+
+    /// <summary>[ДОБАВЛЕНО 12.11.2026] Кубик, который ставит кнопка палитры type с её вариантом v (симм. стрелка → "switch", 4 + v).</summary>
+    public static Tile NewTile(string type, int v)
+    {
+        var T = Types[type];
+        return new Tile { T = T.Base ?? type, V = T.VBase + v };
+    }
+
+    /// <summary>[ДОБАВЛЕНО 12.11.2026] Кнопка палитры, которой поставлен кубик, и её вариант (обратное к NewTile).</summary>
+    public static (TileType Type, int V) PaletteTypeOf(Tile t)
+    {
+        foreach (var T in TypeList)
+            if (T.Base == t.T && t.V >= T.VBase && t.V < T.VBase + T.Variants.Length) return (T, t.V - T.VBase);
+        var own = Types[t.T];
+        return (own, Math.Clamp(t.V, 0, PaletteCount(own) - 1));
+    }
+
+    /// <summary>[ДОБАВЛЕНО 12.11.2026] Сколько вариантов у кнопки палитры (у обычной стрелки — 4 первых, остальные — симметричные).</summary>
+    public static int PaletteCount(TileType T) => T.Id == "switch" ? 4 : T.Variants.Length;
 
     public static Variant VariantOf(Tile t)
     {

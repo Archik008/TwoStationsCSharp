@@ -205,6 +205,40 @@ public static class StationFile
 
     public static Station Clone(Station st) => FromSnapshot(ToJson(st, false));
 
+    /// <summary>[ДОБАВЛЕНО 12.11.2026] Часть станции — только выбранные клетки (для «Экспорт JSON → Выделенные клетки»).
+    /// Кубики и надписи — только из выбранных; объекты (вокзал, часы…) и свободный текст — если целиком внутри прямоугольника,
+    /// охватывающего выбранные клетки; участки — только те, что остались на кубиках. Координаты не сдвигаются
+    /// («Станция по схеме» сама подгоняет схему под окно), id светофоров и тормозных позиций — прежние.
+    /// Настройки станции (направление, обозначения, подписи) — как у всей станции.</summary>
+    public static Station Fragment(Station st, IEnumerable<string> keys, string name = null)
+    {
+        var set = new HashSet<string>(keys.Where(k => st.Tiles.ContainsKey(k) || st.Texts.ContainsKey(k)));
+        var f = Clone(st);
+        f.Name = string.IsNullOrWhiteSpace(name) ? st.Name + " (часть)" : name.Trim();
+        foreach (var k in f.Tiles.Keys.Where(k => !set.Contains(k)).ToList()) f.Tiles.Remove(k);
+        foreach (var k in f.Texts.Keys.Where(k => !set.Contains(k)).ToList()) f.Texts.Remove(k);
+
+        int x1 = int.MaxValue, y1 = int.MaxValue, x2 = int.MinValue, y2 = int.MinValue;
+        foreach (var k in set)
+        {
+            var (x, y) = Core.Parse(k);
+            x1 = Math.Min(x1, x); y1 = Math.Min(y1, y); x2 = Math.Max(x2, x); y2 = Math.Max(y2, y);
+        }
+        bool Inside(int x, int y) => x >= x1 && x <= x2 && y >= y1 && y <= y2;
+        foreach (var k in f.Objects.Keys.ToList())
+        {
+            var o = f.Objects[k];
+            if (!Core.TryParse(k, out int ox, out int oy) || !Inside(ox, oy) || !Inside(ox + Math.Max(1, o.W) - 1, oy + Math.Max(1, o.H) - 1))
+                f.Objects.Remove(k);
+        }
+        // клетка свободного текста — по тому же правилу, что и при стирании (MainForm.Canvas: EraseAt)
+        f.Labels?.RemoveAll(l => !Inside((int)Math.Floor(l.X), (int)Math.Floor(l.Y + 0.25)));
+
+        var used = new HashSet<string>(f.Tiles.Values.Select(t => t.Sec ?? ""));
+        foreach (var s in f.Sections.Keys.Where(s => !used.Contains(s)).ToList()) f.Sections.Remove(s);
+        return f;
+    }
+
     /// <summary>Разобрать файл. Бросает InvalidDataException с понятным текстом.</summary>
     public static Station FromJson(string json)
     {

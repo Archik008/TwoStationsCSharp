@@ -75,6 +75,17 @@ public class TrackNameGap
     public float MaxHalf;              // сколько места есть в каждую сторону (полдлины прямого куска); не помещается — без разрыва
 }
 
+/// <summary>[ДОБАВЛЕНО 12.11.2026] Тормозная позиция сортировочной горки (вагонный замедлитель) — толстая тёмная полоса
+/// на пути, как в редакторе («Проектирование сортировочных горок», рис. 2.1, 4.1). Заполняет только «Станция по схеме»;
+/// у Алгабаса и АКЖТ список пустой.</summary>
+public class BrakeGeom
+{
+    public string PieceId = "";        // кусок пути под полосой — его цвет (занятость, маршрут) идёт на каёмку
+    public PointF A, B;                // концы пути в клетке (полоса — от 16 до 84 % между ними)
+    public string Label;               // «ТП1»… — только у средней клетки группы, у остальных null
+    public PointF LabelPos;
+}
+
 public class SchemeGeometry
 {
     public float DesignW = 2400, DesignH = 640;
@@ -96,6 +107,7 @@ public class SchemeGeometry
     public readonly List<CrossingGeom> Crossings = new();
     public readonly List<DirectionGeom> Directions = new();
     public readonly List<TrackNameGap> TrackNameGaps = new();    // [ДОБАВЛЕНО 11.11.2026] пусто — как раньше
+    public readonly List<BrakeGeom> Brakes = new();              // [ДОБАВЛЕНО 12.11.2026] пусто — как раньше
 
     // ---------- помощники для описания схемы ----------
     public static PointF[] P(params (float x, float y)[] pts) => pts.Select(p => new PointF(p.x, p.y)).ToArray();

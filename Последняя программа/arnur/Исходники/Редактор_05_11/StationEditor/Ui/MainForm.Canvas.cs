@@ -93,6 +93,9 @@ public sealed partial class MainForm
 
     Tile MakeTile(string type, int v, Tile old)
     {
+        // [ДОБАВЛЕНО 12.11.2026] кнопка «Симм. стрелка» ставит "switch" с вариантом 4–7
+        var real = Core.NewTile(type, v);
+        type = real.T; v = real.V;
         var t = new Tile { T = type, V = v, Sec = old != null ? old.Sec : ui.BrushSec == AutoPath ? "" : ui.BrushSec };   // [ИЗМЕНЕНО 11.11.2026] «путь по правилам» — только у кисти
         if (old?.Sigs != null) t.Sigs = old.Sigs;
         if (type == "switch")
@@ -113,7 +116,7 @@ public sealed partial class MainForm
         st.Tiles.TryGetValue(k, out var old);
         st.Tiles[k] = MakeTile(ui.PlaceType, v ?? CurVariant, old);
         // [ДОБАВЛЕНО 11.11.2026] новая стрелка — сразу номер по правилам (чётные со стороны прибытия чётных поездов)
-        if (st.AutoNumbers && ui.PlaceType == "switch" && old?.T != "switch")
+        if (st.AutoNumbers && st.Tiles[k].T == "switch" && old?.T != "switch")    // [12.11.2026] и симметричная
             st.Tiles[k].Name = Numbering.NextSwitchNumber(st, k);
     }
 
@@ -355,7 +358,7 @@ public sealed partial class MainForm
     {
         if (ui.Tool == "place")
         {
-            int n = Core.Types[ui.PlaceType].Variants.Length;
+            int n = Core.PaletteCount(Core.Types[ui.PlaceType]);    // [12.11.2026] у стрелки — 4, у симметричной — свои 4
             ui.Variant[ui.PlaceType] = ((CurVariant + step) % n + n) % n;
             RefreshToolOpts();
             RefreshPalette();
@@ -370,8 +373,10 @@ public sealed partial class MainForm
             foreach (var k in keys)
             {
                 var t = st.Tiles[k];
-                int n = Core.Types[t.T].Variants.Length;
-                t.V = ((t.V + step) % n + n) % n;
+                // [ИЗМЕНЕНО 12.11.2026] поворот — в пределах своей кнопки: обычная стрелка остаётся обычной, симметричная — симметричной
+                var (T, v) = Core.PaletteTypeOf(t);
+                int n = Core.PaletteCount(T);
+                t.V = T.VBase + ((v + step) % n + n) % n;
             }
         });
     }
@@ -676,7 +681,7 @@ public sealed partial class MainForm
         ui.Ghost = null;
         ui.HoverColor = null;
         if (ui.IsTest || ui.Hover == null) return;
-        if (ui.Tool == "place") ui.Ghost = new Tile { T = ui.PlaceType, V = CurVariant };
+        if (ui.Tool == "place") ui.Ghost = Core.NewTile(ui.PlaceType, CurVariant);    // [12.11.2026] симм. стрелка — "switch" 4–7
         if (ui.Tool == "brush") ui.HoverColor = !string.IsNullOrEmpty(ui.BrushSec) ? Core.SecColor(st, ui.BrushSec) : Color.White;
         if (ui.Tool == "erase") ui.HoverColor = Pal.Bad;
     }
@@ -686,7 +691,7 @@ public sealed partial class MainForm
         var s = $"Клетка {gx}, {gy}";
         if (st.Tiles.TryGetValue(Core.Key(gx, gy), out var t))
         {
-            s += $" · {Core.Types[t.T].Name}";
+            s += $" · {Core.PaletteTypeOf(t).Type.Name}";
             if (t.T == "switch") s += " " + (string.IsNullOrEmpty(t.Name) ? "?" : t.Name);
             if (t.Brk != null) s += $" {t.Brk.Label}" + (t.Brk.Type != null ? $" ({t.Brk.Type})" : "") + $", id {t.Brk.Id}";    // [12.11.2026]
             s += !string.IsNullOrEmpty(t.Sec) ? $" · {t.Sec}" : " · без участка";

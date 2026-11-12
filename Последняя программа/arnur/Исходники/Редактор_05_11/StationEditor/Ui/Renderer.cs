@@ -576,8 +576,8 @@ public static class Renderer
     /// <summary>Где написать номер стрелки: с той стороны, куда НЕ уходит отклонение.</summary>
     public static PointF SwitchLabelPos(Tile t, float x, float y, float cs)
     {
-        bool below = Core.VariantOf(t).Minus.Contains('N');
-        return new PointF(x + cs * 0.5f, y + (below ? cs * 0.9f : cs * 0.1f));
+        var (fx, fy) = Core.SwitchLabelAt(t);    // [ИЗМЕНЕНО 12.11.2026] общее с «Станцией по схеме» и экспортом
+        return new PointF(x + cs * fx, y + cs * fy);
     }
 
     /// <summary>Чёрточка стыка на выходе dir.</summary>

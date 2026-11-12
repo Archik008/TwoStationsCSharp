@@ -317,7 +317,7 @@ public sealed partial class MainForm
         foreach (var T in Core.TypeList)
         {
             var id = T.Id;
-            var tile = new Tile { T = id, V = id == ui.PlaceType ? CurVariant : 0 };
+            var tile = Core.NewTile(id, id == ui.PlaceType ? CurVariant : 0);    // [12.11.2026] симм. стрелка — "switch" 4–7
             var it = PalItem(T.Name, T.Key, ui.Tool == "place" && ui.PlaceType == id, (g, r) => Renderer.DrawTileIcon(g, tile, r),
                 $"{T.Name} — {T.Hint} (клавиша {T.Key})");
             it.Click += (_, _) => { ui.PlaceType = id; SetTool("place"); };
@@ -380,10 +380,10 @@ public sealed partial class MainForm
             var T = Core.Types[ui.PlaceType];
             H4(optsPanel, w, $"{T.Name}: вариант (R)").Margin = new Padding(0, 0, 0, S(4));
             var vf = new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = true, MaximumSize = new Size(w, 0), Margin = new Padding(0, 0, 0, S(6)) };
-            for (int i = 0; i < T.Variants.Length; i++)
+            for (int i = 0; i < Core.PaletteCount(T); i++)
             {
                 int ii = i;
-                var vi = new VariantIcon { Tile = new Tile { T = ui.PlaceType, V = i }, On = i == CurVariant, Size = new Size(S(40), S(40)), Margin = new Padding(0, 0, S(4), S(4)) };
+                var vi = new VariantIcon { Tile = Core.NewTile(ui.PlaceType, i), On = i == CurVariant, Size = new Size(S(40), S(40)), Margin = new Padding(0, 0, S(4), S(4)) };
                 tips.SetToolTip(vi, "Вариант " + (i + 1));
                 vi.Click += (_, _) => { ui.Variant[ui.PlaceType] = ii; RefreshToolOpts(); RefreshPalette(); UpdateGhost(); Draw(); };
                 vf.Controls.Add(vi);
@@ -525,7 +525,7 @@ public sealed partial class MainForm
             Hint(f, w, $"Кубиков: {st.Tiles.Count}, участков: {Core.SectionNames(st).Count}, светофоров: {Core.AllSignals(st).Count}, " +
                        $"маршрутов найдено: {Routes.Count}.");
             H4(f, w, "С чего начать");
-            Hint(f, w, "1. Кубиками (клавиши 1–7, K — тормозная позиция горки) нарисуйте пути, стрелки, тупики, выходы на перегон.\n" +
+            Hint(f, w, "1. Кубиками (клавиши 1–7; K — тормозная позиция, Y — симметричная стрелка) нарисуйте пути, стрелки, тупики, выходы на перегон.\n" +
                        "2. Кистью «Участок» (B) разбейте пути на участки — 1П, 2-4СП, Ч-М2…\n" +
                        "3. Поставьте светофоры (S) и пронумеруйте стрелки.\n" +
                        "4. «Испытание» — проверьте маршруты, стрелки и занятость.\n" +
@@ -545,6 +545,8 @@ public sealed partial class MainForm
             var cbm = Row(f, w, "Участок", Combo(SecOptions(true, keep: true), "__keep"));
             OnSecChosen(cbm, v => Edit(() => { foreach (var k2 in keys) if (st.Tiles.TryGetValue(k2, out var t2)) t2.Sec = v; }));
             Hint(f, w, $"Кубиков пути: {n}. Тяните выделение мышью или стрелками клавиатуры, R — повернуть каждый.");
+            // [ДОБАВЛЕНО 12.11.2026] только эта часть — в отдельный .station.json для «Станции по схеме»
+            if (n > 0) AddButton(f, "Экспорт выделенного в JSON…", () => ExportJsonCmd(true));
             AddButton(f, "Удалить выделенное", DeleteSelection, danger: true);
             return;
         }
@@ -554,14 +556,14 @@ public sealed partial class MainForm
         st.Texts.TryGetValue(k, out var tx);
         if (t != null)
         {
-            var T = Core.Types[t.T];
+            var (T, tv) = Core.PaletteTypeOf(t);    // [12.11.2026] симметричная стрелка — свои варианты
             H3(f, w, $"{T.Name}  ·  клетка {k}");
             Hint(f, w, "Вариант:").Margin = new Padding(0, 0, 0, S(2));
             var vf = new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = true, MaximumSize = new Size(w, 0), Margin = new Padding(0, 0, 0, S(6)) };
-            for (int i = 0; i < T.Variants.Length; i++)
+            for (int i = 0; i < Core.PaletteCount(T); i++)
             {
-                int ii = i;
-                var vi = new VariantIcon { Tile = new Tile { T = t.T, V = i, Plus = t.Plus }, On = i == t.V, Size = new Size(S(38), S(38)), Margin = new Padding(0, 0, S(4), S(4)) };
+                int ii = T.VBase + i;
+                var vi = new VariantIcon { Tile = new Tile { T = t.T, V = ii, Plus = t.Plus }, On = i == tv, Size = new Size(S(38), S(38)), Margin = new Padding(0, 0, S(4), S(4)) };
                 vi.Click += (_, _) => Edit(() => { if (TileAt(k) is Tile c) c.V = ii; });
                 vf.Controls.Add(vi);
             }
@@ -578,7 +580,14 @@ public sealed partial class MainForm
                 Row(f, w, "Номер", CommitBox(t.Name, "например 2", v => Edit(() => { if (TileAt(k) is Tile c) c.Name = v.Trim(); }, false)));
                 Row(f, w, "Съезд", CommitBox(t.Group, "пусто — одиночная; 4/6 — спаренная",
                     v => Edit(() => { if (TileAt(k) is Tile c) c.Group = string.IsNullOrWhiteSpace(v) ? null : v.Trim(); }, false)));
-                var pos = Row(f, w, "Положение", Combo(new[] { new Opt { V = "plus", T = "плюс (прямо)" }, new Opt { V = "minus", T = "минус (на отклонение)" } },
+                // [ИЗМЕНЕНО 12.11.2026] у симметричной стрелки «прямо» нет — пишем, куда ведёт положение (↗ / ↘)
+                var sv = Core.VariantOf(t);
+                bool sym = Core.IsSymSwitch(t);
+                var pos = Row(f, w, "Положение", Combo(new[]
+                    {
+                        new Opt { V = "plus", T = sym ? $"плюс (путь {Core.DirArrow[sv.Plus]})" : "плюс (прямо)" },
+                        new Opt { V = "minus", T = sym ? $"минус (путь {Core.DirArrow[sv.Minus]})" : "минус (на отклонение)" },
+                    },
                     t.Plus == false ? "minus" : "plus"));
                 pos.SelectedIndexChanged += (_, _) =>
                 {

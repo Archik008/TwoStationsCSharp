@@ -160,6 +160,7 @@ class RailSchemePanel : Panel
         DrawTracks(g);
         RadioUi.DrawRestrictions(g, G.Pieces.Select(p => (p.SectionId, p.Pts)), IL);   // [ДОБАВЛЕНО 23.10.2026, этап 4] предупреждения, «окна»
         ShuntUi.DrawPnp(g, G.Pieces.Select(p => (p.SectionId, p.Pts)), fSmallBold);   // [ДОБАВЛЕНО 23.10.2026, этап 7] ПНП и его лампы
+        DrawBrakes(g);              // [ДОБАВЛЕНО 12.11.2026] тормозные позиции горки (только «Станция по схеме»)
         DrawJointsAndBuffers(g);
         DrawTunnelsFront(g);
         DrawSwitchLabels(g);
@@ -375,6 +376,39 @@ class RailSchemePanel : Panel
         else list.RemoveAt(0);
         if (!atStart) list.Reverse();
         return list.ToArray();
+    }
+
+    /// <summary>[ДОБАВЛЕНО 12.11.2026] Тормозная позиция — вагонный замедлитель: толстая тёмная полоса на пути с двумя
+    /// светлыми шинами, каёмка — цвета пути (видно занятость и маршрут), подпись «ТП1» сбоку — как в редакторе.</summary>
+    void DrawBrakes(Graphics g)
+    {
+        if (G.Brakes.Count == 0) return;
+        const float bw = 10f;
+        using var bar = new Pen(Color.FromArgb(0x14, 0x14, 0x14), bw);
+        using var shoe = new Pen(Color.FromArgb(0x8c, 0x8c, 0x8c), 1.3f);
+        using var lb = new SolidBrush(Pal.SwitchLabel.IsEmpty ? TextDark : Pal.SwitchLabel);
+        foreach (var b in G.Brakes)
+        {
+            var piece = G.Pieces.FirstOrDefault(p => p.Id == b.PieceId);
+            var col = TrackColor;
+            if (piece != null)
+            {
+                col = PieceColor(piece, out bool releasing, out bool setting);
+                if (releasing && !Blink) col = TrackColor;
+                if (setting && !ModelHost.FastBlinkPhase) col = TrackColor;
+            }
+            PointF At(float k) => new(b.A.X + (b.B.X - b.A.X) * k, b.A.Y + (b.B.Y - b.A.Y) * k);
+            using (var rim = new Pen(col, bw + 3f)) g.DrawLine(rim, At(0.14f), At(0.86f));
+            g.DrawLine(bar, At(0.16f), At(0.84f));
+            float dx = b.B.X - b.A.X, dy = b.B.Y - b.A.Y, len = MathF.Sqrt(dx * dx + dy * dy);
+            if (len < 1) continue;
+            float nx = -dy / len * bw * 0.22f, ny = dx / len * bw * 0.22f;
+            var p1 = At(0.22f); var p2 = At(0.78f);
+            foreach (var s in new[] { -1f, 1f })
+                g.DrawLine(shoe, p1.X + s * nx, p1.Y + s * ny, p2.X + s * nx, p2.Y + s * ny);
+        }
+        foreach (var b in G.Brakes)
+            if (!string.IsNullOrEmpty(b.Label)) g.DrawString(L.T(b.Label), fSw, lb, b.LabelPos, center);
     }
 
     void DrawJointsAndBuffers(Graphics g)

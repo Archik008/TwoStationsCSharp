@@ -589,9 +589,25 @@ public class JsonLayout
                 foreach (var e in TC.EdgesOf(t))
                 {
                     var pts = TC.Opp[e.A] == e.B ? new[] { T(Pt(k, e.A)), T(Pt(k, e.B)) } : new[] { T(Pt(k, e.A)), T(c), T(Pt(k, e.B)) };
-                    g.Piece(Pid(), Sid(t), pts);
+                    var piece = g.Piece(Pid(), Sid(t), pts);
+                    // [ДОБАВЛЕНО 12.11.2026] тормозная позиция: путь — обычный кусок (соединяет соседей, занятость, маршруты),
+                    // поверх — полоса замедлителя (SchemePanel.DrawBrakes); подпись — у средней клетки группы, как в редакторе
+                    if (t.T == "brake") g.Brakes.Add(new BrakeGeom { PieceId = piece.Id, A = Pt(k, e.A), B = Pt(k, e.B) });
                 }
             }
+        }
+
+        // [ДОБАВЛЕНО 12.11.2026] подписи тормозных позиций («ТП1»…): сбоку от полосы, со стороны «вниз» по экрану
+        foreach (var k in TC.BrakeLabelTiles(St))
+        {
+            var t = St.Tiles[k];
+            var e = TC.EdgesOf(t).First();
+            PointF a = Pt(k, e.A), b = Pt(k, e.B), c = Ctr(k);
+            float dx = b.X - a.X, dy = b.Y - a.Y, len = MathF.Sqrt(dx * dx + dy * dy);
+            float nx = -dy / len, ny = dx / len;
+            if (ny < 0) { nx = -nx; ny = -ny; }
+            var bg = g.Brakes.FirstOrDefault(x => x.A == a && x.B == b);
+            if (bg != null) { bg.Label = t.Brk.Label; bg.LabelPos = new PointF(c.X + nx * 18, c.Y + ny * 18); }
         }
 
         // изолирующие стыки — где соседние клетки относятся к разным участкам
@@ -616,10 +632,10 @@ public class JsonLayout
         {
             if (t.T != "switch") continue;
             var (x, y) = TC.Parse(k);
-            bool below = TC.VariantOf(t).Minus.Contains('N');
+            var (fx, fy) = TC.SwitchLabelAt(t);    // [ИЗМЕНЕНО 12.11.2026] как в редакторе (у симметричной стрелки — над остряком)
             string label = string.IsNullOrWhiteSpace(t.Name) ? swByGroup[TC.SwitchGroup(k, t)].Label : t.Name.Trim();
             if (!g.SwitchLabels.ContainsKey(label))
-                g.SwLabel(label, swByGroup[TC.SwitchGroup(k, t)], X(x) + CX / 2, Y(y) + (below ? CY * 0.9f : CY * 0.1f));
+                g.SwLabel(label, swByGroup[TC.SwitchGroup(k, t)], X(x) + CX * fx, Y(y) + CY * fy);
         }
 
         // надписи (название станции не повторяем — его пишет крупный заголовок схемы)

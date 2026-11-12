@@ -86,6 +86,23 @@ public sealed partial class MainForm : Form
         Btn("Открыть…", "Открыть файл .station.json (Ctrl+O)", OpenCmd);
         Btn("Сохранить", "Сохранить в файл .station.json (Ctrl+S)", () => SaveFile(false));
         Btn("Сохранить как…", "Сохранить в другой файл (Ctrl+Shift+S)", () => SaveFile(true));
+        // [ДОБАВЛЕНО 12.11.2026] экспорт .station.json для «Станции по схеме»: вся станция или только выделенные клетки
+        var bJson = new ToolStripDropDownButton("Экспорт JSON") { DisplayStyle = ToolStripItemDisplayStyle.Text,
+            ToolTipText = "Файл .station.json для «Станции по схеме»: вся станция или только выделенные клетки.\n" +
+                          "Текущий файл схемы не меняется" };
+        var miAll = new ToolStripMenuItem("Вся станция…");
+        var miSel = new ToolStripMenuItem("Выделенные клетки…");
+        miAll.Click += (_, _) => { CommitFocusedField(); ExportJsonCmd(false); };
+        miSel.Click += (_, _) => { CommitFocusedField(); ExportJsonCmd(true); };
+        bJson.DropDownItems.Add(miAll);
+        bJson.DropDownItems.Add(miSel);
+        bJson.DropDownOpening += (_, _) =>
+        {
+            int n = ui.Sel.Count(st.Tiles.ContainsKey);
+            miSel.Enabled = n > 0;
+            miSel.Text = n > 0 ? $"Выделенные клетки ({n})…" : "Выделенные клетки… (сначала выделите рамкой)";
+        };
+        top.Items.Add(bJson);
         cbExample = new ToolStripComboBox { DropDownStyle = ComboBoxStyle.DropDownList, AutoSize = false, Width = S(150), ToolTipText = "Загрузить готовый пример" };
         cbExample.Items.Add("Пример…");
         foreach (var ex in Examples.All) cbExample.Items.Add(ex.Name);
@@ -532,6 +549,47 @@ public sealed partial class MainForm : Form
         Msg($"Загружен пример «{ex.Name}»");
     }
 
+    /// <summary>[ДОБАВЛЕНО 12.11.2026] «Экспорт JSON»: записать .station.json для «Станции по схеме» — всю станцию
+    /// или только выделенные клетки (StationFile.Fragment). Открытый файл схемы и «несохранённые изменения» не трогаются.</summary>
+    void ExportJsonCmd(bool selOnly)
+    {
+        if (ui.IsTest) SetMode("edit");     // положения стрелок после испытания в файл не идут
+        Station s;
+        if (selOnly)
+        {
+            int n = ui.Sel.Count(st.Tiles.ContainsKey);
+            if (n == 0)
+            {
+                Msg("Нечего выгружать: выделите клетки пути — рамкой (тяните по пустому месту) или Shift+щелчок", true);
+                return;
+            }
+            s = StationFile.Fragment(st, ui.Sel);
+        }
+        else s = StationFile.Clone(st);
+
+        using var dlg = new SaveFileDialog
+        {
+            Title = selOnly ? "Экспорт выделенных клеток в JSON" : "Экспорт всей станции в JSON",
+            Filter = StationFile.DialogFilter,
+            FileName = SafeName(s.Name) + ".station.json",
+            InitialDirectory = currentFile != null ? Path.GetDirectoryName(currentFile) : StationsDir(),
+            DefaultExt = "json", AddExtension = true, OverwritePrompt = true,
+        };
+        if (dlg.ShowDialog(this) != DialogResult.OK) return;
+        if (currentFile != null && string.Equals(Path.GetFullPath(dlg.FileName), Path.GetFullPath(currentFile), StringComparison.OrdinalIgnoreCase)
+            && selOnly && !Confirm("Это файл открытой схемы — в нём останется только выделенная часть. Записать?"))
+            return;
+        try { StationFile.Save(s, dlg.FileName); }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, "Не удалось записать файл:\n" + ex.Message, "Редактор станций", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return;
+        }
+        Msg(selOnly
+            ? $"Выгружено кубиков: {s.Tiles.Count} из {st.Tiles.Count} → {dlg.FileName}. Откройте его в «Станции по схеме» кнопкой «Схема…»"
+            : $"Станция выгружена → {dlg.FileName}");
+    }
+
     void ExportCmd()
     {
         var code = CsExport.Export(st, Routes);
@@ -700,6 +758,7 @@ public sealed partial class MainForm : Form
             case Keys.L: SetTool("label"); return true;    // [ДОБАВЛЕНО 10.11.2026] свободный текст
             case Keys.R: RotateSelected(shift ? -1 : 1); return true;
             case Keys.K: ui.PlaceType = "brake"; SetTool("place"); return true;    // [ДОБАВЛЕНО 12.11.2026] тормозная позиция
+            case Keys.Y: ui.PlaceType = "symswitch"; SetTool("place"); return true;    // [ДОБАВЛЕНО 12.11.2026] симметричная стрелка
         }
         int digit = key >= Keys.D0 && key <= Keys.D9 ? key - Keys.D0 : key >= Keys.NumPad0 && key <= Keys.NumPad9 ? key - Keys.NumPad0 : -1;
         if (digit >= 0)

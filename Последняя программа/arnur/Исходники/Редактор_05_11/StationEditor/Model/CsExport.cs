@@ -303,8 +303,8 @@ public static class CsExport
         {
             if (t.T != "switch") continue;
             var (x, y) = Core.Parse(k);
-            bool below = Core.VariantOf(t).Minus.Contains('N');
-            W($"    g.SwLabel({CsStr(string.IsNullOrEmpty(t.Name) ? "?" : t.Name)}, {swId[Core.SwitchGroup(k, t)]}, {Num(X(x) + C / 2)}, {Num(Y(y) + (below ? C * 0.9 : C * 0.1))});");
+            var (fx, fy) = Core.SwitchLabelAt(t);    // [ИЗМЕНЕНО 12.11.2026] у симметричной стрелки — над остряком
+            W($"    g.SwLabel({CsStr(string.IsNullOrEmpty(t.Name) ? "?" : t.Name)}, {swId[Core.SwitchGroup(k, t)]}, {Num(X(x) + C * fx)}, {Num(Y(y) + C * fy)});");
         }
         if (st.Texts.Count > 0)
         {
