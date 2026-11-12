@@ -65,6 +65,7 @@ public sealed class UiState
     public string FlashSec;
     public RoutePreview Preview;
     public string BrushSec = "";
+    public int BrakePos = 1;                  // [ДОБАВЛЕНО 12.11.2026] позиция новых тормозных кубиков (ТП1 / ТП2 / ТП3)
     public string SigKind = "auto", SigDir = "R";    // [10.11.2026] по умолчанию вид — по участку
     public string Tab = "props";              // props | secs | routes | checks
     public string RouteFilter = "all";        // all | train | shunt

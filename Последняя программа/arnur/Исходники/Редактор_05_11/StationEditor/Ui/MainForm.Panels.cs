@@ -393,8 +393,18 @@ public sealed partial class MainForm
             var cb = AddTo(optsPanel, Combo(SecOptions(true), ui.BrushSec));
             cb.Width = w;
             OnSecChosen(cb, v => { ui.BrushSec = v; UpdateGhost(); RefreshToolOpts(); });
+            if (ui.PlaceType == "brake")
+            {
+                // [ДОБАВЛЕНО 12.11.2026] позиция новых тормозных кубиков
+                Hint(optsPanel, w, "Тормозная позиция:").Margin = new Padding(0, S(6), 0, S(2));
+                var bp = AddTo(optsPanel, Combo(Core.BrakePositions.Select(q => new Opt { V = q.Pos.ToString(), T = q.Name }), ui.BrakePos.ToString()));
+                bp.Width = w;
+                bp.SelectedIndexChanged += (_, _) => { if (int.TryParse(OptV(bp), out var p)) ui.BrakePos = p; };
+            }
             Hint(optsPanel, w, $"{T.Hint}. Щелчок или протягивание — поставить, R / Shift+R — повернуть." +
-                (ui.PlaceType == "straight" ? " Путь сам ложится по направлению протягивания: ─ ╱ ╲." : "")).Margin = new Padding(0, S(6), 0, 0);
+                (ui.PlaceType is "straight" or "brake" ? " Путь сам ложится по направлению протягивания: ─ ╱ ╲." : "") +
+                (ui.PlaceType == "brake" ? " Каждый кубик — один замедлитель; подряд стоящие с одной подписью подписываются один раз. " +
+                    "Изостыки между замедлителями — разными участками (кисть)." : "")).Margin = new Padding(0, S(6), 0, 0);
         }
         else if (ui.Tool == "brush")
         {
@@ -515,7 +525,7 @@ public sealed partial class MainForm
             Hint(f, w, $"Кубиков: {st.Tiles.Count}, участков: {Core.SectionNames(st).Count}, светофоров: {Core.AllSignals(st).Count}, " +
                        $"маршрутов найдено: {Routes.Count}.");
             H4(f, w, "С чего начать");
-            Hint(f, w, "1. Кубиками (клавиши 1–7) нарисуйте пути, стрелки, тупики, выходы на перегон.\n" +
+            Hint(f, w, "1. Кубиками (клавиши 1–7, K — тормозная позиция горки) нарисуйте пути, стрелки, тупики, выходы на перегон.\n" +
                        "2. Кистью «Участок» (B) разбейте пути на участки — 1П, 2-4СП, Ч-М2…\n" +
                        "3. Поставьте светофоры (S) и пронумеруйте стрелки.\n" +
                        "4. «Испытание» — проверьте маршруты, стрелки и занятость.\n" +
@@ -577,6 +587,8 @@ public sealed partial class MainForm
                 };
                 Hint(f, w, "Стрелки с одинаковым «съездом» переводятся вместе (спаренные).");
             }
+
+            if (t.T == "brake" && t.Brk != null) BrakeProps(f, w, k, t.Brk);
 
             H4(f, w, "Светофоры на клетке");
             if (!t.HasSigs) Hint(f, w, "нет");
@@ -713,6 +725,48 @@ public sealed partial class MainForm
         Row(f, w, "Размер", size).Width = S(80);
         size.ValueChanged += (_, _) => Edit(() => { if (st.Texts.TryGetValue(k, out var x)) x.Size = (double)size.Value; }, false);
         AddButton(f, "Удалить клетку", () => Edit(() => { var (x, y) = Core.Parse(k); EraseAt(x, y); }), danger: true).Margin = new Padding(0, S(12), 0, 0);
+    }
+
+    /// <summary>[ДОБАВЛЕНО 12.11.2026] Свойства тормозной позиции: позиция ТП1–ТП3, подпись, тип замедлителя, id для другой программы.
+    /// Источник — «Проектирование сортировочных горок» (УрГУПС, 2018): рис. 2.1 (позиции), табл. 3.1 (замедлители).</summary>
+    void BrakeProps(Control f, int w, string k, BrakePos b)
+    {
+        BrakePos Cur() => TileAt(k)?.Brk;
+        H4(f, w, "Тормозная позиция");
+        var pos = Row(f, w, "Позиция", Combo(Core.BrakePositions.Select(q => new Opt { V = q.Pos.ToString(), T = q.Name }), b.Pos.ToString()));
+        pos.SelectedIndexChanged += (_, _) =>
+        {
+            if (!int.TryParse(OptV(pos), out var p)) return;
+            Later(() => Edit(() => { if (Cur() is BrakePos c) c.Pos = p; }));
+        };
+        Row(f, w, "Подпись", CommitBox(b.Name, "ТП" + b.Pos, v => Edit(() => { if (Cur() is BrakePos c) c.Name = string.IsNullOrWhiteSpace(v) ? null : v.Trim(); }, false)));
+        var types = new List<Opt> { new() { V = "", T = "— не указан —" } };
+        types.AddRange(Core.Retarders.Select(r => new Opt { V = r.Type, T = $"{r.Type} ({r.Use})" }));
+        if (!string.IsNullOrEmpty(b.Type) && Core.Retarders.All(r => r.Type != b.Type)) types.Add(new Opt { V = b.Type, T = b.Type });
+        var typ = Row(f, w, "Замедлитель", Combo(types, b.Type ?? ""));
+        typ.SelectedIndexChanged += (_, _) =>
+        {
+            var v = OptV(typ);
+            Later(() => Edit(() => { if (Cur() is BrakePos c) c.Type = v.Length > 0 ? v : null; }));
+        };
+        var idn = new NumericUpDown { Minimum = 1, Maximum = 999999, Value = Math.Clamp(b.Id, 1, 999999) };
+        Row(f, w, "id", idn).Width = S(90);
+        tips.SetToolTip(idn, "Номер тормозной позиции для другой программы (сортировочная горка):\n" +
+                             "по нему она находит, каким замедлителем управлять. Новые получают следующий номер сами.");
+        idn.ValueChanged += (_, _) =>
+        {
+            int v = (int)idn.Value;
+            bool rep = st.Tiles.Any(p => p.Key != k && p.Value.Brk?.Id == v);
+            Edit(() => { if (Cur() is BrakePos c) c.Id = v; }, false);
+            if (rep) Msg($"id {v} уже у другой тормозной позиции — другая программа их не различит", true);
+        };
+        var r0 = Core.Retarders.FirstOrDefault(r => r.Type == b.Type);
+        Hint(f, w, (r0.Type != null
+                ? $"{r0.Type}: погашаемая энергетическая высота {r0.H:0.00} м эн. в., скорость входа до {r0.V:0.0} м/с, " +
+                  $"изолированный участок {r0.L:0.00} м (табл. 3.1). "
+                : "") +
+            "Один кубик — один замедлитель; изостыки между замедлителями — разные участки (кисть). " +
+            "В редакторе только вид и данные; торможение — во второй программе.");
     }
 
     /// <summary>[ДОБАВЛЕНО 10.11.2026] Свойства свободного текста: текст, размер, жирный, положение.</summary>

@@ -101,6 +101,9 @@ public sealed partial class MainForm
             if (!string.IsNullOrEmpty(old?.Group)) t.Group = old.Group;
             if (old?.Plus == false) t.Plus = false;
         }
+        // [ДОБАВЛЕНО 12.11.2026] тормозная позиция: при повороте / замене кубика данные позиции сохраняются;
+        // новая — с позицией, выбранной в настройках инструмента (ТП1 / ТП2 / ТП3), id выдаст Core.AssignBrakes
+        if (type == "brake") t.Brk = old?.Brk ?? new BrakePos { Pos = ui.BrakePos };
         return t;
     }
 
@@ -607,7 +610,7 @@ public sealed partial class MainForm
                 {
                     // прямой путь сам поворачивается по направлению протягивания: ─ ╱ ╲
                     int? v = null;
-                    if (ui.PlaceType == "straight")
+                    if (ui.PlaceType is "straight" or "brake")    // [12.11.2026] тормозная позиция — тоже
                     {
                         int ddx = c.X - drag.Last.X, ddy = c.Y - drag.Last.Y;
                         v = ddy == 0 ? 0 : (ddx * ddy < 0 ? 1 : 2);
@@ -685,6 +688,7 @@ public sealed partial class MainForm
         {
             s += $" · {Core.Types[t.T].Name}";
             if (t.T == "switch") s += " " + (string.IsNullOrEmpty(t.Name) ? "?" : t.Name);
+            if (t.Brk != null) s += $" {t.Brk.Label}" + (t.Brk.Type != null ? $" ({t.Brk.Type})" : "") + $", id {t.Brk.Id}";    // [12.11.2026]
             s += !string.IsNullOrEmpty(t.Sec) ? $" · {t.Sec}" : " · без участка";
         }
         var ok = Core.ObjectAt(st, gx, gy);

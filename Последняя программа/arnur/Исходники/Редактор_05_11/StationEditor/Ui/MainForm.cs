@@ -349,6 +349,7 @@ public sealed partial class MainForm : Form
         SyncSecLabels();
         // [ДОБАВЛЕНО 10.11.2026] «собранные» имена следят за названием пути, шаблоном и цифрой «№»
         if (Naming.RebuildAll(st) > 0) rebuildTab = true;
+        Core.AssignBrakes(st, fixRepeats: false);    // [ДОБАВЛЕНО 12.11.2026] новые тормозные позиции — следующий id
         routesCache = null;
         ui.Preview = null;
         dirty = true;
@@ -698,6 +699,7 @@ public sealed partial class MainForm : Form
             case Keys.T: SetTool("text"); return true;
             case Keys.L: SetTool("label"); return true;    // [ДОБАВЛЕНО 10.11.2026] свободный текст
             case Keys.R: RotateSelected(shift ? -1 : 1); return true;
+            case Keys.K: ui.PlaceType = "brake"; SetTool("place"); return true;    // [ДОБАВЛЕНО 12.11.2026] тормозная позиция
         }
         int digit = key >= Keys.D0 && key <= Keys.D9 ? key - Keys.D0 : key >= Keys.NumPad0 && key <= Keys.NumPad9 ? key - Keys.NumPad0 : -1;
         if (digit >= 0)

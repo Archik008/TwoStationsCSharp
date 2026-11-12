@@ -19,6 +19,8 @@ public static class Pal
     public static readonly Color Occ = H("#e11919");
     public static readonly Color Text = H("#233732");
     public static readonly Color Dark = H("#1b2a26");
+    public static readonly Color Brake = H("#141414");         // [ДОБАВЛЕНО 12.11.2026] вагонный замедлитель
+    public static readonly Color BrakeShoe = H("#8c8c8c");     // его тормозные шины
     public static readonly Color Bad = H("#d4141c");
     public static readonly Color Sel = H("#ffeb00");
     public static readonly Color LampRed = H("#e11919");
@@ -147,6 +149,19 @@ public static class Renderer
         }
     }
 
+    /// <summary>[ДОБАВЛЕНО 12.11.2026] Где подписать тормозную позицию: сбоку от полосы, со стороны «вниз» по экрану.</summary>
+    public static PointF BrakeLabelPos(Tile t, float x, float y, float cs)
+    {
+        var e = Core.EdgesOf(t).First();
+        var pa = Pnt(x, y, cs, e.A);
+        var pb = Pnt(x, y, cs, e.B);
+        float dx = pb.X - pa.X, dy = pb.Y - pa.Y, len = (float)Math.Sqrt(dx * dx + dy * dy);
+        float nx = -dy / len, ny = dx / len;
+        if (ny < 0) { nx = -nx; ny = -ny; }
+        float d = dy == 0 ? cs * 0.34f : cs * 0.4f;
+        return new PointF(x + cs / 2 + nx * d, y + cs / 2 + ny * d);
+    }
+
     // ---------------- [ДОБАВЛЕНО 10.11.2026] свободный текст ----------------
     static readonly Graphics measure = Graphics.FromImage(new Bitmap(1, 1));
 
@@ -260,6 +275,29 @@ public static class Renderer
                 var pb = Pnt(x, y, cs, e.B);
                 if (Core.Opp[e.A] == e.B) Poly(g, pen, pa, pb);
                 else Poly(g, pen, pa, c, pb);
+            }
+            if (t.T == "brake")
+            {
+                // [ДОБАВЛЕНО 12.11.2026] тормозная позиция — вагонный замедлитель: толстая тёмная полоса на пути
+                // («Проектирование сортировочных горок», рис. 2.1, 4.1, 4.2); каёмка цвета пути — видно занятость / маршрут
+                var e = Core.EdgesOf(t).First();
+                var pa = Pnt(x, y, cs, e.A);
+                var pb = Pnt(x, y, cs, e.B);
+                PointF At(float k) => new(pa.X + (pb.X - pa.X) * k, pa.Y + (pb.Y - pa.Y) * k);
+                float bw = Math.Max(4f, cs * 0.24f);
+                using (var rim = new Pen(col, bw + Math.Max(2f, cs * 0.06f)) { StartCap = LineCap.Flat, EndCap = LineCap.Flat })
+                    g.DrawLine(rim, At(0.14f), At(0.86f));
+                using (var bar = new Pen(A(Pal.Brake, col.A), bw) { StartCap = LineCap.Flat, EndCap = LineCap.Flat })
+                    g.DrawLine(bar, At(0.16f), At(0.84f));
+                // шины замедлителя — две тонкие светлые черты вдоль полосы
+                float dx = pb.X - pa.X, dy = pb.Y - pa.Y, len = (float)Math.Sqrt(dx * dx + dy * dy);
+                float nx = -dy / len * bw * 0.22f, ny = dx / len * bw * 0.22f;
+                using var sp = new Pen(A(Pal.BrakeShoe, col.A), Math.Max(1f, cs * 0.025f));
+                foreach (var s in new[] { -1f, 1f })
+                {
+                    var p1 = At(0.22f); var p2 = At(0.78f);
+                    g.DrawLine(sp, p1.X + s * nx, p1.Y + s * ny, p2.X + s * nx, p2.Y + s * ny);
+                }
             }
             if (t.T == "crossing")
             {
@@ -867,6 +905,21 @@ public static class Renderer
                 var lp = SwitchLabelPos(e.T, SX(e.X), SY(e.Y), cs);
                 bool named = !string.IsNullOrEmpty(e.T.Name);
                 g.DrawString(named ? e.T.Name : "?", f, named ? bt : bb, lp, Center);
+            }
+        }
+
+        // ---- [ДОБАВЛЕНО 12.11.2026] подписи тормозных позиций (ТП1, ТП2, ТП3 или своя) — под полосой замедлителя;
+        // несколько замедлителей подряд с одной подписью — одна подпись посередине ----
+        if (cs >= 14)
+        {
+            var f = GetFont(cs * 0.24f, true);
+            using var bt = new SolidBrush(Pal.Text);
+            foreach (var k in Core.BrakeLabelTiles(st))
+            {
+                if (IsHidden(k) || !st.Tiles.TryGetValue(k, out var t)) continue;
+                var (x, y) = Core.Parse(k);
+                if (!Visible(x, y)) continue;
+                g.DrawString(t.Brk.Label, f, bt, BrakeLabelPos(t, SX(x), SY(y), cs), Center);
             }
         }
 

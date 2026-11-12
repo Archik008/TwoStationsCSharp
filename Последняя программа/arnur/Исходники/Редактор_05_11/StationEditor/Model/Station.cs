@@ -115,9 +115,28 @@ public sealed class Tile
     /// <summary>false — стрелка в минусе; нет значения — в плюсе</summary>
     [JsonPropertyName("plus")] public bool? Plus { get; set; }
     [JsonPropertyName("sigs")] public List<Signal> Sigs { get; set; }
+    /// <summary>[ДОБАВЛЕНО 12.11.2026] Тормозная позиция (только у кубика "brake"), для будущих сортировочных горок.</summary>
+    [JsonPropertyName("brk")] public BrakePos Brk { get; set; }
 
     [JsonIgnore] public bool IsPlus => Plus != false;
     [JsonIgnore] public bool HasSigs => Sigs != null && Sigs.Count > 0;
+}
+
+/// <summary>[ДОБАВЛЕНО 12.11.2026] Тормозная позиция сортировочной горки — вагонный замедлитель на пути
+/// («Проектирование сортировочных горок», УрГУПС 2018: рис. 2.1, 4.1 — толстая полоса на пути; табл. 3.1 — типы замедлителей).
+/// В редакторе — только вид и данные; торможение будет считать другая программа (по id).</summary>
+public sealed class BrakePos
+{
+    /// <summary>1 — ТП1 (первая, спускная часть), 2 — ТП2 (вторая, пучковая), 3 — ТП3 (третья, парковая)</summary>
+    [JsonPropertyName("pos")] public int Pos { get; set; } = 1;
+    /// <summary>Подпись на схеме; пусто — «ТП1» / «ТП2» / «ТП3» по позиции</summary>
+    [JsonPropertyName("name")] public string Name { get; set; }
+    /// <summary>Тип замедлителя (КЗ-3, РНЗ-2М…, табл. 3.1); пусто — не указан</summary>
+    [JsonPropertyName("type")] public string Type { get; set; }
+    /// <summary>Номер для другой программы (1, 2, 3… — автоинкремент, уникальный на схеме, как id светофора)</summary>
+    [JsonPropertyName("id")] public int Id { get; set; }
+
+    [JsonIgnore] public string Label => string.IsNullOrWhiteSpace(Name) ? "ТП" + Pos : Name.Trim();
 }
 
 public sealed class Signal
@@ -253,6 +272,7 @@ public static class StationFile
             }
         }
         Core.AssignSignalIds(st);    // [ДОБАВЛЕНО 09.11.2026] старые файлы без id и повторы — получают новые номера
+        Core.AssignBrakes(st);       // [ДОБАВЛЕНО 12.11.2026] тормозные позиции: данные и id
         // [ДОБАВЛЕНО 11.11.2026] одна настройка направления: старое «rightOdd: true» (→ нечётное) = «чётные идут ←» (even: "L")
         if (st.RightOdd == true) st.Even = "L";
         st.RightOdd = null;

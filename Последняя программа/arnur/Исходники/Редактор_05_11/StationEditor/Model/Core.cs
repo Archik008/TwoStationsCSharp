@@ -101,7 +101,76 @@ public static class Core
             Variants = new[] { End("E"), End("W") } },
         new() { Id = "crossing", Name = "Переезд", Key = "7", Hint = "путь с автомобильным переездом",
             Variants = new[] { Ed(P("W", "E")) } },
+        // [ДОБАВЛЕНО 12.11.2026] для будущих сортировочных горок: путь с вагонным замедлителем (только вид и данные)
+        new() { Id = "brake", Name = "Тормозная позиция", Key = "K", Hint = "путь с вагонным замедлителем сортировочной горки (ТП1, ТП2, ТП3)",
+            Variants = new[] { Ed(P("W", "E")), Ed(P("SW", "NE")), Ed(P("NW", "SE")) } },
     };
+
+    /// <summary>[ДОБАВЛЕНО 12.11.2026] Тормозные позиции горки (рис. 2.1 методички «Проектирование сортировочных горок»).</summary>
+    public static readonly (int Pos, string Name)[] BrakePositions =
+    {
+        (1, "ТП1 — первая (спускная часть)"), (2, "ТП2 — вторая (пучковая)"), (3, "ТП3 — третья (парковая)"),
+    };
+
+    /// <summary>[ДОБАВЛЕНО 12.11.2026] Вагонные замедлители (табл. 3.1 той же методички): назначение, погашаемая энерг. высота
+    /// (м эн. в.), допустимая скорость входа (м/с), длина изолированного участка (м).</summary>
+    public static readonly (string Type, string Use, double H, double V, double L)[] Retarders =
+    {
+        ("ВЗПГ-3", "горочный", 1.00, 8.0, 11.50), ("ВЗПГ-5", "горочный", 1.30, 8.0, 13.48),
+        ("ВЗП-3", "горочный", 0.80, 8.5, 11.50), ("ВЗП-5", "горочный", 1.40, 8.5, 13.48),
+        ("КЗ-3", "горочный", 1.00, 8.5, 11.50), ("КЗ-5", "горочный", 1.40, 8.5, 13.48),
+        ("НК-114", "горочный", 1.40, 8.0, 11.50), ("ЗВУ-5", "горочный, парковый", 1.40, 8.5, 13.49),
+        ("КЗПУ-3", "горочный, парковый", 0.80, 8.5, 11.50), ("КЗПУ-5", "горочный, парковый", 1.30, 8.5, 13.48),
+        ("РЗ-5", "парковый", 1.00, 6.5, 13.48), ("РНЗ-2М", "парковый", 0.45, 6.0, 6.25), ("ПНЗ-1", "парковый", 0.26, 6.0, 6.25),
+    };
+
+    /// <summary>[ДОБАВЛЕНО 12.11.2026] Клетки, где подписать тормозные позиции: замедлители подряд (соседние по пути)
+    /// с одной подписью — одна группа, подпись у средней клетки.</summary>
+    public static List<string> BrakeLabelTiles(Station st)
+    {
+        var res = new List<string>();
+        var done = new HashSet<string>();
+        foreach (var (k, t) in st.Tiles)
+        {
+            if (t.T != "brake" || t.Brk == null || !done.Add(k)) continue;
+            var group = new List<string> { k };
+            var queue = new Queue<string>(group);
+            while (queue.Count > 0)
+            {
+                var cur = queue.Dequeue();
+                foreach (var d in EndsOf(st.Tiles[cur]))
+                {
+                    var nb = NeighborOf(st, cur, d);
+                    if (nb == null || nb.Tile.T != "brake" || nb.Tile.Brk?.Label != t.Brk.Label || !done.Add(nb.Key)) continue;
+                    group.Add(nb.Key);
+                    queue.Enqueue(nb.Key);
+                }
+            }
+            var ordered = group.Select(q => (K: q, P: Parse(q))).OrderBy(q => q.P.X).ThenBy(q => q.P.Y).ToList();
+            res.Add(ordered[(ordered.Count - 1) / 2].K);
+        }
+        return res;
+    }
+
+    /// <summary>[ДОБАВЛЕНО 12.11.2026] У кубиков «Тормозная позиция» — данные позиции и id (без номера и повторы — новые,
+    /// продолжая наибольший); у остальных кубиков данных позиции нет. fixRepeats = false (при правке) — повторы, введённые
+    /// руками, не трогаем (о них предупреждает панель свойств), номер получают только новые.</summary>
+    public static void AssignBrakes(Station st, bool fixRepeats = true)
+    {
+        var all = st.Tiles.OrderBy(p => p.Key, NaturalComparer.Instance).ToList();
+        foreach (var (_, t) in all)
+        {
+            if (t.T != "brake") { t.Brk = null; continue; }
+            t.Brk ??= new BrakePos();
+            t.Brk.Pos = Math.Clamp(t.Brk.Pos, 1, 3);
+            if (string.IsNullOrWhiteSpace(t.Brk.Name)) t.Brk.Name = null;
+            if (string.IsNullOrWhiteSpace(t.Brk.Type)) t.Brk.Type = null;
+        }
+        var seen = new HashSet<int>();
+        int next = all.Where(p => p.Value.Brk != null).Select(p => p.Value.Brk.Id).DefaultIfEmpty(0).Max() + 1;
+        foreach (var (_, t) in all)
+            if (t.Brk != null && (t.Brk.Id <= 0 || !seen.Add(t.Brk.Id) && fixRepeats)) { t.Brk.Id = next++; seen.Add(t.Brk.Id); }
+    }
 
     public static readonly Dictionary<string, TileType> Types = TypeList.ToDictionary(t => t.Id);
 
