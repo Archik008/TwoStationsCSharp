@@ -168,7 +168,7 @@ public static class RouteFinder
         string dirWanted = r.Exit ? r.Dir : (r.Dir == "R" ? "L" : "R");
         // предупредительный, повторительный и заградительный концом маршрута не бывают
         var c = Core.AllSignals(st).Where(s => s.Tile.Sec == r.Dest && s.Sig.Dir == dirWanted &&
-                                               s.Sig.Kind is not ("warning" or "repeater" or "barrier")).ToList();
+                                               s.Sig.Kind is not ("warning" or "repeater" or "barrier" or "humprep")).ToList();
         if (c.Count == 0) return null;
         int sx = Core.Parse(r.Start.Key).X;
         return c.OrderBy(s => Math.Abs(Core.Parse(s.Key).X - sx)).First();
@@ -318,6 +318,8 @@ public static class Validator
         {
             if (s.Sig.Kind == "warning" && Aspects.MainAhead(st, s, null) == null)
                 Add("warn", $"Предупредительный {Nz(s.Sig.Name)} ({s.Key}): впереди по ходу нет входного, проходного, заградительного или прикрытия", s.Key);
+            if (s.Sig.Kind == "humprep" && Aspects.MainAhead(st, s, null) == null)     // [ДОБАВЛЕНО 13.11.2026]
+                Add("warn", $"Повторитель горочного {Nz(s.Sig.Name)} ({s.Key}): впереди по ходу нет горочного светофора", s.Key);
             if (s.Sig.Kind == "repeater" && Aspects.MainAhead(st, s, null) == null)
                 Add("warn", $"Повторительный {Nz(s.Sig.Name)} ({s.Key}): впереди по ходу нет выходного или маршрутного светофора", s.Key);
             if (s.Sig.Kind == "barrier" && Aspects.CrossingAhead(st, s) == null)

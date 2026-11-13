@@ -77,7 +77,7 @@ public static class CsExport
         // [ИЗМЕНЕНО 05.11.2026] предупредительных, повторительных, заградительных и прикрытия в программах станций
         // пока нет (SignalKind: Controlled / Automatic / Neighbor) — в черновик они идут только комментарием
         var allSigs = Core.AllSignals(st);
-        var sigs = allSigs.Where(s => s.Sig.Kind is not ("warning" or "repeater" or "barrier" or "cover")).ToList();
+        var sigs = allSigs.Where(s => s.Sig.Kind is not ("warning" or "repeater" or "barrier" or "cover" or "hump" or "humprep")).ToList();   // [13.11.2026] горочных в программах станций пока нет
         var skipped = allSigs.Except(sigs).ToList();
         var sigId = new Dictionary<string, string>();
         foreach (var s in sigs) sigId[s.Key + "#" + s.Idx] = Ident("", string.IsNullOrEmpty(s.Sig.Name) ? "SIG" : s.Sig.Name);
@@ -186,13 +186,15 @@ public static class CsExport
         W("{");
         foreach (var shunt in new[] { false, true })
         {
-            var list = routes.Where(r => r.Shunt == shunt).ToList();
+            // [ИЗМЕНЕНО 13.11.2026] маршруты от светофоров, которых в черновике нет (горочный Г), не переносятся
+            var list = routes.Where(r => r.Shunt == shunt && sigs.Any(s => s.Ref == r.Start)).ToList();
             if (list.Count == 0) continue;
             W($"    // ======== {(shunt ? "МАНЕВРОВЫЕ" : "ПОЕЗДНЫЕ")} (найдены автоматически: {list.Count}) ========");
             foreach (var r in list)
             {
                 var startSig = sigs.First(s => s.Ref == r.Start);
                 var end = RouteFinder.RouteEndSignal(st, r);
+                if (end != null && !sigId.ContainsKey(end.Key + "#" + end.Idx)) end = null;
                 var secs = string.Join(", ", r.Sections.Select(n => secId[n]));
                 var sws = string.Join(", ", r.Switches.Select(x => $"{(x.Plus ? "P" : "M")}({swId[x.Group]})"));
                 var line = $"    Route({(shunt ? "true" : "false")}, {Sid(startSig)}, {(end != null ? Sid(end) : "null")}, {SecIdOrNull(r.Dest) ?? "null"}, {CsStr(r.Name)}, " +

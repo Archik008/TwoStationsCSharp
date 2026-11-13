@@ -42,6 +42,8 @@ public sealed class Aspect
     public bool Permissive;
     /// <summary>Входной открыт на боковой путь (два жёлтых)</summary>
     public bool Diverging;
+    /// <summary>[ДОБАВЛЕНО 13.11.2026] Горит буква на световом указателе (горочный: «Н» — осаживание назад); null — указатель тёмный.</summary>
+    public string Indicator;
 
     static Aspect Of(string text, bool perm, params LampLit[] l) => new() { Lamps = l, Text = text, Permissive = perm };
     public static Aspect Red(int n = 1) => Of("красный", false, Pad(n, new LampLit(Lamp.Red)));
@@ -65,6 +67,8 @@ public sealed class TestInputs
     public HashSet<string> NoControl = new();
     public HashSet<string> BarrierOn = new();
     public HashSet<string> CoverOpen = new();
+    /// <summary>[ДОБАВЛЕНО 13.11.2026] Горочный светофор → режим (индекс в Aspects.HumpModes; нет — стоп).</summary>
+    public Dictionary<string, int> HumpMode = new();
 }
 
 public static class Aspects
@@ -74,6 +78,28 @@ public static class Aspects
     static readonly HashSet<string> NextMain = new() { "entry", "exit", "route", "block", "cover", "other" };
     static readonly HashSet<string> WarningMain = new() { "entry", "block", "barrier", "cover" };
     static readonly HashSet<string> RepeaterMain = new() { "exit", "route" };
+    static readonly HashSet<string> HumpMain = new() { "hump" };
+
+    // ---- [ДОБАВЛЕНО 13.11.2026] СОРТИРОВОЧНАЯ ГОРКА: РУ-30-80 листы 45–47 (стр. 53–55), caredenis.ru урок 14 ----
+    // Горочный Г (Г1, Г2…): от мачты — лунно-белый, зелёный, красный, жёлтый («Г ⊢⊡◎○●⊘», листы 46, 47) и указатель «Н».
+    // Повторитель ПГ — те же огни (П1Г1, лист 46); на пути парка приёма вместо красного — синий (лист 46, прим. 2).
+    static readonly Lamp[] HeadHump = { Lamp.White, Lamp.Green, Lamp.Red, Lamp.Yellow };
+    static readonly Lamp[] HeadHumpPark = { Lamp.White, Lamp.Green, Lamp.Blue, Lamp.Yellow };
+
+    /// <summary>Режимы горочного светофора (задаёт оператор горки): текст и огни. Роспуск: скорость по огням —
+    /// жёлтый / жёлтый и зелёный / зелёный (лист 47, прим. 1; урок 14: «медленно», «нормально», «быстро»).</summary>
+    public static readonly (string Text, bool Perm, string Indicator, Lamp[] Lit)[] HumpModes =
+    {
+        ("стоп — красный", false, null, new[] { Lamp.Red }),
+        ("роспуск медленно — жёлтый", true, null, new[] { Lamp.Yellow }),
+        ("роспуск нормально — жёлтый и зелёный", true, null, new[] { Lamp.Yellow, Lamp.Green }),
+        ("роспуск быстро — зелёный", true, null, new[] { Lamp.Green }),
+        ("осаживание назад — красный и «Н»", false, "Н", new[] { Lamp.Red }),
+        ("маневры на пути сортировочного парка — лунно-белый", false, null, new[] { Lamp.White }),
+    };
+
+    /// <summary>Есть ли у светофора световой указатель «Н» (горочный и его повторитель).</summary>
+    public static bool HasIndicator(Signal s) => s.Kind is "hump" or "humprep";
 
     // [ИЗМЕНЕНО 09.11.2026] головки светофоров по РУ-30-80 (стр. 9, 49): цвета ламп от мачты наружу
     static readonly Lamp[] HeadMain = { Lamp.White, Lamp.Yellow, Lamp.Red, Lamp.Green, Lamp.Yellow };
@@ -90,6 +116,8 @@ public static class Aspects
     {
         "entry" => HeadMain,
         "exit" or "route" => IsMainTrack(t?.Sec) ? HeadMain : HeadSide,
+        "hump" => HeadHump,
+        "humprep" => Core.GuessSecType(t?.Sec) == "path" ? HeadHumpPark : HeadHump,
         _ => null,
     };
 
@@ -156,6 +184,8 @@ public static class Aspects
     }
 
     static Aspect RedOn(Lamp[] head) => head == null ? Aspect.Red() : OnHead(head, "красный", false, false, new LampLit(Lamp.Red));
+    /// <summary>Закрыт: красный, а у повторителя горочного в парке приёма — синий.</summary>
+    static Aspect ClosedOn(Lamp[] head) => head.Contains(Lamp.Blue) ? OnHead(head, "синий", false, false, new LampLit(Lamp.Blue)) : RedOn(head);
 
     // ---------------------------------------------------------------------
     //  ПРОХОД ПО ПУТИ ВПЕРЁД ОТ СВЕТОФОРА
@@ -213,7 +243,7 @@ public static class Aspects
     /// для повторительного — выходной / маршрутный, для остальных — следующий поездной.</summary>
     public static SignalEntry MainAhead(Station st, SignalEntry s, HashSet<string> noControl)
     {
-        var set = s.Sig.Kind == "warning" ? WarningMain : s.Sig.Kind == "repeater" ? RepeaterMain : NextMain;
+        var set = s.Sig.Kind == "warning" ? WarningMain : s.Sig.Kind == "repeater" ? RepeaterMain : s.Sig.Kind == "humprep" ? HumpMain : NextMain;
         return Go(st, s, e => set.Contains(e.Sig.Kind), noControl: noControl).Sig;
     }
 
@@ -234,6 +264,7 @@ public static class Aspects
     public static Aspect Static(Signal s, Tile t) => s.Kind switch
     {
         "entry" or "exit" or "route" => RedOn(Head(s, t)),
+        "hump" or "humprep" => ClosedOn(Head(s, t)),
         "shunt" => Aspect.Make("синий", false, 1, new LampLit(Lamp.Blue)),
         "warning" => Aspect.Make("жёлтый", false, 1, new LampLit(Lamp.Yellow)),
         "repeater" => Aspect.Make("зелёный", false, 1, new LampLit(Lamp.Green)),
@@ -327,6 +358,29 @@ public static class Aspects
                     var main = MainAhead(st, s, w.NoControl);
                     if (main != null && Get(main).Permissive) return Aspect.Make("зелёный (выходной открыт)", true, 1, new LampLit(Lamp.Green));
                     return Aspect.Dark();
+                }
+                case "hump":
+                {
+                    // [ДОБАВЛЕНО 13.11.2026] режим задаёт оператор горки; маневровый маршрут от Г — лунно-белый
+                    var head = Head(s.Sig, s.Tile);
+                    if (route != null) return OnHead(head, "лунно-белый (маневры)", false, false, new LampLit(Lamp.White));
+                    var m = HumpModes[w.HumpMode.TryGetValue(id, out var mi) && mi >= 0 && mi < HumpModes.Length ? mi : 0];
+                    var a = OnHead(head, m.Text, m.Perm, false, m.Lit.Select(l => new LampLit(l)).ToArray());
+                    a.Indicator = m.Indicator;
+                    return a;
+                }
+                case "humprep":
+                {
+                    // повторяет горочный впереди (в парке приёма — синий вместо красного)
+                    var head = Head(s.Sig, s.Tile);
+                    var main = MainAhead(st, s, w.NoControl);
+                    if (main == null) { var d = Aspect.Dark(head.Length); d.Text = "не горит — впереди нет горочного"; return d; }
+                    var ma = Get(main);
+                    var lit = ma.Lamps.Where(l => l.Color != Lamp.Off)
+                                      .Select(l => l.Color == Lamp.Red && head.Contains(Lamp.Blue) ? l with { Color = Lamp.Blue } : l).ToArray();
+                    var a = OnHead(head, $"как {main.Sig.Name}: {ma.Text}", ma.Permissive, false, lit);
+                    a.Indicator = ma.Indicator;
+                    return a;
                 }
                 case "barrier":
                 {

@@ -497,6 +497,20 @@ public static class Renderer
             g.FillEllipse(fill, rc);
             g.DrawEllipse(pen, rc);
         }
+        // [ДОБАВЛЕНО 13.11.2026] горочный и его повторитель — световой указатель за огнями (РУ-30-80 листы 45–47: «Г ⊢⊡◎○●⊘»);
+        // тёмный квадрат, при осаживании горит белая «Н»
+        if (Aspects.HasIndicator(sig) && gm.Lamps.Length > 0)
+        {
+            var last = gm.Lamps[^1];
+            float half = gm.R * 0.95f;
+            var c = new PointF(last.X + gm.Fwd * (gm.R + half + gm.R * 0.35f), last.Y);
+            var box = new RectangleF(c.X - half, c.Y - half, 2 * half, 2 * half);
+            using (var bb = new SolidBrush(A(Pal.Dark, alpha))) g.FillRectangle(bb, box);
+            g.DrawRectangle(pen, box.X, box.Y, box.Width, box.Height);
+            if (aspect.Indicator != null && cs >= 10)
+                using (var ib = new SolidBrush(A(Color.White, alpha)))
+                    g.DrawString(aspect.Indicator, GetFont(half * 1.5f, true), ib, c, Center);
+        }
         if (label && cs >= 14)
         {
             bool named = !string.IsNullOrEmpty(sig.Name);

@@ -30,6 +30,8 @@ public static class Naming
     {
         ("entry", "{Б}{П}"), ("exit", "{Б}{П}"), ("route", "{Б}М{П}"), ("shunt", "М{N}"), ("block", "{N}"),
         ("warning", "П{О}"), ("repeater", "П{О}"), ("barrier", "З{N}"), ("cover", "{Б}П{П}"),
+        // [ДОБАВЛЕНО 13.11.2026] горка: Г1, Г2… по путям надвига, повторитель — ПГ1 (П + имя горочного), РУ-30-80 лист 47
+        ("hump", "Г{N}"), ("humprep", "П{О}"),
     };
 
     /// <summary>"auto-line" — входной, если впереди станция, иначе проходной; "" — вид из панели.</summary>
@@ -73,7 +75,7 @@ public static class Naming
     {
         var n = s.Name ?? "";
         if (s.Kind == "block") return int.TryParse(n, out int v) && v > 0 ? (v % 2 == 1 ? "Н" : "Ч") : null;
-        if (s.Kind is "shunt" or "barrier" or "warning" or "repeater") return null;
+        if (s.Kind is "shunt" or "barrier" or "warning" or "repeater" or "hump" or "humprep") return null;
         return n.Length > 0 && (n[0] == 'Н' || n[0] == 'Ч') ? n[0].ToString() : null;
     }
 
@@ -251,7 +253,7 @@ public static class Naming
     {
         int n = 0;
         // сначала основные, потом предупредительные / повторительные (их имя — по основному)
-        foreach (var s in Core.AllSignals(st).OrderBy(s => s.Sig.Kind is "warning" or "repeater" ? 1 : 0))
+        foreach (var s in Core.AllSignals(st).OrderBy(s => s.Sig.Kind is "warning" or "repeater" or "humprep" ? 1 : 0))
             if (Rebuild(st, s)) n++;
         return n;
     }
@@ -419,8 +421,12 @@ public static class Naming
                                  .OrderBy(s => s.Sig.Dir == "R" ? X(s) : -X(s)).ThenBy(Y))
                 res[Id(s)] = Seq(n => Render(T(s), L(s), n.ToString(), n.ToString(), ""), odd ? 1 : 2, 2);
 
-        // ---- предупредительные и повторительные — по имени светофора впереди (уже посчитанному) ----
-        foreach (var s in all.Where(s => Auto(s) && s.Sig.Kind is "warning" or "repeater").OrderBy(X))
+        // ---- [ДОБАВЛЕНО 13.11.2026] горочные: Г1, Г2… сверху вниз (по путям надвига), потом по ходу ----
+        foreach (var s in all.Where(s => Auto(s) && s.Sig.Kind == "hump").OrderBy(Y).ThenBy(X))
+            res[Id(s)] = Seq(n => Render(T(s), L(s), n.ToString(), n.ToString(), ""));
+
+        // ---- предупредительные и повторительные (и повторители горочных) — по имени светофора впереди (уже посчитанному) ----
+        foreach (var s in all.Where(s => Auto(s) && s.Sig.Kind is "warning" or "repeater" or "humprep").OrderBy(X))
         {
             var main = Aspects.MainAhead(st, s, null);
             string mainName = main == null ? null : res.TryGetValue(Id(main), out var mn) ? mn : main.Sig.Name;

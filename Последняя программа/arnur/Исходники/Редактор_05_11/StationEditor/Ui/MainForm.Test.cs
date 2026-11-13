@@ -73,6 +73,7 @@ public sealed partial class MainForm
             foreach (var (k, t) in st.Tiles) if (t.T == "switch") T.SavedPlus[k] = t.Plus;
             T.Occ = new HashSet<string>(); T.Set = new List<Route>(); T.Pending = null;
             T.BarrierOn = new HashSet<string>(); T.CoverOpen = new HashSet<string>();
+            T.HumpMode = new Dictionary<string, int>();
             T.Drive.Reset();
             ui.Mode = m;
             RecomputeTest();
@@ -123,7 +124,7 @@ public sealed partial class MainForm
         }
         T.Aspects = Aspects.Compute(st, new TestInputs
         {
-            Occ = T.Occ, OpenRoutes = T.OpenRoutes, NoControl = T.NoControl, BarrierOn = T.BarrierOn, CoverOpen = T.CoverOpen,
+            Occ = T.Occ, OpenRoutes = T.OpenRoutes, NoControl = T.NoControl, BarrierOn = T.BarrierOn, CoverOpen = T.CoverOpen, HumpMode = T.HumpMode,
         });
     }
 
@@ -237,6 +238,7 @@ public sealed partial class MainForm
                 RecomputeTest();
                 Msg($"Светофор прикрытия {name}: {T.Aspects[id].Text}", T.CoverOpen.Contains(id) && !T.Aspects[id].Permissive);
             }
+            else if (sig.Kind == "hump" && T.Pending == null) HumpMenu(s, id, name, set);    // [ДОБАВЛЕНО 13.11.2026]
             else if (set != null) CancelRoute(set);
             else if (T.Pending == s) { T.Pending = null; Msg("Набор маршрута отменён"); }
             else if (!Routes.Any(r => r.Start == s))
@@ -262,6 +264,44 @@ public sealed partial class MainForm
             else if (!cand.Any(r => SetRoute(r, true))) SetRoute(cand[0]);
         }
         else if (st.Tiles.TryGetValue(k, out var t) && t.T == "switch") ToggleSwitch(k);
+        RefreshPanels();
+        Draw();
+    }
+
+    /// <summary>[ДОБАВЛЕНО 13.11.2026] Горочный светофор в «Испытании»: меню оператора горки — стоп, роспуск медленно /
+    /// нормально / быстро, осаживание назад, маневры (лунно-белый; или маневровый маршрут от Г на путь сортировочного парка).
+    /// РУ-30-80 листы 45–47 (стр. 53–55), caredenis.ru урок 14.</summary>
+    void HumpMenu(SigRef s, string id, string name, Route set)
+    {
+        var T = ui.Test;
+        var m = new ContextMenuStrip();
+        m.Items.Add(new ToolStripLabel($"Горочный {name}") { Font = new Font(Font, FontStyle.Bold) });
+        int cur = T.HumpMode.TryGetValue(id, out var ci) ? ci : 0;
+        for (int i = 0; i < Aspects.HumpModes.Length; i++)
+        {
+            int mi = i;
+            var it = new ToolStripMenuItem(Aspects.HumpModes[i].Text) { Checked = set == null && cur == i };
+            it.Click += (_, _) => SetHumpMode(id, name, mi);
+            m.Items.Add(it);
+        }
+        m.Items.Add(new ToolStripSeparator());
+        if (set != null)
+            m.Items.Add($"Отменить маршрут {set.Name}", null, (_, _) => { CancelRoute(set); RefreshPanels(); Draw(); });
+        else if (Routes.Any(r => r.Start == s))
+            m.Items.Add("Маневровый маршрут от него… (щёлкните путь назначения)", null, (_, _) =>
+            {
+                T.Pending = s;
+                Msg($"Начало маршрута — {name}. Щёлкните по пути назначения");
+                Draw();
+            });
+        m.Show(Cursor.Position);
+    }
+
+    void SetHumpMode(string id, string name, int mode)
+    {
+        ui.Test.HumpMode[id] = mode;
+        RecomputeTest();
+        Msg($"Горочный {name}: {ui.Test.Aspects[id].Text}");
         RefreshPanels();
         Draw();
     }
@@ -331,6 +371,7 @@ public sealed partial class MainForm
         T.Pending = null;
         T.BarrierOn = new HashSet<string>();
         T.CoverOpen = new HashSet<string>();
+        T.HumpMode = new Dictionary<string, int>();
         T.Drive.Queue.Clear();
         RecomputeTest();
         RefreshPanels();

@@ -39,6 +39,8 @@ public sealed class TestState
     public readonly SwitchDrive Drive = new();
     public HashSet<string> NoControl = new();
     public HashSet<string> BarrierOn = new();
+    /// <summary>[ДОБАВЛЕНО 13.11.2026] Горочный светофор → режим (Aspects.HumpModes): стоп, роспуск, осаживание, маневры.</summary>
+    public Dictionary<string, int> HumpMode = new();
     public HashSet<string> CoverOpen = new();
 }
 
