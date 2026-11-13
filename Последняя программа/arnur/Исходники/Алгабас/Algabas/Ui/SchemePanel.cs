@@ -81,6 +81,13 @@ class RailSchemePanel : Panel
     /// На двух мониторах АКЖТ прижата вправо, пост — влево: пути стыкуются ровно по границе мониторов.</summary>
     public StringAlignment HAlign = StringAlignment.Center;
 
+    // ---- [ДОБАВЛЕНО 13.11.2026] настройка своих маршрутов («Станция по схеме», окно «Настройка»); у Алгабаса и АКЖТ — null ----
+    /// <summary>Левый клик по светофору, стрелке или участку сначала отдаётся сюда; true — клик забран (маршрут не набирается).</summary>
+    public Func<object, bool> EditClick = null;
+    /// <summary>Черновик маршрута: эти участки (Id) рисуются жёлтым, эти светофоры — в жёлтой рамке.</summary>
+    public HashSet<string> DraftSections = null;
+    public HashSet<RailSignal> DraftSignals = null;
+
     public RailSchemePanel(StationView v)
     {
         view = v;
@@ -335,6 +342,7 @@ class RailSchemePanel : Panel
         releasing = false;
         setting = false;
         var sec = IL.Sections[p.SectionId];
+        if (DraftSections != null && DraftSections.Contains(p.SectionId)) return RouteColor;   // [ДОБАВЛЕНО 13.11.2026] черновик маршрута
         if (sec.Occupied) return OccColor;
         foreach (var r in IL.ActiveRoutes)
         {
@@ -641,6 +649,11 @@ class RailSchemePanel : Panel
         }
 
         var rect = SignalRect(sg);
+        if (DraftSignals != null && DraftSignals.Contains(s))     // [ДОБАВЛЕНО 13.11.2026] светофор в черновике маршрута
+        {
+            using var dp = new Pen(Color.FromArgb(255, 230, 60), 2.5f);
+            g.DrawRectangle(dp, rect.X - 2, rect.Y - 2, rect.Width + 4, rect.Height + 4);
+        }
         if (selected == s && Blink)
         {
             using var hp = new Pen(Color.White, 2f) { DashStyle = DashStyle.Dash };
@@ -825,6 +838,12 @@ class RailSchemePanel : Panel
         var sig = SignalAt(p);
         var sw = sig == null ? SwitchAt(p) : null;
         if (((object)sig ?? (object)sw ?? SectionAt(p)) is { } clicked) Pointed?.Invoke(clicked);   // [ДОБАВЛЕНО 28.10.2026] клик = «показал»
+        // [ДОБАВЛЕНО 13.11.2026] настройка своего маршрута: клик забирает окно настройки (false — обычная работа)
+        if (EditClick != null && e.Button == MouseButtons.Left && ((object)sig ?? (object)sw ?? SectionAt(p)) is { } ed && EditClick(ed))
+        {
+            Invalidate();
+            return;
+        }
 
         if (e.Button == MouseButtons.Left)
         {

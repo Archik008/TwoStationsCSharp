@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using StationApp.Core;
+using StationApp.Model;
 using StationApp.Ui;
 using Ed = StationEditor.Model;
 using TC = StationEditor.Model.Core;
@@ -74,10 +75,30 @@ public class JsonLayout
     public int TrainRoutes => View.Routes.Count(r => !r.Shunting);
     public int ShuntRoutes => View.Routes.Count(r => r.Shunting);
 
-    public JsonLayout(Interlocking il, Ed.Station st, string fileName)
+    // ---- [ДОБАВЛЕНО 13.11.2026] настройка станции (Model/SchemeSettings.cs, окно «Настройка…») ----
+    public readonly SchemeSettings Set;
+    /// <summary>Светофоры схемы — ключ «клетка#номер», имя и вид по схеме (до настройки), клетка.</summary>
+    public readonly List<(string Key, string Cell, string Name, string Kind)> SignalList = new();
+    /// <summary>Стрелки — ключ группы редактора, номер по схеме, номера стрелок схемы, положение по схеме (true — минус).</summary>
+    public readonly List<(string Key, string Label, string Tiles, bool Minus)> SwitchList = new();
+    /// <summary>Автомаршруты (все найденные, и выключенные) — ключ, имя по схеме, маневровый, стрелки, заменён своим.</summary>
+    public readonly List<(string Key, string Name, bool Shunt, string Switches, bool Replaced)> AutoList = new();
+    /// <summary>Свои маршруты из настройки, которые построены (индекс в Set.Routes → маршрут).</summary>
+    public readonly Dictionary<int, RailRoute> CustomBuilt = new();
+    public RailSignal SignalByKey(string k) => k != null && sigByRef.TryGetValue(k, out var s) ? s : null;
+    public string KeyOf(RailSignal s) => sigByRef.FirstOrDefault(p => p.Value == s).Key;
+    public RailSwitch SwitchByKey(string k) => k != null && swByGroup.TryGetValue(k, out var s) ? s : null;
+    public string KeyOf(RailSwitch s) => swByGroup.FirstOrDefault(p => p.Value == s).Key;
+    /// <summary>Участок по имени из схемы (TrackSection.Label) и обратно — по Id.</summary>
+    public TrackSection SectionByName(string n) => n != null && secs.TryGetValue(n, out var s) ? s : null;
+    public string NameOf(TrackSection s) => secs.FirstOrDefault(p => p.Value == s).Key;
+    readonly HashSet<string> relabeled = new();   // одиночные стрелки с номером из настройки — тот же номер и на схеме
+
+    public JsonLayout(Interlocking il, Ed.Station st, string fileName, SchemeSettings set = null)
     {
         IL = il;
         St = st;
+        Set = set ?? new SchemeSettings();
         Name = string.IsNullOrWhiteSpace(st.Name) ? Path.GetFileNameWithoutExtension(fileName).Replace(".station", "") : st.Name.Trim();
         string bare = Regex.Replace(Name, @"^(станция|ст\.)\s*", "", RegexOptions.IgnoreCase);
         View.Title = $"Станция {bare}";
@@ -216,11 +237,19 @@ public class JsonLayout
             string label = !string.IsNullOrWhiteSpace(t0.Group) ? t0.Group.Trim()
                          : names.Count > 0 ? names[0].Trim() : "?" + ++unnamed;
             var ss = keys.Select(SecOfTile).Where(s => s != null).Distinct().ToArray();
+            // [ДОБАВЛЕНО 13.11.2026] настройка: номер на пульте, начальное положение
+            SwitchList.Add((g, label, string.Join(", ", names), !t0.IsPlus));
+            bool plus0 = t0.IsPlus;
+            if (Set.Switches.TryGetValue(g, out var so))
+            {
+                if (!string.IsNullOrWhiteSpace(so.Label)) { label = so.Label.Trim(); if (keys.Count == 1) relabeled.Add(g); }
+                if (so.Minus is bool m) plus0 = !m;
+            }
             string title = keys.Count > 1
                 ? $"Съезд {label}: стрелки {string.Join(" и ", names)} переводятся вместе"
                 : $"Стрелка {label}";
             var sw = IL.AddSwitchL(Unique(label), label, title, ss);
-            sw.Plus = t0.IsPlus;
+            sw.Plus = plus0;
             View.Switches.Add(sw);
             swByGroup[g] = sw;
         }
@@ -243,6 +272,13 @@ public class JsonLayout
     {
         foreach (var e in TC.AllSignals(St))
         {
+            // [ДОБАВЛЕНО 13.11.2026] настройка: своё имя и вид (до поиска маршрутов — он смотрит на вид светофора)
+            SignalList.Add((RefKey(e.Ref), e.Key, e.Sig.Name ?? "", e.Sig.Kind));
+            if (Set.Signals.TryGetValue(RefKey(e.Ref), out var so))
+            {
+                if (!string.IsNullOrWhiteSpace(so.Name)) e.Sig.Name = so.Name.Trim();
+                if (!string.IsNullOrWhiteSpace(so.Kind) && TC.SigKindName(so.Kind) != null) e.Sig.Kind = so.Kind;
+            }
             string name = string.IsNullOrWhiteSpace(e.Sig.Name) ? "?" : e.Sig.Name.Trim();
             var dir = e.Sig.Dir == "L" ? Dir.Left : Dir.Right;
             string kindName = TC.SigKindName(e.Sig.Kind) ?? "Светофор";
@@ -291,11 +327,59 @@ public class JsonLayout
         return dest;
     }
 
+    /// <summary>[ДОБАВЛЕНО 13.11.2026] Ключ автомаршрута для настройки: вид, начало, путь назначения, положения стрелок —
+    /// не меняется, пока не перерисовали этот кусок схемы.</summary>
+    static string AutoKey(Ed.Route r) =>
+        (r.Shunt ? "М|" : "П|") + RefKey(r.Start) + "|" + (r.Dest ?? "") + "|" +
+        string.Join(",", r.Switches.Select(x => x.Group + (x.Plus ? "+" : "-")).OrderBy(x => x, StringComparer.Ordinal));
+
+    /// <summary>[ДОБАВЛЕНО 13.11.2026] Свои маршруты из настройки (что делает клик n1 → n2). Возвращает построенные.</summary>
+    List<RailRoute> BuildCustomRoutes()
+    {
+        var res = new List<RailRoute>();
+        for (int i = 0; i < Set.Routes.Count; i++)
+        {
+            var cr = Set.Routes[i];
+            string nm = string.IsNullOrWhiteSpace(cr.Name) ? $"свой маршрут {i + 1}" : cr.Name.Trim();
+            if (cr.Off == true) continue;
+            var start = SignalByKey(cr.Start);
+            if (start == null || start.Kind != SignalKind.Controlled)
+            { Notes.Add($"Свой маршрут «{nm}»: светофора начала нет на схеме или он не открывается дежурным — маршрут не добавлен."); continue; }
+            var list = cr.Sections.Select(SectionByName).Where(s => s != null).Distinct().ToList();
+            if (list.Count == 0) { Notes.Add($"Свой маршрут «{nm}»: не отмечено ни одного участка — маршрут не добавлен."); continue; }
+            var last = list[^1];
+            bool exit = secType.TryGetValue(NameOf(last) ?? "", out var lt) && lt == "line";
+            var rr = new RailRoute
+            {
+                Id = Unique("свой:" + nm),
+                Name = nm,
+                Shunting = cr.Shunt,
+                Start = start,
+                End = SignalByKey(cr.End),
+                Dest = last,
+                ExitSection = exit ? last : null,
+            };
+            rr.Sections.AddRange(exit ? list.Take(list.Count - 1) : list);
+            foreach (var (k, plus) in cr.Switches)
+                if (SwitchByKey(k) is { } sw) rr.Switches.Add((sw, plus));
+            rr.Diverging = !cr.Shunt && rr.Switches.Any(x => !x.plus);
+            foreach (var (k, a) in cr.Aspects)
+                if (SignalByKey(k) is { } s && SchemeSettings.AspectOf(a) is Aspect asp)
+                    (rr.FixedAspects ??= new())[s] = asp;
+            CustomBuilt[i] = rr;
+            res.Add(rr);
+        }
+        return res;
+    }
+
     void BuildRoutes()
     {
+        var customs = BuildCustomRoutes();
+        bool Replaced(RailSignal start, RailSignal end, TrackSection dest) =>
+            customs.Any(c => c.Start == start && ((c.End != null && c.End == end) || c.Dest == dest));
         var found = Ed.RouteFinder.FindRoutes(St);
         var seen = new Dictionary<string, int>();
-        int skipped = 0;
+        int skipped = 0, off = 0, replaced = 0;
         foreach (var r in found)
         {
             if (!sigByRef.TryGetValue(RefKey(r.Start), out var start)) { skipped++; continue; }
@@ -311,6 +395,14 @@ public class JsonLayout
             string key = (r.Shunt ? "М:" : "П:") + bas;
             seen[key] = seen.TryGetValue(key, out int c) ? c + 1 : 1;
             string name = seen[key] > 1 ? $"{bas} (вариант {seen[key]})" : bas;
+            // [ДОБАВЛЕНО 13.11.2026] настройка: автомаршруты выключены совсем / этот выключен / заменён своим / своё имя
+            string akey = AutoKey(r);
+            bool isReplaced = Replaced(start, end, dest);
+            AutoList.Add((akey, name, r.Shunt, string.Join(" ", r.Switches.Select(x => (swByGroup.TryGetValue(x.Group, out var xs) ? xs.Label : x.Name) + (x.Plus ? "+" : "−"))), isReplaced));
+            Set.Auto.TryGetValue(akey, out var ao);
+            if (!Set.AutoOn || ao?.Off == true) { off++; continue; }
+            if (isReplaced) { replaced++; continue; }
+            if (!string.IsNullOrWhiteSpace(ao?.Name)) name = ao.Name.Trim();
 
             var rr = new RailRoute
             {
@@ -331,6 +423,10 @@ public class JsonLayout
             IL.AddRoute(rr);
             View.Routes.Add(rr);
         }
+        foreach (var rr in customs) { IL.AddRoute(rr); View.Routes.Add(rr); }
+        if (!Set.AutoOn) Notes.Add($"Автомаршруты выключены в настройке — работают только свои ({customs.Count}).");
+        else if (off > 0) Notes.Add($"Автомаршрутов выключено в настройке: {off}.");
+        if (replaced > 0) Notes.Add($"Автомаршрутов заменено своими: {replaced}.");
         if (skipped > 0) Notes.Add($"Маршрутов от непереносимых светофоров пропущено: {skipped}.");
         if (View.Routes.Count == 0) Notes.Add("Маршрутов не найдено — проверьте в редакторе светофоры и типы участков («путь», «перегон»).");
     }
@@ -644,7 +740,8 @@ public class JsonLayout
             if (t.T != "switch") continue;
             var (x, y) = TC.Parse(k);
             var (fx, fy) = TC.SwitchLabelAt(t);    // [ИЗМЕНЕНО 12.11.2026] как в редакторе (у симметричной стрелки — над остряком)
-            string label = string.IsNullOrWhiteSpace(t.Name) ? swByGroup[TC.SwitchGroup(k, t)].Label : t.Name.Trim();
+            var grp = TC.SwitchGroup(k, t);
+            string label = string.IsNullOrWhiteSpace(t.Name) || relabeled.Contains(grp) ? swByGroup[grp].Label : t.Name.Trim();
             if (!g.SwitchLabels.ContainsKey(label))
                 g.SwLabel(label, swByGroup[TC.SwitchGroup(k, t)], X(x) + CX * fx, Y(y) + CY * fy);
         }

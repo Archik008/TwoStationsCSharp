@@ -789,6 +789,15 @@ public partial class Interlocking   // [ИЗМЕНЕНО 21.10.2026] втора�
         // светофор, которым управляет другая станция (связь диспетчеров), — только показываем
         if (s.Remote is Aspect remote) return remote;
 
+        // [ДОБАВЛЕНО 13.11.2026] свой маршрут с заданными показаниями: пока он может быть открыт — показание из настройки
+        if (!s.InviteOn)
+            foreach (var fr in ActiveRoutes)
+                if (fr.FixedAspects != null && fr.FixedAspects.TryGetValue(s, out var fa) && CanOpen(fr) && !fr.Start.FaultClosed)
+                {
+                    if (fr.Start == s) fr.SignalWasOpen = true;
+                    return fa;
+                }
+
         switch (s.Kind)
         {
             case SignalKind.Neighbor:
