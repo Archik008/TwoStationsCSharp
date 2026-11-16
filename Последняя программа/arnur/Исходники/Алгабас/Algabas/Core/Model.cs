@@ -42,7 +42,32 @@ public enum Aspect
     /// <summary>Лунно-белый — маневры разрешены.</summary>
     White,
     /// <summary>Синий — маневры запрещены (маневровый светофор).</summary>
-    Blue
+    Blue,
+    // [ДОБАВЛЕНО 13.11.2026] горочный светофор (РУ-30-80 листы 45–47; caredenis.ru урок 14) — в конце, номера прежних не меняются
+    /// <summary>Жёлтый и зелёный — роспуск «нормально».</summary>
+    YellowGreen,
+    /// <summary>Красный и «Н» на указателе — осаживание назад.</summary>
+    RedBack
+}
+
+/// <summary>[ДОБАВЛЕНО 13.11.2026] Режим горочного светофора, задаёт оператор горки (РУ-30-80 листы 45–47; caredenis.ru урок 14):
+/// стоп — красный; роспуск медленно — жёлтый, нормально — жёлтый и зелёный, быстро — зелёный; осаживание назад — красный и «Н»;
+/// маневры на пути сортировочного парка — лунно-белый.</summary>
+public enum HumpMode { Stop, Slow, Normal, Fast, Back, Shunt }
+
+public static class HumpInfo
+{
+    public static readonly (HumpMode Mode, string Text, Aspect Aspect)[] Modes =
+    {
+        (HumpMode.Stop, "стоп — красный", Aspect.Red),
+        (HumpMode.Slow, "роспуск медленно — жёлтый", Aspect.Yellow),
+        (HumpMode.Normal, "роспуск нормально — жёлтый и зелёный", Aspect.YellowGreen),
+        (HumpMode.Fast, "роспуск быстро — зелёный", Aspect.Green),
+        (HumpMode.Back, "осаживание назад — красный и «Н»", Aspect.RedBack),
+        (HumpMode.Shunt, "маневры на пути сортировочного парка — лунно-белый", Aspect.White),
+    };
+    public static Aspect AspectOf(HumpMode m) => Modes.First(x => x.Mode == m).Aspect;
+    public static string TextOf(HumpMode m) => Modes.First(x => x.Mode == m).Text;
 }
 
 /// <summary>Вид светофора.</summary>
@@ -61,11 +86,11 @@ public static class AspectInfo
     /// <summary>Разрешает ли показание проехать светофор.</summary>
     public static bool IsPermissive(Aspect a) =>
         a is Aspect.Yellow or Aspect.YellowBlink or Aspect.Green
-          or Aspect.TwoYellow or Aspect.TwoYellowTopBlink or Aspect.Invite or Aspect.White;
+          or Aspect.TwoYellow or Aspect.TwoYellowTopBlink or Aspect.Invite or Aspect.White or Aspect.YellowGreen;
 
     /// <summary>"Запрещающее" для следующего светофора: красный, погашен или пригласительный.</summary>
     public static bool IsRestrictive(Aspect a) =>
-        a is Aspect.Red or Aspect.Dark or Aspect.Invite or Aspect.Blue or Aspect.White;
+        a is Aspect.Red or Aspect.Dark or Aspect.Invite or Aspect.Blue or Aspect.White or Aspect.RedBack;
 
     /// <summary>Короткое название показания.</summary>
     public static string Short(Aspect a) => a switch
@@ -80,6 +105,8 @@ public static class AspectInfo
         Aspect.Invite => "пригласительный",
         Aspect.White => "лунно-белый (маневры)",
         Aspect.Blue => "синий",
+        Aspect.YellowGreen => "жёлтый и зелёный",
+        Aspect.RedBack => "красный и «Н»",
         _ => a.ToString()
     };
 
@@ -96,6 +123,8 @@ public static class AspectInfo
         Aspect.Invite => "Красный + лунно-белый мигающий (пригласительный) — проследовать со скоростью не более 20 км/ч с особой бдительностью.",
         Aspect.White => "Лунно-белый — маневры разрешены (маневровый маршрут задан).",
         Aspect.Blue => "Синий — маневры запрещены.",
+        Aspect.YellowGreen => "Горочный: жёлтый и зелёный — роспуск с нормальной скоростью.",
+        Aspect.RedBack => "Горочный: красный и «Н» — осаживание назад.",
         _ => ""
     };
 }
@@ -257,6 +286,14 @@ public class RailSignal
 
     public bool Has(string lamp) => Array.IndexOf(Lamps, lamp) >= 0;
 
+    // ---- [ДОБАВЛЕНО 13.11.2026] сортировочная горка («Станция по схеме»); у Алгабаса и АКЖТ — пусто ----
+    /// <summary>Горочный светофор: режим оператора горки (null — не горочный).</summary>
+    public HumpMode? Hump;
+    /// <summary>Повторитель: показывает то же, что этот светофор (повторитель горочного ПГ).</summary>
+    public RailSignal RepeatOf;
+    /// <summary>Есть световой указатель «Н» (горит при «красный и Н»).</summary>
+    public bool Indicator;
+
     /// <summary>Чисто маневровый светофор (нет ни зелёного, ни жёлтого).</summary>
     public bool IsShuntOnly => !Has("green") && !Has("yellow");
 
@@ -274,6 +311,9 @@ public class RailSignal
             case Aspect.Invite: yield return ("red", false); yield return ("white", true); break;
             case Aspect.White: yield return ("white", false); break;
             case Aspect.Blue: yield return ("blue", false); break;
+            // [ДОБАВЛЕНО 13.11.2026] горочный; у повторителя в парке приёма вместо красного — синий
+            case Aspect.YellowGreen: yield return ("yellow", false); yield return ("green", false); break;
+            case Aspect.RedBack: yield return (Has("red") ? "red" : "blue", false); break;
         }
     }
 

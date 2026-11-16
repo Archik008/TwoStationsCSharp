@@ -169,6 +169,11 @@ public static class RouteFinder
         // предупредительный, повторительный и заградительный концом маршрута не бывают
         var c = Core.AllSignals(st).Where(s => s.Tile.Sec == r.Dest && s.Sig.Dir == dirWanted &&
                                                s.Sig.Kind is not ("warning" or "repeater" or "barrier" or "humprep")).ToList();
+        // [ДОБАВЛЕНО 13.11.2026] маневровый, встречного на пути назначения нет (путь надвига: ПГ и Г смотрят на горку) —
+        // концом считается ближайший светофор попутного направления на этом пути (ПГ1 у «М7 → СГП-2»)
+        if (c.Count == 0 && r.Shunt && !r.Exit)
+            c = Core.AllSignals(st).Where(s => s.Tile.Sec == r.Dest && s.Sig.Dir == r.Dir &&
+                                               s.Sig.Kind is not ("warning" or "repeater" or "barrier")).ToList();
         if (c.Count == 0) return null;
         int sx = Core.Parse(r.Start.Key).X;
         return c.OrderBy(s => Math.Abs(Core.Parse(s.Key).X - sx)).First();

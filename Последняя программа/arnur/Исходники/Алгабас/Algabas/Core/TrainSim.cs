@@ -382,6 +382,8 @@ public class TrainSim
         bool shuntInRoute = s.IsShuntOnly && step.Section != null && step.Section.LockedBy != null &&
                             step.Section.LockedBy.Shunting == t.Shunting;
         if (shuntInRoute) return null;
+        // [ДОБАВЛЕНО 13.11.2026] горочный и его повторитель: роспуск (жёлтый, жёлтый и зелёный, зелёный) — для любого состава
+        if ((s.Hump != null || s.RepeatOf != null) && a is Aspect.Yellow or Aspect.YellowGreen or Aspect.Green) return null;
 
         if (t.Shunting)
             return a == Aspect.White ? null

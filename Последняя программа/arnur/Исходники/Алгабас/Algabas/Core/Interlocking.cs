@@ -337,6 +337,15 @@ public partial class Interlocking   // [ИЗМЕНЕНО 21.10.2026] втора�
         return null;
     }
 
+    /// <summary>[ДОБАВЛЕНО 13.11.2026] Оператор горки меняет режим горочного светофора.</summary>
+    public void SetHumpMode(RailSignal s, HumpMode m)
+    {
+        if (s.Hump == null) return;
+        s.Hump = m;
+        Say($"Горочный {s.Label}: {HumpInfo.TextOf(m)}");
+        Commit();
+    }
+
     void StartMove(RailSwitch sw, bool plus)
     {
         sw.Plus = plus;
@@ -789,6 +798,13 @@ public partial class Interlocking   // [ИЗМЕНЕНО 21.10.2026] втора�
         // светофор, которым управляет другая станция (связь диспетчеров), — только показываем
         if (s.Remote is Aspect remote) return remote;
 
+        // [ДОБАВЛЕНО 13.11.2026] повторитель (горочного): то же показание; без красной лампы (парк приёма) — синий
+        if (s.RepeatOf != null)
+        {
+            var ra = s.RepeatOf.Aspect;
+            return ra == Aspect.Red && !s.Has("red") && s.Has("blue") ? Aspect.Blue : ra;
+        }
+
         // [ДОБАВЛЕНО 13.11.2026] свой маршрут с заданными показаниями: пока он может быть открыт — показание из настройки
         if (!s.InviteOn)
             foreach (var fr in ActiveRoutes)
@@ -819,6 +835,9 @@ public partial class Interlocking   // [ИЗМЕНЕНО 21.10.2026] втора�
             {
                 if (s.InviteOn) return Aspect.Invite;
                 var r = ActiveRoutes.FirstOrDefault(x => x.Start == s);
+                // [ДОБАВЛЕНО 13.11.2026] горочный без маршрута: показание по режиму оператора горки
+                // (со стрелками горки не увязан — урок 14 caredenis.ru); маневровый маршрут от него — как обычно, лунно-белый
+                if (r == null && s.Hump is HumpMode hm) return s.FaultClosed ? Aspect.Red : HumpInfo.AspectOf(hm);
                 // [ИЗМЕНЕНО 20.10.2026, этап 3] неисправный светофор не открывается (пригласительный — можно)
                 if (r == null || !CanOpen(r) || s.FaultClosed) return ClosedAspect(s);
 

@@ -152,7 +152,7 @@ class ClassicPanel : TableLayoutPanel
         var c = sel ? (ModelHost.BlinkPhase ? Color.FromArgb(255, 170, 60) : Off)
               : s.Aspect switch
               {
-                  Aspect.Green => Color.FromArgb(90, 210, 110),
+                  Aspect.Green or Aspect.YellowGreen => Color.FromArgb(90, 210, 110),
                   Aspect.Yellow or Aspect.YellowBlink or Aspect.TwoYellow or Aspect.TwoYellowTopBlink => Color.FromArgb(255, 220, 60),
                   Aspect.White => Color.White,
                   Aspect.Invite => ModelHost.BlinkPhase ? Color.White : Off,

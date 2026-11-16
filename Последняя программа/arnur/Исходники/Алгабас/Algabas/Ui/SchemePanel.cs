@@ -611,8 +611,8 @@ class RailSchemePanel : Panel
             Color c = LampOffSimple;
             switch (s.Aspect)
             {
-                case Aspect.Red: case Aspect.Invite: c = LampColor("red"); break;
-                case Aspect.Green: c = LampColor("green"); break;
+                case Aspect.Red: case Aspect.Invite: case Aspect.RedBack: c = LampColor(s.Has("red") ? "red" : "blue"); break;
+                case Aspect.Green: case Aspect.YellowGreen: c = LampColor("green"); break;
                 case Aspect.Yellow: case Aspect.TwoYellow: c = LampColor("yellow"); break;
                 case Aspect.YellowBlink: case Aspect.TwoYellowTopBlink: c = Blink ? LampColor("yellow") : LampOffSimple; break;
                 case Aspect.White: c = LampColor("white"); break;
@@ -646,6 +646,17 @@ class RailSchemePanel : Panel
                 bool on = IL.TestMode || s.IsLampOn(name, Blink);
                 Lamp(g, new PointF(l0.X + dir * i * LampStep, y), on ? LampColor(name) : LampOff, LampR);
             }
+        }
+        // [ДОБАВЛЕНО 13.11.2026] горочный и его повторитель: световой указатель за огнями, при осаживании горит «Н»
+        if (s.Indicator)
+        {
+            int nl = Simple ? DrawnLamps(s) : s.Lamps.Length;
+            float step = Simple ? SimpleLampStep : LampStep, rr = Simple ? SimpleLampR : LampR;
+            var ic = new PointF(l0.X + dir * ((nl - 1) * step + rr + 11), y);
+            var box = new RectangleF(ic.X - 8, ic.Y - 8, 16, 16);
+            using (var bb = new SolidBrush(Color.FromArgb(25, 25, 25))) g.FillRectangle(bb, box);
+            using (var bp = new Pen(Color.FromArgb(20, 20, 20), 1.2f)) g.DrawRectangle(bp, box.X, box.Y, box.Width, box.Height);
+            if (s.Aspect == Aspect.RedBack || IL.TestMode) g.DrawString("Н", fSigSmall, Brushes.White, ic, center);
         }
 
         var rect = SignalRect(sg);
@@ -848,6 +859,8 @@ class RailSchemePanel : Panel
         if (e.Button == MouseButtons.Left)
         {
             if (sw != null) { IL.ToggleSwitch(sw); return; }
+            // [ДОБАВЛЕНО 13.11.2026] горочный: меню оператора горки (режимы, маневровый маршрут от него)
+            if (sig != null && sig.Hump != null && selected == null) { HumpMenu(sig).Show(this, e.Location); return; }
             if (sig != null) { SelectSignal(sig); return; }
             if (selected != null)
             {
@@ -879,6 +892,11 @@ class RailSchemePanel : Panel
                 if (s.Remote != null)
                 {
                     IL.Say($"{s.Label} — показание задаёт соседняя станция по сети (связь диспетчеров).", LogKind.Refuse);
+                    return;
+                }
+                if (s.RepeatOf != null)     // [ДОБАВЛЕНО 13.11.2026]
+                {
+                    IL.Say($"{s.Label} — повторитель горочного {s.RepeatOf.Label}: показывает то же, что он.", LogKind.Refuse);
                     return;
                 }
                 IL.Say(s.Kind switch
@@ -943,11 +961,39 @@ class RailSchemePanel : Panel
     }
 
     // ---------------------- контекстные меню ----------------------
+    /// <summary>[ДОБАВЛЕНО 13.11.2026] Режимы горочного светофора (РУ-30-80 листы 45–47; caredenis.ru урок 14).</summary>
+    void AddHumpModes(ContextMenuStrip m, RailSignal s)
+    {
+        foreach (var (mode, text, _) in HumpInfo.Modes)
+        {
+            var md = mode;
+            m.Items.Add(new ToolStripMenuItem(text, null, (_, _) => IL.SetHumpMode(s, md)) { Checked = s.Hump == md });
+        }
+    }
+
+    /// <summary>[ДОБАВЛЕНО 13.11.2026] Левый клик по горочному: режимы оператора горки и маневровый маршрут от него.</summary>
+    ContextMenuStrip HumpMenu(RailSignal s)
+    {
+        var m = new ContextMenuStrip();
+        m.Items.Add(new ToolStripMenuItem($"Горочный {s.Label}: {AspectInfo.Short(s.Aspect)}") { Enabled = false });
+        m.Items.Add(new ToolStripSeparator());
+        AddHumpModes(m, s);
+        if (IL.Routes.Any(r => r.Start == s))
+        {
+            m.Items.Add(new ToolStripSeparator());
+            var act = IL.ActiveRoutes.FirstOrDefault(r => r.Start == s);
+            if (act != null) m.Items.Add($"Отменить маршрут {act.Name}", null, (_, _) => IL.CancelRoute(act));
+            else m.Items.Add("Маневровый маршрут от него… (кликните путь или светофор конца)", null, (_, _) => SelectSignal(s));
+        }
+        return m;
+    }
+
     ContextMenuStrip SignalMenu(RailSignal s)
     {
         var m = new ContextMenuStrip();
         m.Items.Add(new ToolStripMenuItem($"{s.Label}: {AspectInfo.Short(s.Aspect)}") { Enabled = false });
         m.Items.Add(new ToolStripSeparator());
+        if (s.Hump != null) { AddHumpModes(m, s); m.Items.Add(new ToolStripSeparator()); }   // [ДОБАВЛЕНО 13.11.2026]
 
         if (s.Kind == SignalKind.Controlled)
         {

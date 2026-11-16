@@ -46,6 +46,10 @@ public class JsonLayout
     static readonly string[] L_SHUNT = { "white", "blue" };
     static readonly string[] L_BLOCK = { "yellow", "green", "red" };
     static readonly string[] L_NEIGHBOR = { "yellow", "red", "yellow1", "white" };
+    // [ДОБАВЛЕНО 13.11.2026] горочный Г и повторитель ПГ: от мачты лунно-белый, зелёный, красный, жёлтый (РУ-30-80 листы 46, 47;
+    // caredenis.ru урок 14 — сверху жёлтый, красный, зелёный, лунно-белый); ПГ на пути парка приёма — синий вместо красного (лист 46)
+    static readonly string[] L_HUMP = { "yellow", "red", "green", "white" };
+    static readonly string[] L_HUMP_PARK = { "yellow", "blue", "green", "white" };
 
     public readonly Interlocking IL;
     public readonly StationView View = new();
@@ -112,6 +116,7 @@ public class JsonLayout
         BuildSections();
         BuildSwitches();
         BuildSignals();
+        LinkRepeaters();             // [ДОБАВЛЕНО 13.11.2026]
         BuildRoutes();
         BuildLines();
         BuildAutoSignals();
@@ -292,6 +297,8 @@ public class JsonLayout
                 case "shunt": kind = SignalKind.Controlled; lamps = L_SHUNT; break;
                 case "block": kind = SignalKind.Automatic; lamps = L_BLOCK; break;
                 case "other": kind = SignalKind.Neighbor; lamps = L_NEIGHBOR; break;
+                case "hump": kind = SignalKind.Controlled; lamps = L_HUMP; break;             // [ДОБАВЛЕНО 13.11.2026]
+                case "humprep": kind = SignalKind.Automatic; lamps = TC.SecType(St, e.Tile.Sec) == "path" ? L_HUMP_PARK : L_HUMP; break;
                 default:
                     Notes.Add($"{kindName} светофор {name}: таких светофоров в программах станций пока нет — на схеме не показан.");
                     continue;
@@ -301,12 +308,27 @@ public class JsonLayout
                 Id = Unique(name), Label = name, Title = $"{kindName} {name}", Kind = kind, Dir = dir, Lamps = lamps
             });
             if (kind == SignalKind.Controlled) s.Approach = SecOfTile(e.Key);
+            if (e.Sig.Kind == "hump") { s.Hump = HumpMode.Stop; s.Indicator = true; }       // [ДОБАВЛЕНО 13.11.2026]
+            if (e.Sig.Kind == "humprep") s.Indicator = true;
             if (e.Sig.Kind == "entry") View.InviteSignals.Add(s);
             sigByRef[RefKey(e.Ref)] = s;
             if (!sigsOnTile.TryGetValue(e.Key, out var list)) sigsOnTile[e.Key] = list = new List<RailSignal>();
             list.Add(s);
             tileOfSig[s] = e.Key;
             sigs.Add((e, s));
+        }
+    }
+
+    /// <summary>[ДОБАВЛЕНО 13.11.2026] Повторитель горочного — какой горочный он повторяет: первый горочный впереди по ходу
+    /// (по стрелкам в положении из схемы, как в редакторе — Aspects.MainAhead).</summary>
+    void LinkRepeaters()
+    {
+        foreach (var (e, s) in sigs)
+        {
+            if (e.Sig.Kind != "humprep") continue;
+            var main = Ed.Aspects.MainAhead(St, e, null);
+            if (main != null && sigByRef.TryGetValue(RefKey(main.Ref), out var m)) s.RepeatOf = m;
+            else Notes.Add($"Повторитель горочного {s.Label}: впереди по ходу нет горочного светофора — не горит.");
         }
     }
 
@@ -462,7 +484,7 @@ public class JsonLayout
             var dirs = new HashSet<Dir>();
             foreach (var r in View.Routes.Where(r => !r.Shunting && r.ExitSection != null && compSecs.Contains(r.ExitSection))) dirs.Add(r.Start.Dir);
             foreach (var (e, s) in sigs)
-                if (compSecs.Contains(SecOfTile(e.Key)) && (s.Kind == SignalKind.Automatic || e.Sig.Kind == "entry")) dirs.Add(s.Dir);
+                if (compSecs.Contains(SecOfTile(e.Key)) && ((s.Kind == SignalKind.Automatic && e.Sig.Kind != "humprep") || e.Sig.Kind == "entry")) dirs.Add(s.Dir);
             if (dirs.Count < 2) continue;      // путь перегона только в одну сторону (двухпутный) — направление не меняется
 
             var ordered = comp.OrderBy(n => tilesOf[n].Min(k => TC.Parse(k).X)).ToList();
@@ -503,7 +525,7 @@ public class JsonLayout
     {
         foreach (var (e, s) in sigs)
         {
-            if (s.Kind != SignalKind.Automatic) continue;
+            if (s.Kind != SignalKind.Automatic || e.Sig.Kind == "humprep") continue;   // повторитель горочного — не проходной
             var from = SecOfTile(e.Key);
             var step = Step(from, s.Dir, live: false);
             s.Protects = step?.Section;

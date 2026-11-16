@@ -504,7 +504,7 @@ sealed class SchemeSettingsForm : Form
     //  ВКЛАДКА «СВЕТОФОРЫ»
     // =================================================================
     readonly DataGridView gSig = Grid();
-    static readonly string[] Kinds = { "entry", "exit", "route", "shunt", "block", "other" };
+    static readonly string[] Kinds = { "entry", "exit", "route", "shunt", "block", "other", "hump", "humprep" };
     List<string> kindNames;
 
     TabPage SignalsPage()
