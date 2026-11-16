@@ -18,6 +18,16 @@ namespace StationEditor.Model;
 //    заградительный — нормально не горит, красный — стой (переезд впереди занят или включён вручную);
 //    прикрытия   — красный; зелёный, если открыт вручную и впереди свободно.
 //  «Впереди» — по ходу светофора, по стрелкам в их ТЕКУЩЕМ положении.
+//
+//  [ИЗМЕНЕНО 09.11.2026] по РУ-30-80 «Указания по применению светофорной сигнализации»:
+//    - выходной и маршрутный с ГЛАВНОГО пути (римская цифра: IП, IIП, IIАП…, стр. 89) при маршруте
+//      с отклонением по стрелкам — два жёлтых, два жёлтых с верхним мигающим, если следующий открыт (стр. 9, 11, 14, 20);
+//      с бокового пути — только жёлтый / зелёный (выходной Н3, Н5 на стр. 9, 14);
+//    - входной, выходной, маршрутный: один жёлтый мигающий, если следующий светофор показывает два жёлтых
+//      (входной перед выходным «по варианту» — стр. 9, 14; выходной перед входным соседней станции — стр. 20);
+//    - головки светофоров: входной и поездные с главного пути — 5 огней (от мачты: лунно-белый, жёлтый нижний,
+//      красный, зелёный, жёлтый верхний — стр. 9, 49), выходной / маршрутный с бокового пути — 4 огня
+//      (лунно-белый, красный, зелёный, жёлтый — стр. 9). Один жёлтый горит на верхней лампе.
 // =====================================================================
 
 public enum Lamp { Off, Red, Yellow, Green, White, Blue, Gray }
@@ -32,6 +42,8 @@ public sealed class Aspect
     public bool Permissive;
     /// <summary>Входной открыт на боковой путь (два жёлтых)</summary>
     public bool Diverging;
+    /// <summary>[ДОБАВЛЕНО 13.11.2026] Горит буква на световом указателе (горочный: «Н» — осаживание назад); null — указатель тёмный.</summary>
+    public string Indicator;
 
     static Aspect Of(string text, bool perm, params LampLit[] l) => new() { Lamps = l, Text = text, Permissive = perm };
     public static Aspect Red(int n = 1) => Of("красный", false, Pad(n, new LampLit(Lamp.Red)));
@@ -55,6 +67,8 @@ public sealed class TestInputs
     public HashSet<string> NoControl = new();
     public HashSet<string> BarrierOn = new();
     public HashSet<string> CoverOpen = new();
+    /// <summary>[ДОБАВЛЕНО 13.11.2026] Горочный светофор → режим (индекс в Aspects.HumpModes; нет — стоп).</summary>
+    public Dictionary<string, int> HumpMode = new();
 }
 
 public static class Aspects
@@ -64,9 +78,114 @@ public static class Aspects
     static readonly HashSet<string> NextMain = new() { "entry", "exit", "route", "block", "cover", "other" };
     static readonly HashSet<string> WarningMain = new() { "entry", "block", "barrier", "cover" };
     static readonly HashSet<string> RepeaterMain = new() { "exit", "route" };
+    static readonly HashSet<string> HumpMain = new() { "hump" };
 
-    /// <summary>Сколько ламп рисовать: у входного две (два жёлтых), у остальных одна.</summary>
-    public static int LampCount(string kind) => kind == "entry" ? 2 : 1;
+    // ---- [ДОБАВЛЕНО 13.11.2026] СОРТИРОВОЧНАЯ ГОРКА: РУ-30-80 листы 45–47 (стр. 53–55), caredenis.ru урок 14 ----
+    // Горочный Г (Г1, Г2…): от мачты — лунно-белый, зелёный, красный, жёлтый («Г ⊢⊡◎○●⊘», листы 46, 47) и указатель «Н».
+    // Повторитель ПГ — те же огни (П1Г1, лист 46); на пути парка приёма вместо красного — синий (лист 46, прим. 2).
+    static readonly Lamp[] HeadHump = { Lamp.White, Lamp.Green, Lamp.Red, Lamp.Yellow };
+    static readonly Lamp[] HeadHumpPark = { Lamp.White, Lamp.Green, Lamp.Blue, Lamp.Yellow };
+
+    /// <summary>Режимы горочного светофора (задаёт оператор горки): текст и огни. Роспуск: скорость по огням —
+    /// жёлтый / жёлтый и зелёный / зелёный (лист 47, прим. 1; урок 14: «медленно», «нормально», «быстро»).</summary>
+    public static readonly (string Text, bool Perm, string Indicator, Lamp[] Lit)[] HumpModes =
+    {
+        ("стоп — красный", false, null, new[] { Lamp.Red }),
+        ("роспуск медленно — жёлтый", true, null, new[] { Lamp.Yellow }),
+        ("роспуск нормально — жёлтый и зелёный", true, null, new[] { Lamp.Yellow, Lamp.Green }),
+        ("роспуск быстро — зелёный", true, null, new[] { Lamp.Green }),
+        ("осаживание назад — красный и «Н»", false, "Н", new[] { Lamp.Red }),
+        ("маневры на пути сортировочного парка — лунно-белый", false, null, new[] { Lamp.White }),
+    };
+
+    /// <summary>Есть ли у светофора световой указатель «Н» (горочный и его повторитель).</summary>
+    public static bool HasIndicator(Signal s) => s.Kind is "hump" or "humprep";
+
+    // [ИЗМЕНЕНО 09.11.2026] головки светофоров по РУ-30-80 (стр. 9, 49): цвета ламп от мачты наружу
+    static readonly Lamp[] HeadMain = { Lamp.White, Lamp.Yellow, Lamp.Red, Lamp.Green, Lamp.Yellow };
+    static readonly Lamp[] HeadSide = { Lamp.White, Lamp.Red, Lamp.Green, Lamp.Yellow };
+
+    static readonly System.Text.RegularExpressions.Regex ReMain =
+        new(@"^(I{1,3}|IV|VI{0,3}|IX|X)[А-ЯA-Z]?П?$", System.Text.RegularExpressions.RegexOptions.Compiled);    // [ИЗМЕНЕНО 10.11.2026] «П» необязательна
+
+    /// <summary>Главный путь — номер римскими цифрами (IП, IIП, IIАП), как на стр. 89 РУ-30-80.</summary>
+    public static bool IsMainTrack(string sec) => !string.IsNullOrEmpty(sec) && ReMain.IsMatch(sec.Trim().ToUpperInvariant());
+
+    /// <summary>Лампы головки (от мачты) у входного, выходного и маршрутного; null — светофор с одной лампой.</summary>
+    public static Lamp[] Head(Signal s, Tile t) => s.Kind switch
+    {
+        "entry" => HeadMain,
+        "exit" or "route" => IsMainTrack(t?.Sec) ? HeadMain : HeadSide,
+        "hump" => HeadHump,
+        "humprep" => Core.GuessSecType(t?.Sec) == "path" ? HeadHumpPark : HeadHump,
+        _ => null,
+    };
+
+    /// <summary>[ДОБАВЛЕНО 09.11.2026] Все лампы головки (от мачты наружу) — для вида «Огни по ГОСТ»:
+    /// входной / выходной / маршрутный — как Head; проходной — красный, зелёный, жёлтый (РУ-30-80 стр. 9, «1 ⊢●○⊘»);
+    /// предупредительный — зелёный, жёлтый (к заградительному — один жёлтый ромб, ГОСТ 2.749-84 табл. 5 п. 8);
+    /// маневровый — синий, лунно-белый; прикрытия — красный, зелёный; заградительный — красный; повторительный — зелёный.</summary>
+    public static Lamp[] FullHead(Signal s, Tile t, bool diamond) => Head(s, t) ?? s.Kind switch
+    {
+        "block" => new[] { Lamp.Red, Lamp.Green, Lamp.Yellow },
+        "warning" => diamond ? new[] { Lamp.Yellow } : new[] { Lamp.Green, Lamp.Yellow },
+        "shunt" => new[] { Lamp.Blue, Lamp.White },
+        "cover" => new[] { Lamp.Red, Lamp.Green },
+        "barrier" => new[] { Lamp.Red },
+        "repeater" => new[] { Lamp.Green },
+        _ => new[] { Lamp.Gray },
+    };
+
+    /// <summary>Пригласительный — отдельно от остальных огней: у входного это нижняя (ближняя к мачте) лампа
+    /// («пригласительный сигнал на входном светофоре всегда размещают в отдельной головке» — caredenis.ru les03;
+    /// у выходного и маршрутного тот же белый огонь служит и для манёвров — РУ-30-80 п. 3.6).</summary>
+    public static bool InvitationApart(Signal s) => s.Kind == "entry";
+
+    /// <summary>Разложить горящие огни показания по лампам полной головки (у светофоров с одной лампой в цвете).</summary>
+    public static LampLit[] OnFullHead(Lamp[] head, LampLit[] lit)
+    {
+        if (lit.Length == head.Length) return lit;
+        var a = new LampLit[head.Length];
+        for (int i = 0; i < a.Length; i++) a[i] = new LampLit(Lamp.Off);
+        var used = new bool[head.Length];
+        foreach (var l in lit)
+        {
+            if (l.Color == Lamp.Off) continue;
+            for (int i = head.Length - 1; i >= 0; i--)
+                if (!used[i] && head[i] == l.Color) { a[i] = l; used[i] = true; break; }
+        }
+        return a;
+    }
+
+    /// <summary>[ДОБАВЛЕНО 09.11.2026] Карликовый (без мачты) — по уроку caredenis.ru les03 и РУ-30-80 стр. 9:
+    /// выходной / маршрутный с бокового пути и маневровый. Мачтовые: на главных путях, входные, проходные,
+    /// предупредительные, заградительные и повторительные, а также маневровый на выходе из тупика / вытяжки.</summary>
+    public static bool IsDwarf(Signal s, Tile t) => s.Kind switch
+    {
+        "exit" or "route" => !IsMainTrack(t?.Sec),
+        "shunt" => Core.GuessSecType(t?.Sec) != "dead",
+        _ => false,
+    };
+
+    /// <summary>Сколько ламп рисовать.</summary>
+    public static int LampCount(Signal s, Tile t) => Head(s, t)?.Length ?? 1;
+
+    /// <summary>Зажечь огни на головке: каждый огонь — на свободную лампу его цвета, начиная с дальней от мачты
+    /// (один жёлтый — верхний; у двух жёлтых первый в списке — верхний).</summary>
+    static Aspect OnHead(Lamp[] head, string text, bool perm, bool div, params LampLit[] lit)
+    {
+        var a = new LampLit[head.Length];
+        for (int i = 0; i < a.Length; i++) a[i] = new LampLit(Lamp.Off);
+        var used = new bool[head.Length];
+        foreach (var l in lit)
+            for (int i = head.Length - 1; i >= 0; i--)
+                if (!used[i] && head[i] == l.Color) { a[i] = l; used[i] = true; break; }
+        return new Aspect { Lamps = a, Text = text, Permissive = perm, Diverging = div };
+    }
+
+    static Aspect RedOn(Lamp[] head) => head == null ? Aspect.Red() : OnHead(head, "красный", false, false, new LampLit(Lamp.Red));
+    /// <summary>Закрыт: красный, а у повторителя горочного в парке приёма — синий.</summary>
+    static Aspect ClosedOn(Lamp[] head) => head.Contains(Lamp.Blue) ? OnHead(head, "синий", false, false, new LampLit(Lamp.Blue)) : RedOn(head);
 
     // ---------------------------------------------------------------------
     //  ПРОХОД ПО ПУТИ ВПЕРЁД ОТ СВЕТОФОРА
@@ -124,9 +243,15 @@ public static class Aspects
     /// для повторительного — выходной / маршрутный, для остальных — следующий поездной.</summary>
     public static SignalEntry MainAhead(Station st, SignalEntry s, HashSet<string> noControl)
     {
-        var set = s.Sig.Kind == "warning" ? WarningMain : s.Sig.Kind == "repeater" ? RepeaterMain : NextMain;
+        var set = s.Sig.Kind == "warning" ? WarningMain : s.Sig.Kind == "repeater" ? RepeaterMain : s.Sig.Kind == "humprep" ? HumpMain : NextMain;
         return Go(st, s, e => set.Contains(e.Sig.Kind), noControl: noControl).Sig;
     }
+
+    /// <summary>[ДОБАВЛЕНО 09.11.2026] Огонь ромбом: заградительный, повторительный и предупредительный к заградительному
+    /// (ГОСТ 2.749-84, табл. 5, п. 7–9; РУ-30-80 стр. 49).</summary>
+    public static bool IsDiamond(Station st, SignalEntry s) =>
+        s.Sig.Kind is "barrier" or "repeater"
+        || (s.Sig.Kind == "warning" && MainAhead(st, s, null)?.Sig.Kind == "barrier");
 
     /// <summary>Переезд впереди заградительного (не дальше 60 клеток): клетка переезда или null.</summary>
     public static string CrossingAhead(Station st, SignalEntry s) =>
@@ -136,9 +261,10 @@ public static class Aspects
     //  ПОКАЗАНИЯ
     // ---------------------------------------------------------------------
     /// <summary>Цвет ламп в редакторе (не в «Испытании»): каким огнём светофор «говорит».</summary>
-    public static Aspect Static(Signal s) => s.Kind switch
+    public static Aspect Static(Signal s, Tile t) => s.Kind switch
     {
-        "entry" => Aspect.Red(2),
+        "entry" or "exit" or "route" => RedOn(Head(s, t)),
+        "hump" or "humprep" => ClosedOn(Head(s, t)),
         "shunt" => Aspect.Make("синий", false, 1, new LampLit(Lamp.Blue)),
         "warning" => Aspect.Make("жёлтый", false, 1, new LampLit(Lamp.Yellow)),
         "repeater" => Aspect.Make("зелёный", false, 1, new LampLit(Lamp.Green)),
@@ -156,7 +282,7 @@ public static class Aspects
         {
             var id = Id(s);
             if (memo.TryGetValue(id, out var a)) return a;
-            if (!visiting.Add(id)) return Aspect.Red(LampCount(s.Sig.Kind));    // замкнутый круг светофоров — считаем закрытым
+            if (!visiting.Add(id)) return RedOn(Head(s.Sig, s.Tile));    // замкнутый круг светофоров — считаем закрытым
             a = Calc(s);
             visiting.Remove(id);
             memo[id] = a;
@@ -168,25 +294,39 @@ public static class Aspects
         Aspect Calc(SignalEntry s)
         {
             var id = Id(s);
-            int n = LampCount(s.Sig.Kind);
             w.OpenRoutes.TryGetValue(id, out var route);
+            // [ДОБАВЛЕНО 09.11.2026] только чтение: показание присылает другая станция; в редакторе связи нет —
+            // светофор погашен, как в программах станций при отсутствии данных от соседа (DispatchMirror)
+            if (s.Sig.IsReadOnly)
+            {
+                var a = Aspect.Dark(Head(s.Sig, s.Tile)?.Length ?? 1);
+                a.Text = $"погашен — показание присылает другая станция (id {s.Sig.Id})";
+                return a;
+            }
             switch (s.Sig.Kind)
             {
                 case "entry":
                 case "exit":
                 case "route":
                 {
-                    if (route == null) return Aspect.Red(n);
-                    if (route.Shunt) return Aspect.Make("лунно-белый", false, n, new LampLit(Lamp.White));
+                    var head = Head(s.Sig, s.Tile);
+                    if (route == null) return RedOn(head);
+                    if (route.Shunt) return OnHead(head, "лунно-белый", false, false, new LampLit(Lamp.White));
                     var nx = NextMainWalk(s);
-                    bool nextOpen = nx.Sig != null && Get(nx.Sig).Permissive;
-                    if (s.Sig.Kind == "entry" && route.Diverging)
+                    var na = nx.Sig != null ? Get(nx.Sig) : null;
+                    bool nextOpen = na != null && na.Permissive;
+                    // два жёлтых: входной — при любом отклонении; выходной / маршрутный — только с главного пути (РУ-30-80 стр. 9, 14)
+                    bool twoYellow = route.Diverging && (s.Sig.Kind == "entry" || IsMainTrack(s.Tile.Sec));
+                    if (twoYellow)
                         return nextOpen
-                            ? new Aspect { Lamps = new[] { new LampLit(Lamp.Yellow, true), new LampLit(Lamp.Yellow) }, Text = "два жёлтых, верхний мигающий", Permissive = true, Diverging = true }
-                            : new Aspect { Lamps = new[] { new LampLit(Lamp.Yellow), new LampLit(Lamp.Yellow) }, Text = "два жёлтых", Permissive = true, Diverging = true };
+                            ? OnHead(head, "два жёлтых, верхний мигающий", true, true, new LampLit(Lamp.Yellow, true), new LampLit(Lamp.Yellow))
+                            : OnHead(head, "два жёлтых", true, true, new LampLit(Lamp.Yellow), new LampLit(Lamp.Yellow));
+                    // следующий показывает два жёлтых — у нас жёлтый мигающий (РУ-30-80 стр. 9, 14, 20)
+                    if (nextOpen && na.Diverging)
+                        return OnHead(head, "жёлтый мигающий (следующий — два жёлтых)", true, false, new LampLit(Lamp.Yellow, true));
                     return nextOpen
-                        ? Aspect.Make("зелёный", true, n, new LampLit(Lamp.Green))
-                        : Aspect.Make("жёлтый", true, n, new LampLit(Lamp.Yellow));
+                        ? OnHead(head, "зелёный", true, false, new LampLit(Lamp.Green))
+                        : OnHead(head, "жёлтый", true, false, new LampLit(Lamp.Yellow));
                 }
                 case "shunt":
                     return route != null
@@ -210,7 +350,7 @@ public static class Aspects
                     if (main.Sig.Kind == "barrier")
                         return ma.Lamps[0].Color == Lamp.Red ? Aspect.Make("жёлтый (заградительный закрыт)", true, 1, new LampLit(Lamp.Yellow)) : Aspect.Dark();
                     if (!ma.Permissive) return Aspect.Make("жёлтый (основной закрыт)", true, 1, new LampLit(Lamp.Yellow));
-                    if (ma.Diverging) return Aspect.Make("жёлтый мигающий (приём на боковой путь)", true, 1, new LampLit(Lamp.Yellow, true));
+                    if (ma.Diverging) return Aspect.Make("жёлтый мигающий (основной — два жёлтых)", true, 1, new LampLit(Lamp.Yellow, true));
                     return Aspect.Make("зелёный (основной открыт)", true, 1, new LampLit(Lamp.Green));
                 }
                 case "repeater":
@@ -218,6 +358,29 @@ public static class Aspects
                     var main = MainAhead(st, s, w.NoControl);
                     if (main != null && Get(main).Permissive) return Aspect.Make("зелёный (выходной открыт)", true, 1, new LampLit(Lamp.Green));
                     return Aspect.Dark();
+                }
+                case "hump":
+                {
+                    // [ДОБАВЛЕНО 13.11.2026] режим задаёт оператор горки; маневровый маршрут от Г — лунно-белый
+                    var head = Head(s.Sig, s.Tile);
+                    if (route != null) return OnHead(head, "лунно-белый (маневры)", false, false, new LampLit(Lamp.White));
+                    var m = HumpModes[w.HumpMode.TryGetValue(id, out var mi) && mi >= 0 && mi < HumpModes.Length ? mi : 0];
+                    var a = OnHead(head, m.Text, m.Perm, false, m.Lit.Select(l => new LampLit(l)).ToArray());
+                    a.Indicator = m.Indicator;
+                    return a;
+                }
+                case "humprep":
+                {
+                    // повторяет горочный впереди (в парке приёма — синий вместо красного)
+                    var head = Head(s.Sig, s.Tile);
+                    var main = MainAhead(st, s, w.NoControl);
+                    if (main == null) { var d = Aspect.Dark(head.Length); d.Text = "не горит — впереди нет горочного"; return d; }
+                    var ma = Get(main);
+                    var lit = ma.Lamps.Where(l => l.Color != Lamp.Off)
+                                      .Select(l => l.Color == Lamp.Red && head.Contains(Lamp.Blue) ? l with { Color = Lamp.Blue } : l).ToArray();
+                    var a = OnHead(head, $"как {main.Sig.Name}: {ma.Text}", ma.Permissive, false, lit);
+                    a.Indicator = ma.Indicator;
+                    return a;
                 }
                 case "barrier":
                 {

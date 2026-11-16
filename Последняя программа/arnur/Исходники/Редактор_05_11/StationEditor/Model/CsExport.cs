@@ -77,7 +77,7 @@ public static class CsExport
         // [ИЗМЕНЕНО 05.11.2026] предупредительных, повторительных, заградительных и прикрытия в программах станций
         // пока нет (SignalKind: Controlled / Automatic / Neighbor) — в черновик они идут только комментарием
         var allSigs = Core.AllSignals(st);
-        var sigs = allSigs.Where(s => s.Sig.Kind is not ("warning" or "repeater" or "barrier" or "cover")).ToList();
+        var sigs = allSigs.Where(s => s.Sig.Kind is not ("warning" or "repeater" or "barrier" or "cover" or "hump" or "humprep")).ToList();   // [13.11.2026] горочных в программах станций пока нет
         var skipped = allSigs.Except(sigs).ToList();
         var sigId = new Dictionary<string, string>();
         foreach (var s in sigs) sigId[s.Key + "#" + s.Idx] = Ident("", string.IsNullOrEmpty(s.Sig.Name) ? "SIG" : s.Sig.Name);
@@ -165,6 +165,19 @@ public static class CsExport
             W("    // участки приближения (на чём стоит поезд перед светофором)");
             foreach (var s in appr) W($"    {Sid(s)}.Approach = {secId[s.Tile.Sec]};");
         }
+        // [ДОБАВЛЕНО 09.11.2026] id светофоров для связи станций и светофоры «только чтение»
+        W("");
+        W("    // id светофоров для связи станций (поле id в схеме): " +
+          string.Join(", ", sigs.Select(s => $"{Sid(s)} = {s.Sig.Id}")));
+        var ro = allSigs.Where(s => s.Sig.IsReadOnly).ToList();
+        if (ro.Count > 0)
+        {
+            W("    // только чтение — показание присылает другая станция (RailSignal.Remote). В DispatchMirror, список mirror:");
+            foreach (var s in ro)
+                W(sigId.ContainsKey(s.Key + "#" + s.Idx)
+                    ? $"    //   (\"{s.Sig.Id}\", {Sid(s)}),"
+                    : $"    //   (\"{s.Sig.Id}\", ?)  — {Core.SigKindName(s.Sig.Kind)} {s.Sig.Name} (в программе станции такого вида нет)");
+        }
         W("}");
         W("");
 
@@ -173,13 +186,15 @@ public static class CsExport
         W("{");
         foreach (var shunt in new[] { false, true })
         {
-            var list = routes.Where(r => r.Shunt == shunt).ToList();
+            // [ИЗМЕНЕНО 13.11.2026] маршруты от светофоров, которых в черновике нет (горочный Г), не переносятся
+            var list = routes.Where(r => r.Shunt == shunt && sigs.Any(s => s.Ref == r.Start)).ToList();
             if (list.Count == 0) continue;
             W($"    // ======== {(shunt ? "МАНЕВРОВЫЕ" : "ПОЕЗДНЫЕ")} (найдены автоматически: {list.Count}) ========");
             foreach (var r in list)
             {
                 var startSig = sigs.First(s => s.Ref == r.Start);
                 var end = RouteFinder.RouteEndSignal(st, r);
+                if (end != null && !sigId.ContainsKey(end.Key + "#" + end.Idx)) end = null;
                 var secs = string.Join(", ", r.Sections.Select(n => secId[n]));
                 var sws = string.Join(", ", r.Switches.Select(x => $"{(x.Plus ? "P" : "M")}({swId[x.Group]})"));
                 var line = $"    Route({(shunt ? "true" : "false")}, {Sid(startSig)}, {(end != null ? Sid(end) : "null")}, {SecIdOrNull(r.Dest) ?? "null"}, {CsStr(r.Name)}, " +
@@ -290,8 +305,8 @@ public static class CsExport
         {
             if (t.T != "switch") continue;
             var (x, y) = Core.Parse(k);
-            bool below = Core.VariantOf(t).Minus.Contains('N');
-            W($"    g.SwLabel({CsStr(string.IsNullOrEmpty(t.Name) ? "?" : t.Name)}, {swId[Core.SwitchGroup(k, t)]}, {Num(X(x) + C / 2)}, {Num(Y(y) + (below ? C * 0.9 : C * 0.1))});");
+            var (fx, fy) = Core.SwitchLabelAt(t);    // [ИЗМЕНЕНО 12.11.2026] у симметричной стрелки — над остряком
+            W($"    g.SwLabel({CsStr(string.IsNullOrEmpty(t.Name) ? "?" : t.Name)}, {swId[Core.SwitchGroup(k, t)]}, {Num(X(x) + C * fx)}, {Num(Y(y) + C * fy)});");
         }
         if (st.Texts.Count > 0)
         {
@@ -302,6 +317,13 @@ public static class CsExport
                 var (x, y) = Core.Parse(k);
                 W($"    g.Text({CsStr(tx.Text)}, {Num(X(x) + 3)}, {Num(Y(y) + C / 2 - 8)}, {Num((tx.Size > 0 ? tx.Size : 14) * 0.7)}f, true);");
             }
+        }
+        if (st.Labels.Count > 0)    // [ДОБАВЛЕНО 10.11.2026] свободный текст — в точных координатах
+        {
+            W("");
+            W("    // свободный текст");
+            foreach (var l in st.Labels)
+                W($"    g.Text({CsStr(l.Text)}, {Num((l.X - minX + 1) * C)}, {Num((l.Y - minY + 1) * C)}, {Num((l.Size > 0 ? l.Size : 14) * 0.7)}f, {(l.IsBold ? "true" : "false")});");
         }
         W("");
         W("    g.AutoSectionLabels();");

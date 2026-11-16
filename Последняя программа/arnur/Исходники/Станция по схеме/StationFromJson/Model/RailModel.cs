@@ -23,7 +23,12 @@ public class RailModel
     {
         FilePath = path;
         var st = Ed.StationFile.Load(path);
-        Layout = new JsonLayout(IL, st, path);
+        // [ДОБАВЛЕНО 13.11.2026] настройка станции рядом со схемой («<схема>.settings.json», окно «Настройка…»)
+        var notes = new List<string>();
+        var set = SchemeSettings.Load(path, notes);
+        Layout = new JsonLayout(IL, st, path, set);
+        Layout.Notes.InsertRange(0, notes);
+        set.Times.Apply(IL);
         Trains = new TrainSim(IL, Layout.Next);
         Layout.Trains = Trains;
         IL.ComputeAspects();

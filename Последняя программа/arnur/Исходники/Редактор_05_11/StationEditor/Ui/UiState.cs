@@ -39,6 +39,8 @@ public sealed class TestState
     public readonly SwitchDrive Drive = new();
     public HashSet<string> NoControl = new();
     public HashSet<string> BarrierOn = new();
+    /// <summary>[ДОБАВЛЕНО 13.11.2026] Горочный светофор → режим (Aspects.HumpModes): стоп, роспуск, осаживание, маневры.</summary>
+    public Dictionary<string, int> HumpMode = new();
     public HashSet<string> CoverOpen = new();
 }
 
@@ -51,11 +53,12 @@ public sealed class UiState
     public string ObjType = "building";       // [ДОБАВЛЕНО 05.11.2026] какой объект ставит инструмент «object»
     public string SelObj;                     // выбранный объект (ключ левого верхнего угла)
     public Point? ObjMove;                    // объект перетаскивают: сдвиг в клетках
+    public int? SelLabel;                     // [ДОБАВЛЕНО 10.11.2026] выбранный свободный текст (номер в Station.Labels)
     public readonly Dictionary<string, int> Variant = new();   // тип кубика → выбранный вариант
     public Camera Cam = new();
     public HashSet<string> Sel = new();
     public SigRef? SelSig;
-    public bool ShowGrid = true, ShowSecColors = true, ShowSecNames = true;
+    public bool ShowGrid = true, ShowSecColors = true;    // [11.11.2026] подписи участков — Station.SecLabels
     public Point? Hover;
     public Tile Ghost;
     public Color? HoverColor;
@@ -64,7 +67,8 @@ public sealed class UiState
     public string FlashSec;
     public RoutePreview Preview;
     public string BrushSec = "";
-    public string SigKind = "entry", SigDir = "R";
+    public int BrakePos = 1;                  // [ДОБАВЛЕНО 12.11.2026] позиция новых тормозных кубиков (ТП1 / ТП2 / ТП3)
+    public string SigKind = "auto", SigDir = "R";    // [10.11.2026] по умолчанию вид — по участку
     public string Tab = "props";              // props | secs | routes | checks
     public string RouteFilter = "all";        // all | train | shunt
     public readonly TestState Test = new();

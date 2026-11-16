@@ -138,6 +138,9 @@ public partial class Interlocking   // [ИЗМЕНЕНО 21.10.2026] втора�
 
         foreach (var (sw, plus) in r.Switches)
         {
+            // [ДОБАВЛЕНО 12.11.2026] перекрёстный съезд: вторая диагональ должна суметь вернуться в плюс
+            if (!plus && RivalToPlus(sw, r) is { } rv && RivalBlock(rv) is { } rb)
+                return $"стрелку {sw.Label} нельзя перевести в минус: {rb}";
             if (sw.ShownPlus != plus)
             {
                 if (sw.Locked)
@@ -167,11 +170,23 @@ public partial class Interlocking   // [ИЗМЕНЕНО 21.10.2026] втора�
         r.SetupTimer = RouteSetupSeconds;
 
         foreach (var s in r.Sections) s.LockedBy = r;
+        // [ДОБАВЛЕНО 12.11.2026] перекрёстный съезд: сначала вторую диагональ — в плюс
+        foreach (var (sw, plus) in r.Switches)
+            if (!plus && RivalToPlus(sw, r) is { } rv)
+            {
+                StartMove(rv, true);
+                Say($"Перевод стрелки {rv.Label} → плюс (перекрёстный съезд: в минусе только одна диагональ)");
+            }
         foreach (var (sw, plus) in r.Switches)
         {
             sw.LockedBy.Add(r);
             // [ИЗМЕНЕНО 20.10.2026, этап 3] стрелку без контроля (не дошла из-за неисправности) — перевести ещё раз
-            if ((sw.ShownPlus != plus || (!sw.Controlled && sw.MoveTimer <= 0)) && SwitchMoveBlock(sw) == null) StartMove(sw, plus);
+            if ((sw.ShownPlus != plus || (!sw.Controlled && sw.MoveTimer <= 0)) && SwitchMoveBlock(sw) == null)
+            {
+                StartMove(sw, plus);
+                // [ДОБАВЛЕНО 12.11.2026] в минус — после того, как вторая диагональ перекрёстного съезда дойдёт до плюса
+                if (!plus && sw.Rival is { MoveTimer: > 0 } rvm) sw.MoveTimer += rvm.MoveTimer;
+            }
         }
         MarkAuto(r);                                       // [ДОБАВЛЕНО 21.10.2026, этап 6] автодействие
 
@@ -307,6 +322,30 @@ public partial class Interlocking   // [ИЗМЕНЕНО 21.10.2026] втора�
     //  СТРЕЛКИ
     // =================================================================
 
+    /// <summary>[ДОБАВЛЕНО 12.11.2026] Перекрёстный съезд: вторая диагональ, которую нужно вернуть в плюс, чтобы sw встала
+    /// в минус (null — не нужно: съезда нет, она уже в плюсе или маршрут r сам ведёт её в плюс).</summary>
+    static RailSwitch RivalToPlus(RailSwitch sw, RailRoute r) =>
+        sw.Rival is { } rv && !rv.Plus && !r.Switches.Any(x => x.Item1 == rv) ? rv : null;
+
+    /// <summary>Почему вторую диагональ перекрёстного съезда нельзя вернуть в плюс (null — можно).</summary>
+    string RivalBlock(RailSwitch rv)
+    {
+        if (rv.Locked) return $"диагональ {rv.Label} перекрёстного съезда в минусе и заперта (маршрут или пригласительный)";
+        if (SwitchMoveBlock(rv) is { } block) return $"диагональ {rv.Label} перекрёстного съезда в минусе: {block}";
+        if (rv.MoveTimer > 0) return $"диагональ {rv.Label} перекрёстного съезда ещё переводится";
+        if (rv.Sections.Any(s => s.Occupied)) return $"диагональ {rv.Label} перекрёстного съезда в минусе, её участок занят";
+        return null;
+    }
+
+    /// <summary>[ДОБАВЛЕНО 13.11.2026] Оператор горки меняет режим горочного светофора.</summary>
+    public void SetHumpMode(RailSignal s, HumpMode m)
+    {
+        if (s.Hump == null) return;
+        s.Hump = m;
+        Say($"Горочный {s.Label}: {HumpInfo.TextOf(m)}");
+        Commit();
+    }
+
     void StartMove(RailSwitch sw, bool plus)
     {
         sw.Plus = plus;
@@ -358,7 +397,19 @@ public partial class Interlocking   // [ИЗМЕНЕНО 21.10.2026] втора�
                 return false;
             }
         }
+        // [ДОБАВЛЕНО 12.11.2026] перекрёстный съезд: в минус — только когда вторая диагональ в плюсе;
+        // стоит в минусе — сначала она переводится в плюс, потом эта в минус (контроль придёт после обеих)
+        RailSwitch back = null;
+        if (sw.Plus && sw.Rival is { } rv0 && !rv0.Plus)
+        {
+            if (RivalBlock(rv0) is { } rb) { Say($"ОТКАЗ: стрелка {sw.Label} — {rb}", LogKind.Refuse); return false; }
+            if (aux) { Say($"ОТКАЗ ВСП: стрелка {sw.Label} — сначала переведите в плюс диагональ {rv0.Label} перекрёстного съезда", LogKind.Refuse); return false; }
+            back = rv0;
+            StartMove(back, true);
+            Say($"Перевод стрелки {back.Label} → плюс (перекрёстный съезд: в минусе только одна диагональ)");
+        }
         StartMove(sw, !sw.Plus);
+        if (back != null) sw.MoveTimer += back.MoveTimer;
         Say($"{pref} стрелки {sw.Label} → {(sw.Plus ? "плюс" : "минус")}", aux ? LogKind.Aux : LogKind.Info);
         if (aux) CountedCommand?.Invoke("ВК", "ВК", $"вспомогательный перевод стрелки {sw.Label} в {(sw.Plus ? "плюс" : "минус")}");
         Commit();
@@ -747,6 +798,22 @@ public partial class Interlocking   // [ИЗМЕНЕНО 21.10.2026] втора�
         // светофор, которым управляет другая станция (связь диспетчеров), — только показываем
         if (s.Remote is Aspect remote) return remote;
 
+        // [ДОБАВЛЕНО 13.11.2026] повторитель (горочного): то же показание; без красной лампы (парк приёма) — синий
+        if (s.RepeatOf != null)
+        {
+            var ra = s.RepeatOf.Aspect;
+            return ra == Aspect.Red && !s.Has("red") && s.Has("blue") ? Aspect.Blue : ra;
+        }
+
+        // [ДОБАВЛЕНО 13.11.2026] свой маршрут с заданными показаниями: пока он может быть открыт — показание из настройки
+        if (!s.InviteOn)
+            foreach (var fr in ActiveRoutes)
+                if (fr.FixedAspects != null && fr.FixedAspects.TryGetValue(s, out var fa) && CanOpen(fr) && !fr.Start.FaultClosed)
+                {
+                    if (fr.Start == s) fr.SignalWasOpen = true;
+                    return fa;
+                }
+
         switch (s.Kind)
         {
             case SignalKind.Neighbor:
@@ -768,6 +835,9 @@ public partial class Interlocking   // [ИЗМЕНЕНО 21.10.2026] втора�
             {
                 if (s.InviteOn) return Aspect.Invite;
                 var r = ActiveRoutes.FirstOrDefault(x => x.Start == s);
+                // [ДОБАВЛЕНО 13.11.2026] горочный без маршрута: показание по режиму оператора горки
+                // (со стрелками горки не увязан — урок 14 caredenis.ru); маневровый маршрут от него — как обычно, лунно-белый
+                if (r == null && s.Hump is HumpMode hm) return s.FaultClosed ? Aspect.Red : HumpInfo.AspectOf(hm);
                 // [ИЗМЕНЕНО 20.10.2026, этап 3] неисправный светофор не открывается (пригласительный — можно)
                 if (r == null || !CanOpen(r) || s.FaultClosed) return ClosedAspect(s);
 

@@ -1,0 +1,23 @@
+{
+  "format": "station-scheme-settings",
+  "routes": [
+    {
+      "name": "М6 → М4",
+      "shunt": true,
+      "start": "17,5#0",
+      "end": "7,2#0",
+      "sections": [
+        "6СП",
+        "М6С",
+        "СГП",
+        "M4-Turn10"
+      ],
+      "switches": {},
+      "aspects": {}
+    }
+  ],
+  "auto": {},
+  "signals": {},
+  "switches": {},
+  "times": {}
+}

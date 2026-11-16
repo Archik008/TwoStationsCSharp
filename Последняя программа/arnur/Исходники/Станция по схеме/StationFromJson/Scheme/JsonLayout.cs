@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using StationApp.Core;
+using StationApp.Model;
 using StationApp.Ui;
 using Ed = StationEditor.Model;
 using TC = StationEditor.Model.Core;
@@ -45,6 +46,10 @@ public class JsonLayout
     static readonly string[] L_SHUNT = { "white", "blue" };
     static readonly string[] L_BLOCK = { "yellow", "green", "red" };
     static readonly string[] L_NEIGHBOR = { "yellow", "red", "yellow1", "white" };
+    // [ДОБАВЛЕНО 13.11.2026] горочный Г и повторитель ПГ: от мачты лунно-белый, зелёный, красный, жёлтый (РУ-30-80 листы 46, 47;
+    // caredenis.ru урок 14 — сверху жёлтый, красный, зелёный, лунно-белый); ПГ на пути парка приёма — синий вместо красного (лист 46)
+    static readonly string[] L_HUMP = { "yellow", "red", "green", "white" };
+    static readonly string[] L_HUMP_PARK = { "yellow", "blue", "green", "white" };
 
     public readonly Interlocking IL;
     public readonly StationView View = new();
@@ -74,14 +79,36 @@ public class JsonLayout
     public int TrainRoutes => View.Routes.Count(r => !r.Shunting);
     public int ShuntRoutes => View.Routes.Count(r => r.Shunting);
 
-    public JsonLayout(Interlocking il, Ed.Station st, string fileName)
+    // ---- [ДОБАВЛЕНО 13.11.2026] настройка станции (Model/SchemeSettings.cs, окно «Настройка…») ----
+    public readonly SchemeSettings Set;
+    /// <summary>Светофоры схемы — ключ «клетка#номер», имя и вид по схеме (до настройки), клетка.</summary>
+    public readonly List<(string Key, string Cell, string Name, string Kind)> SignalList = new();
+    /// <summary>Стрелки — ключ группы редактора, номер по схеме, номера стрелок схемы, положение по схеме (true — минус).</summary>
+    public readonly List<(string Key, string Label, string Tiles, bool Minus)> SwitchList = new();
+    /// <summary>Автомаршруты (все найденные, и выключенные) — ключ, имя по схеме, маневровый, стрелки, заменён своим.</summary>
+    public readonly List<(string Key, string Name, bool Shunt, string Switches, bool Replaced)> AutoList = new();
+    /// <summary>Свои маршруты из настройки, которые построены (индекс в Set.Routes → маршрут).</summary>
+    public readonly Dictionary<int, RailRoute> CustomBuilt = new();
+    public RailSignal SignalByKey(string k) => k != null && sigByRef.TryGetValue(k, out var s) ? s : null;
+    public string KeyOf(RailSignal s) => sigByRef.FirstOrDefault(p => p.Value == s).Key;
+    public RailSwitch SwitchByKey(string k) => k != null && swByGroup.TryGetValue(k, out var s) ? s : null;
+    public string KeyOf(RailSwitch s) => swByGroup.FirstOrDefault(p => p.Value == s).Key;
+    /// <summary>Участок по имени из схемы (TrackSection.Label) и обратно — по Id.</summary>
+    public TrackSection SectionByName(string n) => n != null && secs.TryGetValue(n, out var s) ? s : null;
+    public string NameOf(TrackSection s) => secs.FirstOrDefault(p => p.Value == s).Key;
+    readonly HashSet<string> relabeled = new();   // одиночные стрелки с номером из настройки — тот же номер и на схеме
+
+    public JsonLayout(Interlocking il, Ed.Station st, string fileName, SchemeSettings set = null)
     {
         IL = il;
         St = st;
+        Set = set ?? new SchemeSettings();
         Name = string.IsNullOrWhiteSpace(st.Name) ? Path.GetFileNameWithoutExtension(fileName).Replace(".station", "") : st.Name.Trim();
         string bare = Regex.Replace(Name, @"^(станция|ст\.)\s*", "", RegexOptions.IgnoreCase);
         View.Title = $"Станция {bare}";
         View.Caption = $"Ст. {bare}";
+        // [ДОБАВЛЕНО 12.11.2026] большая станция не сжимается мельче, чем у Алгабаса на обычном экране (≈0,6) — прокручивается
+        View.MinScale = 0.6f;
 
         if (St.Tiles.Count == 0) throw new InvalidDataException("в файле нет ни одной клетки пути (tiles)");
         Bounds();
@@ -89,6 +116,7 @@ public class JsonLayout
         BuildSections();
         BuildSwitches();
         BuildSignals();
+        LinkRepeaters();             // [ДОБАВЛЕНО 13.11.2026]
         BuildRoutes();
         BuildLines();
         BuildAutoSignals();
@@ -214,15 +242,32 @@ public class JsonLayout
             string label = !string.IsNullOrWhiteSpace(t0.Group) ? t0.Group.Trim()
                          : names.Count > 0 ? names[0].Trim() : "?" + ++unnamed;
             var ss = keys.Select(SecOfTile).Where(s => s != null).Distinct().ToArray();
+            // [ДОБАВЛЕНО 13.11.2026] настройка: номер на пульте, начальное положение
+            SwitchList.Add((g, label, string.Join(", ", names), !t0.IsPlus));
+            bool plus0 = t0.IsPlus;
+            if (Set.Switches.TryGetValue(g, out var so))
+            {
+                if (!string.IsNullOrWhiteSpace(so.Label)) { label = so.Label.Trim(); if (keys.Count == 1) relabeled.Add(g); }
+                if (so.Minus is bool m) plus0 = !m;
+            }
             string title = keys.Count > 1
                 ? $"Съезд {label}: стрелки {string.Join(" и ", names)} переводятся вместе"
                 : $"Стрелка {label}";
             var sw = IL.AddSwitchL(Unique(label), label, title, ss);
-            sw.Plus = t0.IsPlus;
+            sw.Plus = plus0;
             View.Switches.Add(sw);
             swByGroup[g] = sw;
         }
         if (unnamed > 0) Notes.Add($"Стрелок без номера: {unnamed} — им даны номера «?1», «?2»…");
+
+        // [ДОБАВЛЕНО 12.11.2026] перекрёстный съезд (TC.Scissors): две диагонали-съезда, в минусе — только одна
+        foreach (var (ga, gb) in TC.ScissorsRivals(St))
+        {
+            if (!swByGroup.TryGetValue(ga, out var a) || !swByGroup.TryGetValue(gb, out var b)) continue;
+            a.Rival = b;
+            a.Title = $"Перекрёстный съезд, диагональ {a.Label} (вторая — {b.Label}): переводятся вместе, в минусе только одна диагональ";
+            if (!a.Plus && !b.Plus) b.Plus = true;      // в файле обе в минусе — так стоять не могут
+        }
     }
 
     // =================================================================
@@ -232,6 +277,13 @@ public class JsonLayout
     {
         foreach (var e in TC.AllSignals(St))
         {
+            // [ДОБАВЛЕНО 13.11.2026] настройка: своё имя и вид (до поиска маршрутов — он смотрит на вид светофора)
+            SignalList.Add((RefKey(e.Ref), e.Key, e.Sig.Name ?? "", e.Sig.Kind));
+            if (Set.Signals.TryGetValue(RefKey(e.Ref), out var so))
+            {
+                if (!string.IsNullOrWhiteSpace(so.Name)) e.Sig.Name = so.Name.Trim();
+                if (!string.IsNullOrWhiteSpace(so.Kind) && TC.SigKindName(so.Kind) != null) e.Sig.Kind = so.Kind;
+            }
             string name = string.IsNullOrWhiteSpace(e.Sig.Name) ? "?" : e.Sig.Name.Trim();
             var dir = e.Sig.Dir == "L" ? Dir.Left : Dir.Right;
             string kindName = TC.SigKindName(e.Sig.Kind) ?? "Светофор";
@@ -245,6 +297,8 @@ public class JsonLayout
                 case "shunt": kind = SignalKind.Controlled; lamps = L_SHUNT; break;
                 case "block": kind = SignalKind.Automatic; lamps = L_BLOCK; break;
                 case "other": kind = SignalKind.Neighbor; lamps = L_NEIGHBOR; break;
+                case "hump": kind = SignalKind.Controlled; lamps = L_HUMP; break;             // [ДОБАВЛЕНО 13.11.2026]
+                case "humprep": kind = SignalKind.Automatic; lamps = TC.SecType(St, e.Tile.Sec) == "path" ? L_HUMP_PARK : L_HUMP; break;
                 default:
                     Notes.Add($"{kindName} светофор {name}: таких светофоров в программах станций пока нет — на схеме не показан.");
                     continue;
@@ -254,12 +308,27 @@ public class JsonLayout
                 Id = Unique(name), Label = name, Title = $"{kindName} {name}", Kind = kind, Dir = dir, Lamps = lamps
             });
             if (kind == SignalKind.Controlled) s.Approach = SecOfTile(e.Key);
+            if (e.Sig.Kind == "hump") { s.Hump = HumpMode.Stop; s.Indicator = true; }       // [ДОБАВЛЕНО 13.11.2026]
+            if (e.Sig.Kind == "humprep") s.Indicator = true;
             if (e.Sig.Kind == "entry") View.InviteSignals.Add(s);
             sigByRef[RefKey(e.Ref)] = s;
             if (!sigsOnTile.TryGetValue(e.Key, out var list)) sigsOnTile[e.Key] = list = new List<RailSignal>();
             list.Add(s);
             tileOfSig[s] = e.Key;
             sigs.Add((e, s));
+        }
+    }
+
+    /// <summary>[ДОБАВЛЕНО 13.11.2026] Повторитель горочного — какой горочный он повторяет: первый горочный впереди по ходу
+    /// (по стрелкам в положении из схемы, как в редакторе — Aspects.MainAhead).</summary>
+    void LinkRepeaters()
+    {
+        foreach (var (e, s) in sigs)
+        {
+            if (e.Sig.Kind != "humprep") continue;
+            var main = Ed.Aspects.MainAhead(St, e, null);
+            if (main != null && sigByRef.TryGetValue(RefKey(main.Ref), out var m)) s.RepeatOf = m;
+            else Notes.Add($"Повторитель горочного {s.Label}: впереди по ходу нет горочного светофора — не горит.");
         }
     }
 
@@ -280,11 +349,59 @@ public class JsonLayout
         return dest;
     }
 
+    /// <summary>[ДОБАВЛЕНО 13.11.2026] Ключ автомаршрута для настройки: вид, начало, путь назначения, положения стрелок —
+    /// не меняется, пока не перерисовали этот кусок схемы.</summary>
+    static string AutoKey(Ed.Route r) =>
+        (r.Shunt ? "М|" : "П|") + RefKey(r.Start) + "|" + (r.Dest ?? "") + "|" +
+        string.Join(",", r.Switches.Select(x => x.Group + (x.Plus ? "+" : "-")).OrderBy(x => x, StringComparer.Ordinal));
+
+    /// <summary>[ДОБАВЛЕНО 13.11.2026] Свои маршруты из настройки (что делает клик n1 → n2). Возвращает построенные.</summary>
+    List<RailRoute> BuildCustomRoutes()
+    {
+        var res = new List<RailRoute>();
+        for (int i = 0; i < Set.Routes.Count; i++)
+        {
+            var cr = Set.Routes[i];
+            string nm = string.IsNullOrWhiteSpace(cr.Name) ? $"свой маршрут {i + 1}" : cr.Name.Trim();
+            if (cr.Off == true) continue;
+            var start = SignalByKey(cr.Start);
+            if (start == null || start.Kind != SignalKind.Controlled)
+            { Notes.Add($"Свой маршрут «{nm}»: светофора начала нет на схеме или он не открывается дежурным — маршрут не добавлен."); continue; }
+            var list = cr.Sections.Select(SectionByName).Where(s => s != null).Distinct().ToList();
+            if (list.Count == 0) { Notes.Add($"Свой маршрут «{nm}»: не отмечено ни одного участка — маршрут не добавлен."); continue; }
+            var last = list[^1];
+            bool exit = secType.TryGetValue(NameOf(last) ?? "", out var lt) && lt == "line";
+            var rr = new RailRoute
+            {
+                Id = Unique("свой:" + nm),
+                Name = nm,
+                Shunting = cr.Shunt,
+                Start = start,
+                End = SignalByKey(cr.End),
+                Dest = last,
+                ExitSection = exit ? last : null,
+            };
+            rr.Sections.AddRange(exit ? list.Take(list.Count - 1) : list);
+            foreach (var (k, plus) in cr.Switches)
+                if (SwitchByKey(k) is { } sw) rr.Switches.Add((sw, plus));
+            rr.Diverging = !cr.Shunt && rr.Switches.Any(x => !x.plus);
+            foreach (var (k, a) in cr.Aspects)
+                if (SignalByKey(k) is { } s && SchemeSettings.AspectOf(a) is Aspect asp)
+                    (rr.FixedAspects ??= new())[s] = asp;
+            CustomBuilt[i] = rr;
+            res.Add(rr);
+        }
+        return res;
+    }
+
     void BuildRoutes()
     {
+        var customs = BuildCustomRoutes();
+        bool Replaced(RailSignal start, RailSignal end, TrackSection dest) =>
+            customs.Any(c => c.Start == start && ((c.End != null && c.End == end) || c.Dest == dest));
         var found = Ed.RouteFinder.FindRoutes(St);
         var seen = new Dictionary<string, int>();
-        int skipped = 0;
+        int skipped = 0, off = 0, replaced = 0;
         foreach (var r in found)
         {
             if (!sigByRef.TryGetValue(RefKey(r.Start), out var start)) { skipped++; continue; }
@@ -300,6 +417,14 @@ public class JsonLayout
             string key = (r.Shunt ? "М:" : "П:") + bas;
             seen[key] = seen.TryGetValue(key, out int c) ? c + 1 : 1;
             string name = seen[key] > 1 ? $"{bas} (вариант {seen[key]})" : bas;
+            // [ДОБАВЛЕНО 13.11.2026] настройка: автомаршруты выключены совсем / этот выключен / заменён своим / своё имя
+            string akey = AutoKey(r);
+            bool isReplaced = Replaced(start, end, dest);
+            AutoList.Add((akey, name, r.Shunt, string.Join(" ", r.Switches.Select(x => (swByGroup.TryGetValue(x.Group, out var xs) ? xs.Label : x.Name) + (x.Plus ? "+" : "−"))), isReplaced));
+            Set.Auto.TryGetValue(akey, out var ao);
+            if (!Set.AutoOn || ao?.Off == true) { off++; continue; }
+            if (isReplaced) { replaced++; continue; }
+            if (!string.IsNullOrWhiteSpace(ao?.Name)) name = ao.Name.Trim();
 
             var rr = new RailRoute
             {
@@ -320,6 +445,10 @@ public class JsonLayout
             IL.AddRoute(rr);
             View.Routes.Add(rr);
         }
+        foreach (var rr in customs) { IL.AddRoute(rr); View.Routes.Add(rr); }
+        if (!Set.AutoOn) Notes.Add($"Автомаршруты выключены в настройке — работают только свои ({customs.Count}).");
+        else if (off > 0) Notes.Add($"Автомаршрутов выключено в настройке: {off}.");
+        if (replaced > 0) Notes.Add($"Автомаршрутов заменено своими: {replaced}.");
         if (skipped > 0) Notes.Add($"Маршрутов от непереносимых светофоров пропущено: {skipped}.");
         if (View.Routes.Count == 0) Notes.Add("Маршрутов не найдено — проверьте в редакторе светофоры и типы участков («путь», «перегон»).");
     }
@@ -355,7 +484,7 @@ public class JsonLayout
             var dirs = new HashSet<Dir>();
             foreach (var r in View.Routes.Where(r => !r.Shunting && r.ExitSection != null && compSecs.Contains(r.ExitSection))) dirs.Add(r.Start.Dir);
             foreach (var (e, s) in sigs)
-                if (compSecs.Contains(SecOfTile(e.Key)) && (s.Kind == SignalKind.Automatic || e.Sig.Kind == "entry")) dirs.Add(s.Dir);
+                if (compSecs.Contains(SecOfTile(e.Key)) && ((s.Kind == SignalKind.Automatic && e.Sig.Kind != "humprep") || e.Sig.Kind == "entry")) dirs.Add(s.Dir);
             if (dirs.Count < 2) continue;      // путь перегона только в одну сторону (двухпутный) — направление не меняется
 
             var ordered = comp.OrderBy(n => tilesOf[n].Min(k => TC.Parse(k).X)).ToList();
@@ -396,7 +525,7 @@ public class JsonLayout
     {
         foreach (var (e, s) in sigs)
         {
-            if (s.Kind != SignalKind.Automatic) continue;
+            if (s.Kind != SignalKind.Automatic || e.Sig.Kind == "humprep") continue;   // повторитель горочного — не проходной
             var from = SecOfTile(e.Key);
             var step = Step(from, s.Dir, live: false);
             s.Protects = step?.Section;
@@ -589,9 +718,25 @@ public class JsonLayout
                 foreach (var e in TC.EdgesOf(t))
                 {
                     var pts = TC.Opp[e.A] == e.B ? new[] { T(Pt(k, e.A)), T(Pt(k, e.B)) } : new[] { T(Pt(k, e.A)), T(c), T(Pt(k, e.B)) };
-                    g.Piece(Pid(), Sid(t), pts);
+                    var piece = g.Piece(Pid(), Sid(t), pts);
+                    // [ДОБАВЛЕНО 12.11.2026] тормозная позиция: путь — обычный кусок (соединяет соседей, занятость, маршруты),
+                    // поверх — полоса замедлителя (SchemePanel.DrawBrakes); подпись — у средней клетки группы, как в редакторе
+                    if (t.T == "brake") g.Brakes.Add(new BrakeGeom { PieceId = piece.Id, A = Pt(k, e.A), B = Pt(k, e.B) });
                 }
             }
+        }
+
+        // [ДОБАВЛЕНО 12.11.2026] подписи тормозных позиций («ТП1»…): сбоку от полосы, со стороны «вниз» по экрану
+        foreach (var k in TC.BrakeLabelTiles(St))
+        {
+            var t = St.Tiles[k];
+            var e = TC.EdgesOf(t).First();
+            PointF a = Pt(k, e.A), b = Pt(k, e.B), c = Ctr(k);
+            float dx = b.X - a.X, dy = b.Y - a.Y, len = MathF.Sqrt(dx * dx + dy * dy);
+            float nx = -dy / len, ny = dx / len;
+            if (ny < 0) { nx = -nx; ny = -ny; }
+            var bg = g.Brakes.FirstOrDefault(x => x.A == a && x.B == b);
+            if (bg != null) { bg.Label = t.Brk.Label; bg.LabelPos = new PointF(c.X + nx * 18, c.Y + ny * 18); }
         }
 
         // изолирующие стыки — где соседние клетки относятся к разным участкам
@@ -616,10 +761,11 @@ public class JsonLayout
         {
             if (t.T != "switch") continue;
             var (x, y) = TC.Parse(k);
-            bool below = TC.VariantOf(t).Minus.Contains('N');
-            string label = string.IsNullOrWhiteSpace(t.Name) ? swByGroup[TC.SwitchGroup(k, t)].Label : t.Name.Trim();
+            var (fx, fy) = TC.SwitchLabelAt(t);    // [ИЗМЕНЕНО 12.11.2026] как в редакторе (у симметричной стрелки — над остряком)
+            var grp = TC.SwitchGroup(k, t);
+            string label = string.IsNullOrWhiteSpace(t.Name) || relabeled.Contains(grp) ? swByGroup[grp].Label : t.Name.Trim();
             if (!g.SwitchLabels.ContainsKey(label))
-                g.SwLabel(label, swByGroup[TC.SwitchGroup(k, t)], X(x) + CX / 2, Y(y) + (below ? CY * 0.9f : CY * 0.1f));
+                g.SwLabel(label, swByGroup[TC.SwitchGroup(k, t)], X(x) + CX * fx, Y(y) + CY * fy);
         }
 
         // надписи (название станции не повторяем — его пишет крупный заголовок схемы)
@@ -654,7 +800,20 @@ public class JsonLayout
             g.DesignH = Math.Max(g.DesignH, textY + 40);
         }
 
-        g.AutoSectionLabels();
+        // [ДОБАВЛЕНО 11.11.2026] название пути в разрыве линии «——▶ 3П ◀——», как в редакторе (галочка trackGaps, по умолчанию вкл.):
+        // место — общее с редактором (TC.TrackGapRuns), поместится ли надпись — решает панель схемы
+        foreach (var (sec, gy, gx0, gx1) in TC.TrackGapRuns(St))
+        {
+            if (!secs.TryGetValue(sec, out var ts)) continue;
+            float x0 = X(gx0), x1 = X(gx1) + CX;
+            g.TrackNameGaps.Add(new TrackNameGap
+            {
+                SectionId = ts.Id, Text = ts.Label, Center = new PointF((x0 + x1) / 2, Y(gy) + CY / 2), MaxHalf = (x1 - x0) / 2,
+            });
+        }
+
+        // [ИЗМЕНЕНО 11.11.2026] подписи участков и путей — только если в схеме включена галочка «Подписи участков и путей» (secLabels)
+        if (St.SecLabels == true) g.AutoSectionLabels();
     }
 
     /// <summary>Горизонтальный кусок пути разрезается на мачте светофора (иначе маршрут не подсветится от светофора):

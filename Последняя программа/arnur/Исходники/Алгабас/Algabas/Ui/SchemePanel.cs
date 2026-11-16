@@ -81,6 +81,13 @@ class RailSchemePanel : Panel
     /// На двух мониторах АКЖТ прижата вправо, пост — влево: пути стыкуются ровно по границе мониторов.</summary>
     public StringAlignment HAlign = StringAlignment.Center;
 
+    // ---- [ДОБАВЛЕНО 13.11.2026] настройка своих маршрутов («Станция по схеме», окно «Настройка»); у Алгабаса и АКЖТ — null ----
+    /// <summary>Левый клик по светофору, стрелке или участку сначала отдаётся сюда; true — клик забран (маршрут не набирается).</summary>
+    public Func<object, bool> EditClick = null;
+    /// <summary>Черновик маршрута: эти участки (Id) рисуются жёлтым, эти светофоры — в жёлтой рамке.</summary>
+    public HashSet<string> DraftSections = null;
+    public HashSet<RailSignal> DraftSignals = null;
+
     public RailSchemePanel(StationView v)
     {
         view = v;
@@ -114,9 +121,65 @@ class RailSchemePanel : Panel
         float usableH = bandH - 30;
         scale = group.Min(p => Math.Min(p.Width / p.G.DesignW, usableH / designH));
         if (scale <= 0) scale = 1;
+        if (view.MinScale > 0 && group.Count == 1) { ScrollTransform(scale); return; }   // [ДОБАВЛЕНО 12.11.2026]
+        if (AutoScroll) { AutoScroll = false; AutoScrollMinSize = Size.Empty; }
         float freeW = Width - G.DesignW * scale;
         float offX = HAlign switch { StringAlignment.Near => 0, StringAlignment.Far => freeW, _ => freeW / 2f };
         off = new PointF(offX, bandTop + (usableH - designH * scale) / 2f);
+    }
+
+    // ---- [ДОБАВЛЕНО 12.11.2026] прокрутка вместо мелкого масштаба (StationView.MinScale > 0 — «Станция по схеме») ----
+    /// <summary>Множитель Ctrl+колеса к начальному масштабу (1 — начальный: вписать в окно, но не мельче MinScale).</summary>
+    float zoomMul = 1, lastBase = 1;
+    const float HintH = 46;          // полоса подсказки внизу панели (до двух строк)
+
+    /// <summary>Масштаб = вписанный в окно, но не мельче MinScale (и × Ctrl+колесо, не мельче вписанного); схема крупнее
+    /// окна — полосы прокрутки, меньше — по центру.</summary>
+    void ScrollTransform(float fit)
+    {
+        float baseScale = lastBase = Math.Max(fit, view.MinScale);
+        scale = Math.Clamp(baseScale * zoomMul, fit, Math.Max(fit, 4f));
+        if (!AutoScroll) AutoScroll = true;
+        var need = new Size((int)Math.Ceiling(G.DesignW * scale), (int)Math.Ceiling(G.DesignH * scale + HintH));
+        // полоса прокрутки отнимает место у другой стороны — сравниваем с окном без полос
+        var full = Size;
+        var ms = need.Width > full.Width || need.Height > full.Height ? need : Size.Empty;
+        if (AutoScrollMinSize != ms) AutoScrollMinSize = ms;
+        var cs = ClientSize;
+        float fx = Math.Max(0, (cs.Width - G.DesignW * scale) / 2f);
+        float fy = Math.Max(0, (cs.Height - HintH - G.DesignH * scale) / 2f);
+        off = new PointF(AutoScrollPosition.X + fx, AutoScrollPosition.Y + fy);
+    }
+
+    protected override void OnScroll(ScrollEventArgs se)
+    {
+        base.OnScroll(se);
+        Invalidate();
+    }
+
+    /// <summary>Колесо — вверх / вниз, Shift+колесо — влево / вправо, Ctrl+колесо — масштаб (точка под мышью остаётся на месте).</summary>
+    protected override void OnMouseWheel(MouseEventArgs e)
+    {
+        if (view.MinScale <= 0) { base.OnMouseWheel(e); return; }
+        var sp = new Point(-AutoScrollPosition.X, -AutoScrollPosition.Y);
+        if ((ModifierKeys & Keys.Control) != 0)
+        {
+            UpdateTransform();
+            var dp = ToDesign(e.Location);
+            zoomMul *= e.Delta > 0 ? 1.15f : 1 / 1.15f;
+            UpdateTransform();
+            zoomMul = scale / lastBase;       // упёрлись в пределы (вписанный … 4) — множитель дальше не копится
+            var cs = ClientSize;
+            float fx = Math.Max(0, (cs.Width - G.DesignW * scale) / 2f);
+            float fy = Math.Max(0, (cs.Height - HintH - G.DesignH * scale) / 2f);
+            AutoScrollPosition = new Point((int)(dp.X * scale + fx - e.X), (int)(dp.Y * scale + fy - e.Y));
+        }
+        else if ((ModifierKeys & Keys.Shift) != 0)
+            AutoScrollPosition = new Point(sp.X - e.Delta, sp.Y);
+        else
+            AutoScrollPosition = new Point(sp.X, sp.Y - e.Delta);
+        if (e is HandledMouseEventArgs h) h.Handled = true;
+        Invalidate();
     }
 
     protected override void OnResize(EventArgs e)
@@ -160,6 +223,7 @@ class RailSchemePanel : Panel
         DrawTracks(g);
         RadioUi.DrawRestrictions(g, G.Pieces.Select(p => (p.SectionId, p.Pts)), IL);   // [ДОБАВЛЕНО 23.10.2026, этап 4] предупреждения, «окна»
         ShuntUi.DrawPnp(g, G.Pieces.Select(p => (p.SectionId, p.Pts)), fSmallBold);   // [ДОБАВЛЕНО 23.10.2026, этап 7] ПНП и его лампы
+        DrawBrakes(g);              // [ДОБАВЛЕНО 12.11.2026] тормозные позиции горки (только «Станция по схеме»)
         DrawJointsAndBuffers(g);
         DrawTunnelsFront(g);
         DrawSwitchLabels(g);
@@ -175,8 +239,21 @@ class RailSchemePanel : Panel
         string line = hoverText.Length > 0
             ? hoverText
             : "ЛКМ: светофор начала → светофор конца или путь назначения = маршрут  |  ЛКМ по номеру стрелки — перевод  |  " +
-              "ПКМ по пути, светофору, стрелке или поезду — меню  |  обе кнопки мыши — положение стрелок";
-        g.DrawString(L.T(line), fInfo, hb, new RectangleF(8, Height - 26, Width - 16, 24));   // [ДОБАВЛЕНО 22.10.2026, этап 8] L.T — перевод
+              "ПКМ по пути, светофору, стрелке или поезду — меню  |  обе кнопки мыши — положение стрелок" +
+              (view.MinScale > 0 ? "  |  колесо, Shift+колесо — прокрутка, Ctrl+колесо — масштаб" : "");
+        // [ИЗМЕНЕНО 12.11.2026] ClientSize — без полос прокрутки (у Алгабаса полос нет, то же, что Width / Height)
+        var cl = ClientSize;
+        var hr = new RectangleF(8, cl.Height - 26, cl.Width - 16, 24);
+        if (view.MinScale > 0)
+        {
+            // [ДОБАВЛЕНО 12.11.2026] схема прокручивается под подсказкой — подсказке своя полоса фона, до двух строк
+            var sz = g.MeasureString(L.T(line), fInfo, (int)hr.Width);
+            float h = Math.Min(sz.Height, HintH - 4) + 2;
+            hr = new RectangleF(8, cl.Height - h - 2, cl.Width - 16, h);
+            using var bgb = new SolidBrush(Bg);
+            g.FillRectangle(bgb, 0, hr.Y - 2, cl.Width, cl.Height - hr.Y + 2);
+        }
+        g.DrawString(L.T(line), fInfo, hb, hr);   // [ДОБАВЛЕНО 22.10.2026, этап 8] L.T — перевод
     }
 
     Font TextFont(float size, bool bold)
@@ -265,6 +342,7 @@ class RailSchemePanel : Panel
         releasing = false;
         setting = false;
         var sec = IL.Sections[p.SectionId];
+        if (DraftSections != null && DraftSections.Contains(p.SectionId)) return RouteColor;   // [ДОБАВЛЕНО 13.11.2026] черновик маршрута
         if (sec.Occupied) return OccColor;
         foreach (var r in IL.ActiveRoutes)
         {
@@ -279,7 +357,46 @@ class RailSchemePanel : Panel
         return TrackColor;
     }
 
+    /// <summary>[ДОБАВЛЕНО 11.11.2026] Пути, подписанные в разрыве линии (их подпись под путём не повторяем).</summary>
+    readonly HashSet<string> gapLabeled = new();
+
     void DrawTracks(Graphics g)
+    {
+        // [ДОБАВЛЕНО 11.11.2026] название пути в разрыве «——▶ 3П ◀——» (РУ-30-80, стр. 89–90): на время рисования путей
+        // вырезаем полоску вдоль линии; список заполняет только «Станция по схеме», у остальных он пустой
+        gapLabeled.Clear();
+        var gaps = new List<(TrackNameGap Gp, float TextHalf, float Arrow)>();
+        foreach (var gp in G.TrackNameGaps)
+        {
+            float textHalf = g.MeasureString(gp.Text, fSection).Width / 2 + 3;
+            if (textHalf + 12 <= gp.MaxHalf - 6) gaps.Add((gp, textHalf, 12));
+            else if (textHalf <= gp.MaxHalf - 2) gaps.Add((gp, textHalf, 0));    // короткий путь: только название, без стрелок
+        }
+        Region clipSave = null;
+        if (gaps.Count > 0)
+        {
+            clipSave = g.Clip;
+            foreach (var (gp, th, ar) in gaps) g.ExcludeClip(new Rectangle((int)(gp.Center.X - th - ar), (int)(gp.Center.Y - 6), (int)(2 * (th + ar)), 12));
+        }
+        try { DrawTrackLines(g); }
+        finally { if (clipSave != null) g.Clip = clipSave; }
+        if (gaps.Count == 0) return;
+        using var ab = new SolidBrush(TrackColor);
+        using var tb = new SolidBrush(Pal.SectionLabel.IsEmpty ? SchemeStyle.SectionLabelColor : Pal.SectionLabel);
+        foreach (var (gp, th, ar) in gaps)
+        {
+            float cx = gp.Center.X, cy = gp.Center.Y;
+            if (ar > 0)
+            {
+                g.FillPolygon(ab, new[] { new PointF(cx - th - ar, cy - 5), new PointF(cx - th, cy), new PointF(cx - th - ar, cy + 5) });
+                g.FillPolygon(ab, new[] { new PointF(cx + th + ar, cy - 5), new PointF(cx + th, cy), new PointF(cx + th + ar, cy + 5) });
+            }
+            g.DrawString(gp.Text, fSection, tb, gp.Center, center);
+            gapLabeled.Add(gp.SectionId);
+        }
+    }
+
+    void DrawTrackLines(Graphics g)
     {
         using (var dp = new Pen(TrackColor, 5f))
             foreach (var pts in G.Decor) g.DrawLines(dp, pts);
@@ -338,6 +455,39 @@ class RailSchemePanel : Panel
         return list.ToArray();
     }
 
+    /// <summary>[ДОБАВЛЕНО 12.11.2026] Тормозная позиция — вагонный замедлитель: толстая тёмная полоса на пути с двумя
+    /// светлыми шинами, каёмка — цвета пути (видно занятость и маршрут), подпись «ТП1» сбоку — как в редакторе.</summary>
+    void DrawBrakes(Graphics g)
+    {
+        if (G.Brakes.Count == 0) return;
+        const float bw = 10f;
+        using var bar = new Pen(Color.FromArgb(0x14, 0x14, 0x14), bw);
+        using var shoe = new Pen(Color.FromArgb(0x8c, 0x8c, 0x8c), 1.3f);
+        using var lb = new SolidBrush(Pal.SwitchLabel.IsEmpty ? TextDark : Pal.SwitchLabel);
+        foreach (var b in G.Brakes)
+        {
+            var piece = G.Pieces.FirstOrDefault(p => p.Id == b.PieceId);
+            var col = TrackColor;
+            if (piece != null)
+            {
+                col = PieceColor(piece, out bool releasing, out bool setting);
+                if (releasing && !Blink) col = TrackColor;
+                if (setting && !ModelHost.FastBlinkPhase) col = TrackColor;
+            }
+            PointF At(float k) => new(b.A.X + (b.B.X - b.A.X) * k, b.A.Y + (b.B.Y - b.A.Y) * k);
+            using (var rim = new Pen(col, bw + 3f)) g.DrawLine(rim, At(0.14f), At(0.86f));
+            g.DrawLine(bar, At(0.16f), At(0.84f));
+            float dx = b.B.X - b.A.X, dy = b.B.Y - b.A.Y, len = MathF.Sqrt(dx * dx + dy * dy);
+            if (len < 1) continue;
+            float nx = -dy / len * bw * 0.22f, ny = dx / len * bw * 0.22f;
+            var p1 = At(0.22f); var p2 = At(0.78f);
+            foreach (var s in new[] { -1f, 1f })
+                g.DrawLine(shoe, p1.X + s * nx, p1.Y + s * ny, p2.X + s * nx, p2.Y + s * ny);
+        }
+        foreach (var b in G.Brakes)
+            if (!string.IsNullOrEmpty(b.Label)) g.DrawString(L.T(b.Label), fSw, lb, b.LabelPos, center);
+    }
+
     void DrawJointsAndBuffers(Graphics g)
     {
         using var bg = new SolidBrush(Bg);
@@ -378,7 +528,7 @@ class RailSchemePanel : Panel
         // половина высоты букв + половина толщины пути + зазор
         float need = fSection.Size * 96f / 72f / 2f + 2.5f + SchemeStyle.SectionLabelGap;
         foreach (var (id, pt) in G.SectionLabels)
-            if (IL.Sections.TryGetValue(id, out var s))
+            if (!gapLabeled.Contains(id) && IL.Sections.TryGetValue(id, out var s))    // [11.11.2026] уже подписан в разрыве
                 g.DrawString(s.Label, fSection, b, AwayFromTrack(pt, need), center);
     }
 
@@ -461,8 +611,8 @@ class RailSchemePanel : Panel
             Color c = LampOffSimple;
             switch (s.Aspect)
             {
-                case Aspect.Red: case Aspect.Invite: c = LampColor("red"); break;
-                case Aspect.Green: c = LampColor("green"); break;
+                case Aspect.Red: case Aspect.Invite: case Aspect.RedBack: c = LampColor(s.Has("red") ? "red" : "blue"); break;
+                case Aspect.Green: case Aspect.YellowGreen: c = LampColor("green"); break;
                 case Aspect.Yellow: case Aspect.TwoYellow: c = LampColor("yellow"); break;
                 case Aspect.YellowBlink: case Aspect.TwoYellowTopBlink: c = Blink ? LampColor("yellow") : LampOffSimple; break;
                 case Aspect.White: c = LampColor("white"); break;
@@ -497,8 +647,24 @@ class RailSchemePanel : Panel
                 Lamp(g, new PointF(l0.X + dir * i * LampStep, y), on ? LampColor(name) : LampOff, LampR);
             }
         }
+        // [ДОБАВЛЕНО 13.11.2026] горочный и его повторитель: световой указатель за огнями, при осаживании горит «Н»
+        if (s.Indicator)
+        {
+            int nl = Simple ? DrawnLamps(s) : s.Lamps.Length;
+            float step = Simple ? SimpleLampStep : LampStep, rr = Simple ? SimpleLampR : LampR;
+            var ic = new PointF(l0.X + dir * ((nl - 1) * step + rr + 11), y);
+            var box = new RectangleF(ic.X - 8, ic.Y - 8, 16, 16);
+            using (var bb = new SolidBrush(Color.FromArgb(25, 25, 25))) g.FillRectangle(bb, box);
+            using (var bp = new Pen(Color.FromArgb(20, 20, 20), 1.2f)) g.DrawRectangle(bp, box.X, box.Y, box.Width, box.Height);
+            if (s.Aspect == Aspect.RedBack || IL.TestMode) g.DrawString("Н", fSigSmall, Brushes.White, ic, center);
+        }
 
         var rect = SignalRect(sg);
+        if (DraftSignals != null && DraftSignals.Contains(s))     // [ДОБАВЛЕНО 13.11.2026] светофор в черновике маршрута
+        {
+            using var dp = new Pen(Color.FromArgb(255, 230, 60), 2.5f);
+            g.DrawRectangle(dp, rect.X - 2, rect.Y - 2, rect.Width + 4, rect.Height + 4);
+        }
         if (selected == s && Blink)
         {
             using var hp = new Pen(Color.White, 2f) { DashStyle = DashStyle.Dash };
@@ -683,10 +849,18 @@ class RailSchemePanel : Panel
         var sig = SignalAt(p);
         var sw = sig == null ? SwitchAt(p) : null;
         if (((object)sig ?? (object)sw ?? SectionAt(p)) is { } clicked) Pointed?.Invoke(clicked);   // [ДОБАВЛЕНО 28.10.2026] клик = «показал»
+        // [ДОБАВЛЕНО 13.11.2026] настройка своего маршрута: клик забирает окно настройки (false — обычная работа)
+        if (EditClick != null && e.Button == MouseButtons.Left && ((object)sig ?? (object)sw ?? SectionAt(p)) is { } ed && EditClick(ed))
+        {
+            Invalidate();
+            return;
+        }
 
         if (e.Button == MouseButtons.Left)
         {
             if (sw != null) { IL.ToggleSwitch(sw); return; }
+            // [ДОБАВЛЕНО 13.11.2026] горочный: меню оператора горки (режимы, маневровый маршрут от него)
+            if (sig != null && sig.Hump != null && selected == null) { HumpMenu(sig).Show(this, e.Location); return; }
             if (sig != null) { SelectSignal(sig); return; }
             if (selected != null)
             {
@@ -718,6 +892,11 @@ class RailSchemePanel : Panel
                 if (s.Remote != null)
                 {
                     IL.Say($"{s.Label} — показание задаёт соседняя станция по сети (связь диспетчеров).", LogKind.Refuse);
+                    return;
+                }
+                if (s.RepeatOf != null)     // [ДОБАВЛЕНО 13.11.2026]
+                {
+                    IL.Say($"{s.Label} — повторитель горочного {s.RepeatOf.Label}: показывает то же, что он.", LogKind.Refuse);
                     return;
                 }
                 IL.Say(s.Kind switch
@@ -782,11 +961,39 @@ class RailSchemePanel : Panel
     }
 
     // ---------------------- контекстные меню ----------------------
+    /// <summary>[ДОБАВЛЕНО 13.11.2026] Режимы горочного светофора (РУ-30-80 листы 45–47; caredenis.ru урок 14).</summary>
+    void AddHumpModes(ContextMenuStrip m, RailSignal s)
+    {
+        foreach (var (mode, text, _) in HumpInfo.Modes)
+        {
+            var md = mode;
+            m.Items.Add(new ToolStripMenuItem(text, null, (_, _) => IL.SetHumpMode(s, md)) { Checked = s.Hump == md });
+        }
+    }
+
+    /// <summary>[ДОБАВЛЕНО 13.11.2026] Левый клик по горочному: режимы оператора горки и маневровый маршрут от него.</summary>
+    ContextMenuStrip HumpMenu(RailSignal s)
+    {
+        var m = new ContextMenuStrip();
+        m.Items.Add(new ToolStripMenuItem($"Горочный {s.Label}: {AspectInfo.Short(s.Aspect)}") { Enabled = false });
+        m.Items.Add(new ToolStripSeparator());
+        AddHumpModes(m, s);
+        if (IL.Routes.Any(r => r.Start == s))
+        {
+            m.Items.Add(new ToolStripSeparator());
+            var act = IL.ActiveRoutes.FirstOrDefault(r => r.Start == s);
+            if (act != null) m.Items.Add($"Отменить маршрут {act.Name}", null, (_, _) => IL.CancelRoute(act));
+            else m.Items.Add("Маневровый маршрут от него… (кликните путь или светофор конца)", null, (_, _) => SelectSignal(s));
+        }
+        return m;
+    }
+
     ContextMenuStrip SignalMenu(RailSignal s)
     {
         var m = new ContextMenuStrip();
         m.Items.Add(new ToolStripMenuItem($"{s.Label}: {AspectInfo.Short(s.Aspect)}") { Enabled = false });
         m.Items.Add(new ToolStripSeparator());
+        if (s.Hump != null) { AddHumpModes(m, s); m.Items.Add(new ToolStripSeparator()); }   // [ДОБАВЛЕНО 13.11.2026]
 
         if (s.Kind == SignalKind.Controlled)
         {

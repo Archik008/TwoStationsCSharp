@@ -31,6 +31,10 @@ public sealed class TileType
 {
     public string Id, Name, Key, Hint;
     public Variant[] Variants;
+    /// <summary>[ДОБАВЛЕНО 12.11.2026] Кнопка палитры, которая ставит другой тип: кубик получает T = Base, V = VBase + вариант
+    /// (симметричная стрелка — это "switch" с вариантами 4–7). null — обычный тип.</summary>
+    public string Base;
+    public int VBase;
 }
 
 public readonly record struct Edge(string A, string B, string Role);
@@ -91,8 +95,16 @@ public static class Core
             Variants = new[] { Ed(P("W", "E")), Ed(P("SW", "NE")), Ed(P("NW", "SE")) } },
         new() { Id = "curve", Name = "Изгиб", Key = "2", Hint = "переход с горизонтали на диагональ (съезд, ответвление)",
             Variants = new[] { Ed(P("W", "NE")), Ed(P("W", "SE")), Ed(P("E", "NW")), Ed(P("E", "SW")) } },
+        // [ИЗМЕНЕНО 12.11.2026] варианты 4–7 — симметричная стрелка (ставится своей кнопкой «Симм. стрелка», см. ниже)
         new() { Id = "switch", Name = "Стрелка", Key = "3", Hint = "остряк, прямое направление (плюс) и отклонение (минус)",
-            Variants = new[] { Sw("W", "E", "NE"), Sw("W", "E", "SE"), Sw("E", "W", "NW"), Sw("E", "W", "SW") } },
+            Variants = new[] { Sw("W", "E", "NE"), Sw("W", "E", "SE"), Sw("E", "W", "NW"), Sw("E", "W", "SW"),
+                               Sw("W", "NE", "SE"), Sw("W", "SE", "NE"), Sw("E", "NW", "SW"), Sw("E", "SW", "NW") } },
+        // [ДОБАВЛЕНО 12.11.2026] симметричный стрелочный перевод (как на горочных горловинах): оба пути расходятся
+        // от остряка под одинаковым углом «<». В файле — обычная стрелка ("switch", варианты 4–7): номер, перевод,
+        // маршруты, «Испытание» и «Станция по схеме» — как у стрелки. Варианты: остряк слева / справа, какой путь — плюс.
+        new() { Id = "symswitch", Name = "Симм. стрелка", Key = "Y", Base = "switch", VBase = 4,
+            Hint = "симметричный стрелочный перевод: оба пути расходятся от остряка под одинаковым углом (горка, пучки)",
+            Variants = new[] { Sw("W", "NE", "SE"), Sw("W", "SE", "NE"), Sw("E", "NW", "SW"), Sw("E", "SW", "NW") } },
         new() { Id = "cross", Name = "Пересечение", Key = "4", Hint = "глухое пересечение путей",
             Variants = new[] { Ed(P("W", "E"), P("SW", "NE")), Ed(P("W", "E"), P("NW", "SE")), Ed(P("SW", "NE"), P("NW", "SE")) } },
         new() { Id = "buffer", Name = "Тупик", Key = "5", Hint = "упор в конце тупикового пути",
@@ -101,7 +113,76 @@ public static class Core
             Variants = new[] { End("E"), End("W") } },
         new() { Id = "crossing", Name = "Переезд", Key = "7", Hint = "путь с автомобильным переездом",
             Variants = new[] { Ed(P("W", "E")) } },
+        // [ДОБАВЛЕНО 12.11.2026] для будущих сортировочных горок: путь с вагонным замедлителем (только вид и данные)
+        new() { Id = "brake", Name = "Тормозная позиция", Key = "K", Hint = "путь с вагонным замедлителем сортировочной горки (ТП1, ТП2, ТП3)",
+            Variants = new[] { Ed(P("W", "E")), Ed(P("SW", "NE")), Ed(P("NW", "SE")) } },
     };
+
+    /// <summary>[ДОБАВЛЕНО 12.11.2026] Тормозные позиции горки (рис. 2.1 методички «Проектирование сортировочных горок»).</summary>
+    public static readonly (int Pos, string Name)[] BrakePositions =
+    {
+        (1, "ТП1 — первая (спускная часть)"), (2, "ТП2 — вторая (пучковая)"), (3, "ТП3 — третья (парковая)"),
+    };
+
+    /// <summary>[ДОБАВЛЕНО 12.11.2026] Вагонные замедлители (табл. 3.1 той же методички): назначение, погашаемая энерг. высота
+    /// (м эн. в.), допустимая скорость входа (м/с), длина изолированного участка (м).</summary>
+    public static readonly (string Type, string Use, double H, double V, double L)[] Retarders =
+    {
+        ("ВЗПГ-3", "горочный", 1.00, 8.0, 11.50), ("ВЗПГ-5", "горочный", 1.30, 8.0, 13.48),
+        ("ВЗП-3", "горочный", 0.80, 8.5, 11.50), ("ВЗП-5", "горочный", 1.40, 8.5, 13.48),
+        ("КЗ-3", "горочный", 1.00, 8.5, 11.50), ("КЗ-5", "горочный", 1.40, 8.5, 13.48),
+        ("НК-114", "горочный", 1.40, 8.0, 11.50), ("ЗВУ-5", "горочный, парковый", 1.40, 8.5, 13.49),
+        ("КЗПУ-3", "горочный, парковый", 0.80, 8.5, 11.50), ("КЗПУ-5", "горочный, парковый", 1.30, 8.5, 13.48),
+        ("РЗ-5", "парковый", 1.00, 6.5, 13.48), ("РНЗ-2М", "парковый", 0.45, 6.0, 6.25), ("ПНЗ-1", "парковый", 0.26, 6.0, 6.25),
+    };
+
+    /// <summary>[ДОБАВЛЕНО 12.11.2026] Клетки, где подписать тормозные позиции: замедлители подряд (соседние по пути)
+    /// с одной подписью — одна группа, подпись у средней клетки.</summary>
+    public static List<string> BrakeLabelTiles(Station st)
+    {
+        var res = new List<string>();
+        var done = new HashSet<string>();
+        foreach (var (k, t) in st.Tiles)
+        {
+            if (t.T != "brake" || t.Brk == null || !done.Add(k)) continue;
+            var group = new List<string> { k };
+            var queue = new Queue<string>(group);
+            while (queue.Count > 0)
+            {
+                var cur = queue.Dequeue();
+                foreach (var d in EndsOf(st.Tiles[cur]))
+                {
+                    var nb = NeighborOf(st, cur, d);
+                    if (nb == null || nb.Tile.T != "brake" || nb.Tile.Brk?.Label != t.Brk.Label || !done.Add(nb.Key)) continue;
+                    group.Add(nb.Key);
+                    queue.Enqueue(nb.Key);
+                }
+            }
+            var ordered = group.Select(q => (K: q, P: Parse(q))).OrderBy(q => q.P.X).ThenBy(q => q.P.Y).ToList();
+            res.Add(ordered[(ordered.Count - 1) / 2].K);
+        }
+        return res;
+    }
+
+    /// <summary>[ДОБАВЛЕНО 12.11.2026] У кубиков «Тормозная позиция» — данные позиции и id (без номера и повторы — новые,
+    /// продолжая наибольший); у остальных кубиков данных позиции нет. fixRepeats = false (при правке) — повторы, введённые
+    /// руками, не трогаем (о них предупреждает панель свойств), номер получают только новые.</summary>
+    public static void AssignBrakes(Station st, bool fixRepeats = true)
+    {
+        var all = st.Tiles.OrderBy(p => p.Key, NaturalComparer.Instance).ToList();
+        foreach (var (_, t) in all)
+        {
+            if (t.T != "brake") { t.Brk = null; continue; }
+            t.Brk ??= new BrakePos();
+            t.Brk.Pos = Math.Clamp(t.Brk.Pos, 1, 3);
+            if (string.IsNullOrWhiteSpace(t.Brk.Name)) t.Brk.Name = null;
+            if (string.IsNullOrWhiteSpace(t.Brk.Type)) t.Brk.Type = null;
+        }
+        var seen = new HashSet<int>();
+        int next = all.Where(p => p.Value.Brk != null).Select(p => p.Value.Brk.Id).DefaultIfEmpty(0).Max() + 1;
+        foreach (var (_, t) in all)
+            if (t.Brk != null && (t.Brk.Id <= 0 || !seen.Add(t.Brk.Id) && fixRepeats)) { t.Brk.Id = next++; seen.Add(t.Brk.Id); }
+    }
 
     public static readonly Dictionary<string, TileType> Types = TypeList.ToDictionary(t => t.Id);
 
@@ -111,20 +192,26 @@ public static class Core
     {
         ("entry", "Входной"), ("exit", "Выходной"), ("route", "Маршрутный"), ("shunt", "Маневровый"), ("block", "Проходной"),
         ("warning", "Предупредительный"), ("repeater", "Повторительный"), ("barrier", "Заградительный"), ("cover", "Прикрытия"),
+        // [ДОБАВЛЕНО 13.11.2026] сортировочная горка (РУ-30-80, листы 45–47, стр. 53–55; caredenis.ru, урок 14)
+        ("hump", "Горочный"), ("humprep", "Повторитель горочного"),
         ("other", "Чужой (соседа)"),
     };
 
     /// <summary>Светофор открывается поездным маршрутом (входной, выходной, маршрутный).</summary>
     public static bool IsTrainStart(string kind) => kind is "entry" or "exit" or "route";
     /// <summary>Светофор открывается маневровым маршрутом (маневровый; выходной и маршрутный — лунно-белым).</summary>
-    public static bool IsShuntStart(string kind) => kind is "shunt" or "exit" or "route";
+    public static bool IsShuntStart(string kind) => kind is "shunt" or "exit" or "route" or "hump";   // [13.11.2026] горочный — маневры на пути сортировочного парка
 
     /// <summary>Чем светофор занят в «Испытании» (подсказка в свойствах и при щелчке).</summary>
     public static string SigKindHint(string kind) => kind switch
     {
-        "entry" => "Приём с перегона. Красный; жёлтый / зелёный — приём на главный путь; два жёлтых (верхний мигает, если выходной открыт) — на боковой путь.",
-        "exit" => "Отправление на перегон. Красный; жёлтый — свободен один блок-участок, зелёный — два и больше; лунно-белый — манёвры.",
-        "route" => "Маршрутный (НМ, ЧМ): из одного района станции в другой. Огни — как у выходного.",
+        // [ИЗМЕНЕНО 09.11.2026] по РУ-30-80 (стр. 9, 14, 20)
+        "entry" => "Приём с перегона. Красный; жёлтый / зелёный — приём на главный путь; жёлтый мигающий — выходной открыт двумя жёлтыми; " +
+                   "два жёлтых (верхний мигает, если выходной открыт) — с отклонением по стрелкам.",
+        "exit" => "Отправление на перегон. Красный; жёлтый — свободен один блок-участок, зелёный — два и больше; " +
+                  "жёлтый мигающий — следующий показывает два жёлтых; с главного пути (IП, IIП…) с отклонением по стрелкам — " +
+                  "два жёлтых (верхний мигает, если следующий открыт); лунно-белый — манёвры.",
+        "route" => "Маршрутный (НМ, ЧМ): из одного района станции в другой. Огни — как у выходного (два жёлтых — только с главного пути).",
         "shunt" => "Маневровый: синий — манёвры запрещены, лунно-белый — разрешены.",
         "block" => "Проходной автоблокировки: красный — блок-участок впереди занят, жёлтый — следующий светофор закрыт, " +
                    "жёлтый мигающий — следующий входной открыт на боковой путь, зелёный — свободно.",
@@ -134,8 +221,15 @@ public static class Core
         "barrier" => "Заградительный (мачта в чёрно-белые полосы): нормально не горит; красный — стой. " +
                      "В «Испытании» горит красным, когда переезд впереди занят, или включается щелчком.",
         "cover" => "Прикрытия: ограждает пересечение путей, разводной мост. Красный; зелёный — открыт щелчком, если впереди свободно.",
+        // [ДОБАВЛЕНО 13.11.2026] РУ-30-80 листы 45–47 (стр. 53–55), caredenis.ru урок 14
+        "hump" => "Горочный (Г, Г1, Г2… — перед горбом горки на пути надвига): огни лунно-белый, зелёный, красный, жёлтый и указатель «Н». " +
+                  "Красный — стоп; роспуск: жёлтый — медленно, жёлтый и зелёный — нормально, зелёный — быстро; красный и «Н» — осаживание назад; " +
+                  "лунно-белый — маневры на пути сортировочного парка. Показание задаёт оператор горки (в «Испытании» — щелчок, меню); " +
+                  "с маршрутом стрелок горки не связан (урок 14: «отсутствие замыкания стрелок … и увязки их с показаниями горочного светофора»).",
+        "humprep" => "Повторитель горочного (ПГ1… — на пути надвига перед Г, РУ-30-80 лист 47, прим. 2): показывает то же, что горочный впереди. " +
+                     "На пути парка приёма (участок «путь») — синий вместо красного (лист 46, прим. 2).",
         _ => "Светофор соседней станции: на нашей схеме только показан.",
-    };
+    } + " Галочка «только чтение» — показание задаёт другая станция по id (подходит для любого вида).";
 
     // ---------------------------------------------------------------------
     //  [ДОБАВЛЕНО 05.11.2026] ОБЪЕКТЫ СТАНЦИИ (не пути): занимают прямоугольник W×H клеток
@@ -226,6 +320,37 @@ public static class Core
             && int.TryParse(k.AsSpan(i + 1), NumberStyles.Integer, CultureInfo.InvariantCulture, out y);
     }
 
+    /// <summary>[ДОБАВЛЕНО 12.11.2026] Симметричная стрелка: "switch" с вариантами 4–7.</summary>
+    public static bool IsSymSwitch(Tile t) => t != null && t.T == "switch" && t.V >= 4;
+
+    /// <summary>[ДОБАВЛЕНО 12.11.2026] Где номер стрелки — доли клетки (0..1): у обычной — над / под серединой
+    /// (со стороны, куда не уходит отклонение), у симметричной — над остряком (пути расходятся вверх и вниз).</summary>
+    public static (float X, float Y) SwitchLabelAt(Tile t)
+    {
+        var v = VariantOf(t);
+        if (IsSymSwitch(t)) return (v.Trunk == "W" ? 0.22f : 0.78f, 0.16f);
+        return (0.5f, v.Minus.Contains('N') ? 0.9f : 0.1f);
+    }
+
+    /// <summary>[ДОБАВЛЕНО 12.11.2026] Кубик, который ставит кнопка палитры type с её вариантом v (симм. стрелка → "switch", 4 + v).</summary>
+    public static Tile NewTile(string type, int v)
+    {
+        var T = Types[type];
+        return new Tile { T = T.Base ?? type, V = T.VBase + v };
+    }
+
+    /// <summary>[ДОБАВЛЕНО 12.11.2026] Кнопка палитры, которой поставлен кубик, и её вариант (обратное к NewTile).</summary>
+    public static (TileType Type, int V) PaletteTypeOf(Tile t)
+    {
+        foreach (var T in TypeList)
+            if (T.Base == t.T && t.V >= T.VBase && t.V < T.VBase + T.Variants.Length) return (T, t.V - T.VBase);
+        var own = Types[t.T];
+        return (own, Math.Clamp(t.V, 0, PaletteCount(own) - 1));
+    }
+
+    /// <summary>[ДОБАВЛЕНО 12.11.2026] Сколько вариантов у кнопки палитры (у обычной стрелки — 4 первых, остальные — симметричные).</summary>
+    public static int PaletteCount(TileType T) => T.Id == "switch" ? 4 : T.Variants.Length;
+
     public static Variant VariantOf(Tile t)
     {
         var vs = Types[t.T].Variants;
@@ -291,7 +416,12 @@ public static class Core
     // ---------------------------------------------------------------------
     //  СТАНЦИЯ
     // ---------------------------------------------------------------------
-    public static Station NewStation() => new();
+    public static Station NewStation() => new() { AutoNames = true };
+
+    /// <summary>[ДОБАВЛЕНО 10.11.2026] Буква направления светофора: Ч (чётное) или Н (нечётное).
+    /// [ИЗМЕНЕНО 11.11.2026] по одной настройке станции «Чётные поезда идут → / ←» (Station.Even, Numbering.cs) —
+    /// той же, по которой нумеруются пути и стрелки.</summary>
+    public static string DirLetter(Station st, string dir) => Numbering.Letter(st, dir);
 
     public static Dictionary<string, List<string>> TilesBySection(Station st)
     {
@@ -381,6 +511,64 @@ public static class Core
     /// <summary>Группа стрелки: спаренные (одинаковый «съезд») переводятся вместе.</summary>
     public static string SwitchGroup(string key, Tile t) => !string.IsNullOrEmpty(t.Group) ? "g:" + t.Group : "k:" + key;
 
+    // ---- [ДОБАВЛЕНО 12.11.2026] перекрёстный съезд ----
+    // Четыре стрелки квадратом 2×2, минусы которых идут друг к другу крест-накрест, — один перекрёстный съезд из двух
+    // диагоналей: (x,y)↘(x+1,y+1) и (x+1,y)↙(x,y+1). Каждая диагональ — спаренная пара (съезд «16/20»), а в минусе может
+    // быть только одна из двух: диагонали пересекаются в середине (глухое пересечение). В РУ-30-80 (содержание, стр. 2–5)
+    // отдельного листа нет — это не сигнализация, а взаимозависимость стрелок.
+
+    /// <summary>Перекрёстные съезды схемы: A и B — клетки двух диагоналей (по две стрелки).</summary>
+    public static List<(string[] A, string[] B)> Scissors(Station st)
+    {
+        var res = new List<(string[], string[])>();
+        bool M(string k, string minus) => st.Tiles.TryGetValue(k, out var t) && t.T == "switch" && !IsSymSwitch(t) && VariantOf(t).Minus == minus;
+        foreach (var k in st.Tiles.Keys)
+        {
+            if (!M(k, "SE")) continue;
+            var (x, y) = Parse(k);
+            string k11 = Key(x + 1, y + 1), k10 = Key(x + 1, y), k01 = Key(x, y + 1);
+            if (M(k11, "NW") && M(k10, "SW") && M(k01, "NE")) res.Add((new[] { k, k11 }, new[] { k10, k01 }));
+        }
+        return res;
+    }
+
+    /// <summary>Имя диагонали: номера двух её стрелок через «/» по возрастанию (16/20); нет номера — по клетке.</summary>
+    static string ScissorsName(Station st, string[] keys)
+    {
+        var names = keys.Select(k => st.Tiles[k].Name?.Trim()).ToList();
+        if (names.Any(string.IsNullOrEmpty)) return "съезд " + keys[0];
+        return string.Join("/", names.OrderBy(n => n, NaturalComparer.Instance));
+    }
+
+    /// <summary>Спарить стрелки каждой диагонали перекрёстного съезда (поле «Съезд» = «16/20»). Вызывается при открытии
+    /// файла и после каждой правки — переименовали стрелку, имя съезда поменяется само. true — что-то поменялось.</summary>
+    public static bool AssignScissors(Station st)
+    {
+        bool changed = false;
+        foreach (var (a, b) in Scissors(st))
+            foreach (var keys in new[] { a, b })
+            {
+                var name = ScissorsName(st, keys);
+                foreach (var k in keys)
+                    if (st.Tiles[k].Group != name) { st.Tiles[k].Group = name; changed = true; }
+            }
+        return changed;
+    }
+
+    /// <summary>Группа стрелки → группа второй диагонали того же перекрёстного съезда (в обе стороны).</summary>
+    public static Dictionary<string, string> ScissorsRivals(Station st)
+    {
+        var res = new Dictionary<string, string>();
+        foreach (var (a, b) in Scissors(st))
+        {
+            string ga = SwitchGroup(a[0], st.Tiles[a[0]]), gb = SwitchGroup(b[0], st.Tiles[b[0]]);
+            if (ga == gb) continue;
+            res[ga] = gb;
+            res[gb] = ga;
+        }
+        return res;
+    }
+
     public static List<SignalEntry> AllSignals(Station st)
     {
         var res = new List<SignalEntry>();
@@ -392,29 +580,78 @@ public static class Core
         return res;
     }
 
-    /// <summary>Имя для нового светофора: Ч / Н, Ч1… / Н1…, маршрутные ЧМ1 / НМ1…, маневровые М2, М4… (→) и М1, М3… (←),
-    /// проходные 1, 2…, заградительные З1…, прикрытия Пр1…; предупредительный и повторительный — «П» / «Пв» + имя
-    /// светофора впереди (mainAhead), если он есть.</summary>
-    public static string SuggestSignalName(Station st, string kind, string dir, string mainAhead = null)
+    // «…СП» — стрелочный участок, не путь
+    /// <summary>[ДОБАВЛЕНО 09.11.2026] Следующий свободный id светофора (автоинкремент: наибольший на схеме + 1).</summary>
+    public static int NextSignalId(Station st)
     {
-        var used = new HashSet<string>(AllSignals(st).Select(s => s.Sig.Name));
-        string letter = dir == "R" ? "Ч" : "Н";
-        if (kind == "entry" && !used.Contains(letter)) return letter;
-        if (kind == "warning" && !string.IsNullOrEmpty(mainAhead) && !used.Contains("П" + mainAhead)) return "П" + mainAhead;
-        if (kind == "repeater" && !string.IsNullOrEmpty(mainAhead) && !used.Contains("Пв" + mainAhead)) return "Пв" + mainAhead;
-        string prefix = "";
-        int n = 1, step = 1;
-        if (kind == "entry" || kind == "exit") prefix = letter;
-        else if (kind == "route") prefix = letter + "М";
-        else if (kind == "shunt") { prefix = "М"; n = dir == "R" ? 2 : 1; step = 2; }
-        else if (kind == "block") { n = dir == "R" ? 2 : 1; step = 2; }
-        else if (kind == "warning") prefix = "П";
-        else if (kind == "repeater") prefix = "Пв";
-        else if (kind == "barrier") prefix = "З";
-        else if (kind == "cover") prefix = "Пр";
-        else prefix = "С";
-        while (used.Contains(prefix + n)) n += step;
-        return prefix + n;
+        int max = 0;
+        foreach (var s in AllSignals(st)) max = Math.Max(max, s.Sig.Id);
+        return max + 1;
+    }
+
+    /// <summary>Выдать id светофорам без номера (0) и повторам: по порядку клеток, номера продолжают наибольший.</summary>
+    public static void AssignSignalIds(Station st)
+    {
+        var all = AllSignals(st).OrderBy(s => s.Key, NaturalComparer.Instance).ThenBy(s => s.Idx).ToList();
+        var seen = new HashSet<int>();
+        int next = all.Select(s => s.Sig.Id).DefaultIfEmpty(0).Max() + 1;
+        foreach (var s in all)
+            if (s.Sig.Id <= 0 || !seen.Add(s.Sig.Id)) { s.Sig.Id = next++; seen.Add(s.Sig.Id); }
+    }
+
+    // «…СП» — стрелочный участок, не путь. [ИЗМЕНЕНО 10.11.2026] «П» в конце необязательна: участок «3» — путь 3
+    static readonly Regex ReTrackNo = new(@"^((?:[IVX]+)|\d+)([А-ЯA-Z-[СП]]?)П?$", RegexOptions.Compiled);
+
+    /// <summary>Номер пути из названия участка: «3П» и «3» → «3», «IIП» и «II» → «II», «2АП» → «2А»; не путь — null.</summary>
+    public static string TrackNo(string sec)
+    {
+        var m = ReTrackNo.Match((sec ?? "").Trim().ToUpperInvariant());
+        return m.Success ? m.Groups[1].Value + m.Groups[2].Value : null;
+    }
+
+    // [10.11.2026] имя нового светофора — в Model/Naming.cs (Naming.ForNew)
+
+    /// <summary>[ДОБАВЛЕНО 11.11.2026] Где подписать пути разрывом «→ 3П ←» (РУ-30-80, стр. 89–90): для каждого участка типа «путь» —
+    /// самый длинный горизонтальный прямой кусок, не занятый огнями светофоров (при равной длине — ближе к середине участка).
+    /// Клетки X0..X1 в ряду Y; поместится ли надпись — решает тот, кто рисует. Общее для редактора и «Станции по схеме».
+    /// [ИЗМЕНЕНО 11.11.2026] мачта светофора стоит на торце своей клетки, а огни уходят в соседнюю клетку по ходу
+    /// («Ч» — влево, «Н» — вправо): занятой считаем соседнюю клетку, а клетку со светофором — свободной.
+    /// Так у короткого пути «Ч5 ⊣ 5П ⊢ Н5» (3 клетки) надпись встаёт между мачтами, а не под огнями.</summary>
+    public static List<(string Sec, int Y, int X0, int X1)> TrackGapRuns(Station st)
+    {
+        var res = new List<(string, int, int, int)>();
+        if (st.TrackGaps == false) return res;
+        var lamps = new HashSet<(int X, int Y)>();
+        foreach (var (k, t) in st.Tiles)
+        {
+            if (!t.HasSigs) continue;
+            var (x, y) = Parse(k);
+            foreach (var s in t.Sigs) lamps.Add((s.Dir == "R" ? x + 1 : x - 1, y));
+        }
+        foreach (var (sec, keys) in TilesBySection(st))
+        {
+            if (SecType(st, sec) != "path") continue;
+            var cells = keys.Where(k => st.Tiles[k].T == "straight" && st.Tiles[k].V == 0).Select(Parse)
+                .Where(c => !lamps.Contains((c.X, c.Y))).ToList();
+            if (cells.Count == 0) continue;
+            double mid = keys.Select(k => Parse(k).X).Average();
+            int bY = 0, b0 = 0, b1 = -1;
+            foreach (var row in cells.GroupBy(c => c.Y))
+            {
+                var xs = row.Select(c => c.X).OrderBy(v => v).ToList();
+                int s0 = xs[0];
+                for (int i = 1; i <= xs.Count; i++)
+                {
+                    if (i < xs.Count && xs[i] == xs[i - 1] + 1) continue;
+                    int e0 = xs[i - 1], len = e0 - s0, bLen = b1 - b0;
+                    if (len > bLen || len == bLen && Math.Abs((s0 + e0) / 2.0 - mid) < Math.Abs((b0 + b1) / 2.0 - mid))
+                        (bY, b0, b1) = (row.Key, s0, e0);
+                    if (i < xs.Count) s0 = xs[i];
+                }
+            }
+            if (b1 >= b0) res.Add((sec, bY, b0, b1));
+        }
+        return res;
     }
 }
 

@@ -32,7 +32,7 @@ public sealed partial class MainForm : Form
     // ---------------- элементы окна ----------------
     ToolStrip top;
     ToolStripTextBox tbName;
-    ToolStripButton bUndo, bRedo, bEdit, bTest, vGrid, vColors, vNames;
+    ToolStripButton bUndo, bRedo, bEdit, bTest, vGrid, vColors, vNames, vGost;
     ToolStripComboBox cbExample;
     Panel left;
     FlowLayoutPanel palettePanel, optsPanel;
@@ -86,6 +86,23 @@ public sealed partial class MainForm : Form
         Btn("Открыть…", "Открыть файл .station.json (Ctrl+O)", OpenCmd);
         Btn("Сохранить", "Сохранить в файл .station.json (Ctrl+S)", () => SaveFile(false));
         Btn("Сохранить как…", "Сохранить в другой файл (Ctrl+Shift+S)", () => SaveFile(true));
+        // [ДОБАВЛЕНО 12.11.2026] экспорт .station.json для «Станции по схеме»: вся станция или только выделенные клетки
+        var bJson = new ToolStripDropDownButton("Экспорт JSON") { DisplayStyle = ToolStripItemDisplayStyle.Text,
+            ToolTipText = "Файл .station.json для «Станции по схеме»: вся станция или только выделенные клетки.\n" +
+                          "Текущий файл схемы не меняется" };
+        var miAll = new ToolStripMenuItem("Вся станция…");
+        var miSel = new ToolStripMenuItem("Выделенные клетки…");
+        miAll.Click += (_, _) => { CommitFocusedField(); ExportJsonCmd(false); };
+        miSel.Click += (_, _) => { CommitFocusedField(); ExportJsonCmd(true); };
+        bJson.DropDownItems.Add(miAll);
+        bJson.DropDownItems.Add(miSel);
+        bJson.DropDownOpening += (_, _) =>
+        {
+            int n = ui.Sel.Count(st.Tiles.ContainsKey);
+            miSel.Enabled = n > 0;
+            miSel.Text = n > 0 ? $"Выделенные клетки ({n})…" : "Выделенные клетки… (сначала выделите рамкой)";
+        };
+        top.Items.Add(bJson);
         cbExample = new ToolStripComboBox { DropDownStyle = ComboBoxStyle.DropDownList, AutoSize = false, Width = S(150), ToolTipText = "Загрузить готовый пример" };
         cbExample.Items.Add("Пример…");
         foreach (var ex in Examples.All) cbExample.Items.Add(ex.Name);
@@ -99,6 +116,7 @@ public sealed partial class MainForm : Form
         };
         top.Items.Add(cbExample);
         Btn("Экспорт в C#", "Черновик C#-кода схемы для программы станции", ExportCmd);
+        Btn("Обозначения…", "Как называются светофоры: буква для →, шаблоны имён по видам, вид по участку; перенумеровать все", NamingCmd);
         Btn("Нумерация", "Перенумеровать пути и стрелки по правилам (ВСН 56-78, РУ-30-80)", RenumberCmd);   // [ДОБАВЛЕНО 11.11.2026]
         top.Items.Add(new ToolStripSeparator());
         bUndo = Btn("↶", "Отменить (Ctrl+Z)", Undo);
@@ -111,7 +129,25 @@ public sealed partial class MainForm : Form
         top.Items.Add(new ToolStripSeparator());
         vGrid = Toggle("Сетка", "Показать / скрыть сетку", v => ui.ShowGrid = v);
         vColors = Toggle("Цвета", "Показать / скрыть цвета участков", v => ui.ShowSecColors = v);
-        vNames = Toggle("Названия", "Показать / скрыть названия участков", v => ui.ShowSecNames = v);
+        // [ИЗМЕНЕНО 11.11.2026] подписи участков и путей — настройка станции (Station.SecLabels, сохраняется в файле),
+        // по умолчанию выключены; та же галочка — в «Свойствах», когда ничего не выбрано
+        vNames = new ToolStripButton("Названия") { CheckOnClick = true, Checked = false, DisplayStyle = ToolStripItemDisplayStyle.Text,
+            ToolTipText = "Подписи участков и путей (1П, 3П, 1СП…) — авто-текст под путями. Сохраняется в файле станции" };
+        vNames.CheckedChanged += (_, _) =>
+        {
+            if (syncingNames || st == null || (st.SecLabels == true) == vNames.Checked) return;
+            bool v = vNames.Checked;
+            Edit(() => st.SecLabels = v ? true : null);
+        };
+        top.Items.Add(vNames);
+        // [ДОБАВЛЕНО 09.11.2026] огни светофоров: в цвете или графическими знаками ГОСТ 2.749-84 (табл. 6)
+        var vGost = new ToolStripButton("Огни по ГОСТ") { CheckOnClick = true, Checked = false, DisplayStyle = ToolStripItemDisplayStyle.Text,
+            ToolTipText = "Огни светофоров: в цвете / графическими знаками ГОСТ 2.749-84 (G)\n" +
+                          "красный — залитый круг, зелёный — пустой, жёлтый — заштрихованный,\n" +
+                          "лунно-белый — круг в круге, синий — точка в круге, мигающий — четыре луча" };
+        vGost.CheckedChanged += (_, _) => { Renderer.GostLamps = vGost.Checked; Draw(); };
+        top.Items.Add(vGost);
+        this.vGost = vGost;
         var help = Btn("Справка", "Справка и горячие клавиши (F1)", ShowHelp);
         help.Alignment = ToolStripItemAlignment.Right;
 
@@ -233,7 +269,8 @@ public sealed partial class MainForm : Form
         {
             try
             {
-                LoadStation(StationFile.Load(startFile), true);
+                var sf = StationFile.Load(startFile);
+                LoadStation(sf, true);
                 currentFile = Path.GetFullPath(startFile);
                 opened = true;
                 Msg("Открыт файл " + Path.GetFileName(startFile));
@@ -314,8 +351,23 @@ public sealed partial class MainForm : Form
         Draw();
     }
 
+    // [ДОБАВЛЕНО 11.11.2026] кнопка «Названия» показывает настройку станции SecLabels (без записи в историю правок)
+    bool syncingNames;
+    void SyncSecLabels()
+    {
+        if (vNames == null || st == null || vNames.Checked == (st.SecLabels == true)) return;
+        syncingNames = true;
+        try { vNames.Checked = st.SecLabels == true; }
+        finally { syncingNames = false; }
+    }
+
     void Changed(bool rebuildTab = true)
     {
+        SyncSecLabels();
+        // [ДОБАВЛЕНО 10.11.2026] «собранные» имена следят за названием пути, шаблоном и цифрой «№»
+        if (Naming.RebuildAll(st) > 0) rebuildTab = true;
+        Core.AssignBrakes(st, fixRepeats: false);    // [ДОБАВЛЕНО 12.11.2026] новые тормозные позиции — следующий id
+        if (Core.AssignScissors(st)) rebuildTab = true;   // [ДОБАВЛЕНО 12.11.2026] перекрёстный съезд — две диагонали
         routesCache = null;
         ui.Preview = null;
         dirty = true;
@@ -344,12 +396,14 @@ public sealed partial class MainForm : Form
         ui.Sel.Clear();
         ui.SelSig = null;
         ui.SelObj = null;
+        ui.SelLabel = null;
         ui.ObjMove = null;
         ui.FlashSec = null;
         ui.Preview = null;
         routesCache = null;
         gestureSnap = null;
         tbName.Text = st.Name;
+        SyncSecLabels();    // [11.11.2026]
         RefreshPanels();
         RefreshToolOpts();
         if (fit) FitView(); else Draw();
@@ -496,6 +550,47 @@ public sealed partial class MainForm : Form
         Msg($"Загружен пример «{ex.Name}»");
     }
 
+    /// <summary>[ДОБАВЛЕНО 12.11.2026] «Экспорт JSON»: записать .station.json для «Станции по схеме» — всю станцию
+    /// или только выделенные клетки (StationFile.Fragment). Открытый файл схемы и «несохранённые изменения» не трогаются.</summary>
+    void ExportJsonCmd(bool selOnly)
+    {
+        if (ui.IsTest) SetMode("edit");     // положения стрелок после испытания в файл не идут
+        Station s;
+        if (selOnly)
+        {
+            int n = ui.Sel.Count(st.Tiles.ContainsKey);
+            if (n == 0)
+            {
+                Msg("Нечего выгружать: выделите клетки пути — рамкой (тяните по пустому месту) или Shift+щелчок", true);
+                return;
+            }
+            s = StationFile.Fragment(st, ui.Sel);
+        }
+        else s = StationFile.Clone(st);
+
+        using var dlg = new SaveFileDialog
+        {
+            Title = selOnly ? "Экспорт выделенных клеток в JSON" : "Экспорт всей станции в JSON",
+            Filter = StationFile.DialogFilter,
+            FileName = SafeName(s.Name) + ".station.json",
+            InitialDirectory = currentFile != null ? Path.GetDirectoryName(currentFile) : StationsDir(),
+            DefaultExt = "json", AddExtension = true, OverwritePrompt = true,
+        };
+        if (dlg.ShowDialog(this) != DialogResult.OK) return;
+        if (currentFile != null && string.Equals(Path.GetFullPath(dlg.FileName), Path.GetFullPath(currentFile), StringComparison.OrdinalIgnoreCase)
+            && selOnly && !Confirm("Это файл открытой схемы — в нём останется только выделенная часть. Записать?"))
+            return;
+        try { StationFile.Save(s, dlg.FileName); }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, "Не удалось записать файл:\n" + ex.Message, "Редактор станций", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return;
+        }
+        Msg(selOnly
+            ? $"Выгружено кубиков: {s.Tiles.Count} из {st.Tiles.Count} → {dlg.FileName}. Откройте его в «Станции по схеме» кнопкой «Схема…»"
+            : $"Станция выгружена → {dlg.FileName}");
+    }
+
     void ExportCmd()
     {
         var code = CsExport.Export(st, Routes);
@@ -507,6 +602,42 @@ public sealed partial class MainForm : Form
     {
         using var f = new HelpForm();
         f.ShowDialog(this);
+    }
+
+    /// <summary>[ДОБАВЛЕНО 10.11.2026] Окно «Обозначения…»: буква для →, шаблоны имён, вид по участку, «Перенумеровать все».</summary>
+    void NamingCmd()
+    {
+        CommitFocusedField();
+        if (ui.IsTest) SetMode("edit");
+        using var f = new NamingForm(st, RenumberPreview);
+        if (f.ShowDialog(this) != DialogResult.OK) return;
+        Edit(() =>
+        {
+            st.Even = f.RightOdd ? "L" : "R";    // [11.11.2026] одна настройка направления (→ нечётное = чётные идут ←)
+            st.Naming = f.Result;
+            if (f.RenumberAll) Naming.Apply(st);
+        });
+        RefreshToolOpts();
+        Msg(f.RenumberAll ? "Обозначения сохранены, светофоры перенумерованы" : "Обозначения сохранены — новые светофоры получат имена по ним");
+    }
+
+    /// <summary>Спросить «Перенумеровать все?» со списком изменений (по настройкам из окна). true — да.</summary>
+    bool RenumberPreview(Station draft)
+    {
+        var ch = Naming.Preview(draft);
+        if (ch.Count == 0)
+        {
+            MessageBox.Show(this, "Все имена уже такие, как по правилам (или закреплены «имя вручную»).", "Перенумеровать",
+                MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return false;
+        }
+        const int max = 25;
+        var lines = string.Join("\n", ch.Take(max).Select(c =>
+            $"    {(string.IsNullOrEmpty(c.Old) ? "?" : c.Old)}  →  {c.New}   (клетка {c.Key})"));
+        if (ch.Count > max) lines += $"\n    …и ещё {ch.Count - max}";
+        return MessageBox.Show(this, "Перенумеровать светофоры по правилам? Закреплённые («имя вручную») не меняются.\n\n" + lines +
+                                     "\n\nОтменить потом можно кнопкой «↶ Отменить».", "Перенумеровать",
+                   MessageBoxButtons.OKCancel, MessageBoxIcon.Question) == DialogResult.OK;
     }
 
     bool Confirm(string text) =>
@@ -575,9 +706,10 @@ public sealed partial class MainForm : Form
                 return true;
             case Keys.F: FitView(); return true;
             case Keys.M: SetMode(ui.IsTest ? "edit" : "test"); return true;
+            case Keys.G: vGost.Checked = !vGost.Checked; return true;    // [ДОБАВЛЕНО 09.11.2026] огни: цвет / ГОСТ
             case Keys.Escape:
                 if (ui.IsTest) { ui.Test.Pending = null; Msg("Набор маршрута отменён"); Draw(); return true; }
-                ui.Sel.Clear(); ui.SelSig = null; ui.SelObj = null; ui.FlashSec = null;
+                ui.Sel.Clear(); ui.SelSig = null; ui.SelObj = null; ui.SelLabel = null; ui.FlashSec = null;
                 SetTool("select");
                 RefreshPanels();
                 return true;
@@ -585,6 +717,18 @@ public sealed partial class MainForm : Form
         if (ui.IsTest) return base.ProcessCmdKey(ref m, keyData);
 
         if ((key == Keys.Delete || key == Keys.Back) && !inList) { DeleteSelection(); return true; }
+        if (!inList && ui.SelLabel is int sl && sl < st.Labels.Count)    // [ДОБАВЛЕНО 10.11.2026] свободный текст: чуть-чуть, Shift — на клетку
+        {
+            double d = shift ? 1 : 0.1;
+            switch (key)
+            {
+                case Keys.Left: MoveLabel(-d, 0); return true;
+                case Keys.Right: MoveLabel(d, 0); return true;
+                case Keys.Up: MoveLabel(0, -d); return true;
+                case Keys.Down: MoveLabel(0, d); return true;
+                case Keys.Enter: EditLabel(sl); return true;
+            }
+        }
         if (!inList && ui.SelObj != null)
         {
             switch (key)
@@ -612,7 +756,10 @@ public sealed partial class MainForm : Form
             case Keys.B: SetTool("brush"); return true;
             case Keys.S: SetTool("signal"); return true;
             case Keys.T: SetTool("text"); return true;
+            case Keys.L: SetTool("label"); return true;    // [ДОБАВЛЕНО 10.11.2026] свободный текст
             case Keys.R: RotateSelected(shift ? -1 : 1); return true;
+            case Keys.K: ui.PlaceType = "brake"; SetTool("place"); return true;    // [ДОБАВЛЕНО 12.11.2026] тормозная позиция
+            case Keys.Y: ui.PlaceType = "symswitch"; SetTool("place"); return true;    // [ДОБАВЛЕНО 12.11.2026] симметричная стрелка
         }
         int digit = key >= Keys.D0 && key <= Keys.D9 ? key - Keys.D0 : key >= Keys.NumPad0 && key <= Keys.NumPad9 ? key - Keys.NumPad0 : -1;
         if (digit >= 0)

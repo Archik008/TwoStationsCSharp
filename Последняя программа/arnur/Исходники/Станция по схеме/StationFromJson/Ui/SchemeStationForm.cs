@@ -19,6 +19,11 @@ class SchemeStationForm : StationForm
         var b = AddTopButton("Схема…", OpenOther);
         b.BackColor = Color.FromArgb(60, 110, 160);
         new ToolTip().SetToolTip(b, "Открыть другую станцию: файл .station.json из редактора станций");
+        // [ДОБАВЛЕНО 13.11.2026] свои маршруты (n1 → n2), автомаршруты, светофоры, стрелки, времена — файл рядом со схемой
+        var bs = AddTopButton("Настройка…", OpenSettings);
+        bs.BackColor = Color.FromArgb(60, 110, 160);
+        new ToolTip().SetToolTip(bs, "Свои маршруты (клик n1 → n2: какие участки жёлтым, какие стрелки, какие показания), " +
+                                     "автомаршруты вкл / выкл, имена и виды светофоров, стрелки, времена");
 
         AddLog(L.F("Станция «{0}» открыта из файла {1}", lay.Name, Path.GetFileName(ModelHost.Model.FilePath)), LogKind.Info);
         AddLog(L.F("Участков: {0}, стрелок: {1}, светофоров: {2}, маршрутов: поездных {3}, маневровых {4}",
@@ -27,10 +32,25 @@ class SchemeStationForm : StationForm
         AddLog("Макет Arduino и связь с соседними станциями для схем из файла пока не подключаются — всё работает на экране.", LogKind.Aux);
     }
 
+    SchemeSettingsForm settings;
+
+    void OpenSettings()
+    {
+        if (settings is { IsDisposed: false }) { settings.Activate(); return; }
+        settings = new SchemeSettingsForm(this, Restart);
+        settings.Show(this);
+    }
+
     void OpenOther()
     {
         var path = Program.AskFile(this);
         if (path == null) return;
+        Restart(path);
+    }
+
+    /// <summary>Открыть схему заново (другую или эту же после настройки) — новым запуском программы.</summary>
+    void Restart(string path)
+    {
         Program.SaveLast(path);
         try
         {

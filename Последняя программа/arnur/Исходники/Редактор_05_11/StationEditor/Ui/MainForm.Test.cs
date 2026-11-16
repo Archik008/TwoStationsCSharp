@@ -67,12 +67,13 @@ public sealed partial class MainForm
         if (m == "test")
         {
             ui.Sel.Clear(); ui.SelSig = null; ui.Ghost = null; ui.Band = null; ui.FlashSec = null; ui.Preview = null;
-            ui.SelObj = null; ui.ObjMove = null;
+            ui.SelObj = null; ui.ObjMove = null; ui.SelLabel = null;
             ui.Moving = null; drag = null;
             T.SavedPlus = new Dictionary<string, bool?>();
             foreach (var (k, t) in st.Tiles) if (t.T == "switch") T.SavedPlus[k] = t.Plus;
             T.Occ = new HashSet<string>(); T.Set = new List<Route>(); T.Pending = null;
             T.BarrierOn = new HashSet<string>(); T.CoverOpen = new HashSet<string>();
+            T.HumpMode = new Dictionary<string, int>();
             T.Drive.Reset();
             ui.Mode = m;
             RecomputeTest();
@@ -123,7 +124,7 @@ public sealed partial class MainForm
         }
         T.Aspects = Aspects.Compute(st, new TestInputs
         {
-            Occ = T.Occ, OpenRoutes = T.OpenRoutes, NoControl = T.NoControl, BarrierOn = T.BarrierOn, CoverOpen = T.CoverOpen,
+            Occ = T.Occ, OpenRoutes = T.OpenRoutes, NoControl = T.NoControl, BarrierOn = T.BarrierOn, CoverOpen = T.CoverOpen, HumpMode = T.HumpMode,
         });
     }
 
@@ -132,6 +133,26 @@ public sealed partial class MainForm
         st.Tiles.Where(p => p.Value.T == "switch" && Core.SwitchGroup(p.Key, p.Value) == group).Select(p => p.Key).ToList();
 
     static string SwName(Tile t) => !string.IsNullOrEmpty(t.Group) ? t.Group : !string.IsNullOrEmpty(t.Name) ? t.Name : "?";
+
+    /// <summary>[ДОБАВЛЕНО 12.11.2026] Перекрёстный съезд: диагональ group идёт в минус — вторая диагональ должна стоять в плюсе.
+    /// null — можно (back — вторую диагональ сначала вернуть в плюс, или null, если она уже в плюсе), иначе причина отказа.</summary>
+    string ScissorsBlock(string group, out (string G, List<string> Keys, string Name, bool Plus)? back)
+    {
+        back = null;
+        var T = ui.Test;
+        if (!Core.ScissorsRivals(st).TryGetValue(group, out var rg)) return null;
+        var rkeys = GroupKeys(rg);
+        if (rkeys.Count == 0) return null;
+        var rt = st.Tiles[rkeys[0]];
+        var rn = SwName(rt);
+        if (T.Drive.Moving(rg)) return $"вторая диагональ перекрёстного съезда {rn} ещё переводится";
+        if (rt.IsPlus && !rkeys.Any(T.Drive.Lost.Contains)) return null;
+        if (rkeys.Any(T.RouteTiles.Contains)) return $"вторая диагональ перекрёстного съезда {rn} в минусе и замкнута в маршруте";
+        if (rkeys.Any(x => !string.IsNullOrEmpty(st.Tiles[x].Sec) && T.Occ.Contains(st.Tiles[x].Sec)))
+            return $"вторая диагональ перекрёстного съезда {rn} в минусе и занята — под составом не переводится";
+        back = (rg, rkeys, rn, rt.IsPlus);
+        return null;
+    }
 
     bool SetRoute(Route r, bool quiet = false)
     {
@@ -153,13 +174,27 @@ public sealed partial class MainForm
             if (!quiet) Msg($"Маршрут {r.Name} не задан: стрелка {moving.Name} ещё переводится", true);
             return false;
         }
+        // [ДОБАВЛЕНО 12.11.2026] перекрёстный съезд: вторая диагональ — в плюс (или отказ, если её держит маршрут)
+        var backs = new List<(string G, List<string> Keys, string Name, bool Plus)>();
+        foreach (var x in r.Switches.Where(x => !x.Plus))
+        {
+            var why = ScissorsBlock(x.Group, out var back);
+            if (why != null)
+            {
+                if (!quiet) Msg($"Маршрут {r.Name} не задан: {why}", true);
+                return false;
+            }
+            if (back is { } b && !backs.Any(q => q.G == b.G)) backs.Add(b);
+        }
         // стрелки, которые стоят не так или без контроля, переводятся приводом по очереди
         int n = 0;
+        foreach (var b in backs) { T.Drive.Enqueue(b.G, b.Keys, b.Name, true, b.Plus); n++; }
         foreach (var x in r.Switches)
         {
             var t0 = st.Tiles[x.Keys[0]];
             bool lost = x.Keys.Any(T.Drive.Lost.Contains);
             if (t0.IsPlus == x.Plus && !lost) continue;
+            if (x.Plus && backs.Any(b => b.G == x.Group)) continue;    // уже переводится в плюс как вторая диагональ
             T.Drive.Enqueue(x.Group, x.Keys, x.Name, x.Plus, t0.IsPlus);
             n++;
         }
@@ -187,7 +222,10 @@ public sealed partial class MainForm
             var id = s.Key + "#" + s.Idx;
             var name = sig.Name;
             var set = T.Set.FirstOrDefault(r => r.Start == s);
-            if (sig.Kind == "barrier")
+            if (sig.IsReadOnly)    // [ДОБАВЛЕНО 09.11.2026]
+                Msg($"{Core.SigKindName(sig.Kind)} {name} — только чтение: его открывает другая станция (id {sig.Id}). " +
+                    "Без связи с ней он погашен.", true);
+            else if (sig.Kind == "barrier")
             {
                 // заградительный включает и выключает дежурный (или его включает занятый переезд впереди)
                 if (!T.BarrierOn.Remove(id)) T.BarrierOn.Add(id);
@@ -200,6 +238,7 @@ public sealed partial class MainForm
                 RecomputeTest();
                 Msg($"Светофор прикрытия {name}: {T.Aspects[id].Text}", T.CoverOpen.Contains(id) && !T.Aspects[id].Permissive);
             }
+            else if (sig.Kind == "hump" && T.Pending == null) HumpMenu(s, id, name, set);    // [ДОБАВЛЕНО 13.11.2026]
             else if (set != null) CancelRoute(set);
             else if (T.Pending == s) { T.Pending = null; Msg("Набор маршрута отменён"); }
             else if (!Routes.Any(r => r.Start == s))
@@ -229,6 +268,44 @@ public sealed partial class MainForm
         Draw();
     }
 
+    /// <summary>[ДОБАВЛЕНО 13.11.2026] Горочный светофор в «Испытании»: меню оператора горки — стоп, роспуск медленно /
+    /// нормально / быстро, осаживание назад, маневры (лунно-белый; или маневровый маршрут от Г на путь сортировочного парка).
+    /// РУ-30-80 листы 45–47 (стр. 53–55), caredenis.ru урок 14.</summary>
+    void HumpMenu(SigRef s, string id, string name, Route set)
+    {
+        var T = ui.Test;
+        var m = new ContextMenuStrip();
+        m.Items.Add(new ToolStripLabel($"Горочный {name}") { Font = new Font(Font, FontStyle.Bold) });
+        int cur = T.HumpMode.TryGetValue(id, out var ci) ? ci : 0;
+        for (int i = 0; i < Aspects.HumpModes.Length; i++)
+        {
+            int mi = i;
+            var it = new ToolStripMenuItem(Aspects.HumpModes[i].Text) { Checked = set == null && cur == i };
+            it.Click += (_, _) => SetHumpMode(id, name, mi);
+            m.Items.Add(it);
+        }
+        m.Items.Add(new ToolStripSeparator());
+        if (set != null)
+            m.Items.Add($"Отменить маршрут {set.Name}", null, (_, _) => { CancelRoute(set); RefreshPanels(); Draw(); });
+        else if (Routes.Any(r => r.Start == s))
+            m.Items.Add("Маневровый маршрут от него… (щёлкните путь назначения)", null, (_, _) =>
+            {
+                T.Pending = s;
+                Msg($"Начало маршрута — {name}. Щёлкните по пути назначения");
+                Draw();
+            });
+        m.Show(Cursor.Position);
+    }
+
+    void SetHumpMode(string id, string name, int mode)
+    {
+        ui.Test.HumpMode[id] = mode;
+        RecomputeTest();
+        Msg($"Горочный {name}: {ui.Test.Aspects[id].Text}");
+        RefreshPanels();
+        Draw();
+    }
+
     void ToggleSwitch(string k)
     {
         var T = ui.Test;
@@ -243,9 +320,21 @@ public sealed partial class MainForm
         // без контроля — возвращаем в прежнее положение (туда препятствие не мешает), иначе — в другое
         bool lost = keys.Any(T.Drive.Lost.Contains);
         bool toPlus = lost ? t.IsPlus : !t.IsPlus;
+        // [ДОБАВЛЕНО 12.11.2026] перекрёстный съезд: в минус — только когда вторая диагональ в плюсе; стоит в минусе — сначала её в плюс
+        string first = "";
+        if (!toPlus)
+        {
+            var why = ScissorsBlock(g, out var back);
+            if (why != null) { Msg($"Стрелка {nm} не переводится в минус: {why}", true); return; }
+            if (back is { } b)
+            {
+                T.Drive.Enqueue(b.G, b.Keys, b.Name, true, b.Plus);
+                first = $"сначала {b.Name} в плюс (перекрёстный съезд), затем ";
+            }
+        }
         T.Drive.Enqueue(g, keys, nm, toPlus, t.IsPlus);
         RecomputeTest();
-        Msg($"Стрелка {nm} переводится в {(toPlus ? "плюс" : "минус")}" +
+        Msg($"Стрелка {nm} переводится{(first.Length > 0 ? ": " + first : " ")}в {(toPlus ? "плюс" : "минус")}" +
             (T.Drive.Jammed.Contains(g) && toPlus != t.IsPlus ? " — на пути остряка препятствие!" : ""));
     }
 
@@ -282,6 +371,7 @@ public sealed partial class MainForm
         T.Pending = null;
         T.BarrierOn = new HashSet<string>();
         T.CoverOpen = new HashSet<string>();
+        T.HumpMode = new Dictionary<string, int>();
         T.Drive.Queue.Clear();
         RecomputeTest();
         RefreshPanels();

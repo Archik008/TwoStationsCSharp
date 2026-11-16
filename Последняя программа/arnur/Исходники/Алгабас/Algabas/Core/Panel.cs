@@ -230,6 +230,8 @@ public partial class Interlocking
         if (sw.Clamp.Length > 0) { Say($"Стрелка {sw.Label} заперта — перевод курбелем невозможен", LogKind.Refuse); return false; }
         if (sw.Sections.Any(s => s.TrainCount > 0)) { Say($"ОТКАЗ: на стрелке {sw.Label} подвижной состав", LogKind.Refuse); return false; }
         if (sw.Plus == plus) { Say($"Стрелка {sw.Label} и так стоит в {(plus ? "плюсе" : "минусе")}", LogKind.Refuse); return false; }
+        if (!plus && sw.Rival is { Plus: false } rv)     // [ДОБАВЛЕНО 12.11.2026] перекрёстный съезд
+        { Say($"Стрелка {sw.Label}: сначала переведите в плюс диагональ {rv.Label} перекрёстного съезда", LogKind.Refuse); return false; }
         Say($"Стрелка {sw.Label}: дано указание перевести курбелем в {(plus ? "плюс" : "минус")}", LogKind.Aux);
         Later(sw, CrankSeconds, () =>
         {

@@ -66,6 +66,7 @@ public static class RouteFinder
         foreach (var s in Core.AllSignals(st))
         {
             var modes = new List<bool>();
+            if (s.Sig.IsReadOnly) continue;    // [ДОБАВЛЕНО 09.11.2026] только чтение — открывает другая станция, маршрутов здесь нет
             if (Core.IsTrainStart(s.Sig.Kind)) modes.Add(false);
             if (Core.IsShuntStart(s.Sig.Kind)) modes.Add(true);
             foreach (var shunt in modes) Search(s, shunt);
@@ -167,6 +168,11 @@ public static class RouteFinder
         string dirWanted = r.Exit ? r.Dir : (r.Dir == "R" ? "L" : "R");
         // предупредительный, повторительный и заградительный концом маршрута не бывают
         var c = Core.AllSignals(st).Where(s => s.Tile.Sec == r.Dest && s.Sig.Dir == dirWanted &&
+                                               s.Sig.Kind is not ("warning" or "repeater" or "barrier" or "humprep")).ToList();
+        // [ДОБАВЛЕНО 13.11.2026] маневровый, встречного на пути назначения нет (путь надвига: ПГ и Г смотрят на горку) —
+        // концом считается ближайший светофор попутного направления на этом пути (ПГ1 у «М7 → СГП-2»)
+        if (c.Count == 0 && r.Shunt && !r.Exit)
+            c = Core.AllSignals(st).Where(s => s.Tile.Sec == r.Dest && s.Sig.Dir == r.Dir &&
                                                s.Sig.Kind is not ("warning" or "repeater" or "barrier")).ToList();
         if (c.Count == 0) return null;
         int sx = Core.Parse(r.Start.Key).X;
@@ -242,6 +248,18 @@ public static class Validator
         }
         foreach (var (n, ks) in names)
             if (ks.Count > 1) Add("err", $"Два светофора с названием «{n}»: {string.Join("; ", ks)}", ks[0]);
+        // [ДОБАВЛЕНО 09.11.2026] id — для связи станций, должен быть у каждого и не повторяться
+        foreach (var grp in sigs.GroupBy(s => s.Sig.Id))
+        {
+            var l = grp.ToList();
+            if (grp.Key <= 0) Add("err", $"Светофор {Nz(l[0].Sig.Name)} ({l[0].Key}) без id — задайте номер в свойствах", l[0].Key);
+            else if (l.Count > 1)
+                Add("err", $"id {grp.Key} у нескольких светофоров: {string.Join(", ", l.Select(s => Nz(s.Sig.Name)))} — другая станция их не различит", l[0].Key);
+        }
+        var ro = sigs.Where(s => s.Sig.IsReadOnly).ToList();
+        if (ro.Count > 0)
+            Add("info", "Только чтение (показание присылает другая станция): " +
+                string.Join(", ", ro.Select(s => $"{Nz(s.Sig.Name)} — id {s.Sig.Id}")));
 
         // участок, разорванный на куски
         foreach (var (sec, keys) in Core.TilesBySection(st))
@@ -276,10 +294,27 @@ public static class Validator
             Add("info", $"Найдено маршрутов: поездных {train}, маневровых {shunt}.");
             foreach (var s in sigs)
             {
-                if (!Core.IsTrainStart(s.Sig.Kind) && !Core.IsShuntStart(s.Sig.Kind)) continue;
+                if (!Core.IsTrainStart(s.Sig.Kind) && !Core.IsShuntStart(s.Sig.Kind) || s.Sig.IsReadOnly) continue;
                 if (!routes.Any(r => r.Start == s.Ref))
                     Add("warn", $"От светофора {Nz(s.Sig.Name)} не найдено ни одного маршрута — проверьте разрывы и типы участков впереди (есть ли «путь»)", s.Key);
             }
+
+            // [ДОБАВЛЕНО 09.11.2026] поездной маршрут прошёл мимо другого поездного светофора того же направления —
+            // значит, путь перед ним не распознан как «путь» (поездной маршрут кончается только на пути или на перегоне)
+            var passed = new HashSet<string>();
+            foreach (var r in routes.Where(r => !r.Shunt))
+                foreach (var k in r.Tiles)
+                {
+                    if (k == r.Start.Key || !st.Tiles.TryGetValue(k, out var t) || t.Sigs == null) continue;
+                    if (!r.Exit && t.Sec == r.Dest) continue;    // путь приёма: выходной в его конце — там поезд и остановится
+                    foreach (var o in t.Sigs)
+                    {
+                        if (o.Dir != r.Dir || !Core.IsTrainStart(o.Kind) || !passed.Add(r.StartName + "|" + k + "|" + o.Name)) continue;
+                        Add("warn", $"Поездной маршрут от {r.StartName} проходит мимо светофора {Nz(o.Name)} " +
+                                    $"({Core.SigKindName(o.Kind)?.ToLowerInvariant()}) и идёт дальше: у участка «{Nz(t.Sec)}» не тип «путь»? " +
+                                    "Задайте тип на вкладке «Участки» или назовите участок как путь (3П, IIП)", k);
+                    }
+                }
         }
 
         // [ДОБАВЛЕНО 05.11.2026] предупредительный и повторительный должны видеть свой основной светофор,
@@ -288,6 +323,8 @@ public static class Validator
         {
             if (s.Sig.Kind == "warning" && Aspects.MainAhead(st, s, null) == null)
                 Add("warn", $"Предупредительный {Nz(s.Sig.Name)} ({s.Key}): впереди по ходу нет входного, проходного, заградительного или прикрытия", s.Key);
+            if (s.Sig.Kind == "humprep" && Aspects.MainAhead(st, s, null) == null)     // [ДОБАВЛЕНО 13.11.2026]
+                Add("warn", $"Повторитель горочного {Nz(s.Sig.Name)} ({s.Key}): впереди по ходу нет горочного светофора", s.Key);
             if (s.Sig.Kind == "repeater" && Aspects.MainAhead(st, s, null) == null)
                 Add("warn", $"Повторительный {Nz(s.Sig.Name)} ({s.Key}): впереди по ходу нет выходного или маршрутного светофора", s.Key);
             if (s.Sig.Kind == "barrier" && Aspects.CrossingAhead(st, s) == null)
