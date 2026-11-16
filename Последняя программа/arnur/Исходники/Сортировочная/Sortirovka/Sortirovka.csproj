@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- [ДОБАВЛЕНО 12.11.2026] «Сортировочная»: учебная сортировочная станция с горкой — пульт дежурного по горке (ДСПГ)
+       и оператора горки. Модель горки, вагоны, окно — свои файлы (Yard\*, Ui\*).
+       Перевод интерфейса (Lang.cs, LangUi.cs) и ИИ-помощник (Ai\*, кроме AiProfile, AiStation, AiDefaults) — ОБЩИЕ файлы
+       Алгабаса, подключены ссылками (не копиями): правка там сразу попадает и сюда. -->
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <AssemblyName>Sortirovka</AssemblyName>
+    <RootNamespace>StationApp</RootNamespace>
+    <ApplicationHighDpiMode>SystemAware</ApplicationHighDpiMode>
+    <ForceDesignerDpiUnaware>true</ForceDesignerDpiUnaware>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\..\Алгабас\Algabas\Core\Lang.cs" Link="Shared\Core\Lang.cs" />
+    <Compile Include="..\..\Алгабас\Algabas\Ui\LangUi.cs" Link="Shared\Ui\LangUi.cs" />
+    <Compile Include="..\..\Алгабас\Algabas\Ai\*.cs" Exclude="..\..\Алгабас\Algabas\Ai\AiProfile.cs;..\..\Алгабас\Algabas\Ai\AiStation.cs;..\..\Алгабас\Algabas\Ai\AiDefaults.cs" Link="Shared\Ai\%(Filename)%(Extension)" />
+    <!-- словари перевода интерфейса — общие с Алгабасом (собираются из Инструменты\i18n\strings.tsv) -->
+    <EmbeddedResource Include="..\..\Алгабас\Algabas\Lang\Strings.kk.json" Link="Lang\Strings.kk.json" LogicalName="Strings.kk.json" WithCulture="false" />
+    <EmbeddedResource Include="..\..\Алгабас\Algabas\Lang\Strings.en.json" Link="Lang\Strings.en.json" LogicalName="Strings.en.json" WithCulture="false" />
+  </ItemGroup>
+
+</Project>
