@@ -1,4 +1,4 @@
-using StationApp.Core;
+﻿using StationApp.Core;
 using StationApp.Ui;
 
 namespace StationApp;
@@ -24,9 +24,9 @@ static class Program
         int i = Array.IndexOf(args, "--shot");
         if (i > 0 && args.Length > i + 2)
         {
-            if (args.Length > i + 3) L.Set(args[i + 3]);
+            if (args.Length > i + 3 && !args[i + 3].StartsWith("--")) L.Set(args[i + 3]);
             using var f = new YardForm();
-            f.Shot(args[i + 1], double.Parse(args[i + 2], System.Globalization.CultureInfo.InvariantCulture));
+            f.Shot(args[i + 1], double.Parse(args[i + 2], System.Globalization.CultureInfo.InvariantCulture), args.Contains("--manual"));
             return;
         }
         // служебное: Sortirovka.exe --ask ответы.txt «вопрос 1» «вопрос 2» … — проверка ИИ-помощника без окна

@@ -1,4 +1,4 @@
-namespace StationApp.Yard;
+﻿namespace StationApp.Yard;
 
 // =====================================================================
 //  МОДЕЛЬ СОРТИРОВОЧНОЙ СТАНЦИИ И ГОРКИ  [ДОБАВЛЕНО 12.11.2026]
@@ -129,7 +129,7 @@ public sealed class YardSim
     /// <summary>Скорость, с которой вагоны должны подходить к стоящим на пути (не больше 5 км/ч), м/с.</summary>
     public const double CoupleSpeed = 0.75, MaxCouple = 5 / 3.6;
     /// <summary>Норма состава для вывода в парк отправления: пути 1–6 и пути 7–8 (сборный, ремонт).</summary>
-    public const int NormMain = 15, NormSmall = 10;
+    public const int NormMain = 8, NormSmall = 5;   // [ИЗМЕНЕНО 17.11.2026] поезда короче — нормы меньше (было 15 и 10)
     public static readonly string[] TrackNames = { "", "Северная", "Восточная", "Южная", "Западная", "Заводская", "Портовая", "Сборный (местные)", "Ремонт (ВЧД)" };
     public static int Norm(int k) => k >= 7 ? NormSmall : NormMain;
 
@@ -232,12 +232,14 @@ public sealed class YardSim
     {
         var t = new Train { No = nextTrainNo, Arr = arr, TrainLoco = Rolling.Train[rnd.Next(Rolling.Train.Length)] };
         nextTrainNo += 2;
-        int target = rnd.Next(22, 31), count = 0;
+        // [ИЗМЕНЕНО 17.11.2026] поезд 6–10 вагонов (было 22–30): вагоны на схеме крупнее, роспуск нагляднее
+        bool forb = rnd.NextDouble() < 0.45;
+        int target = rnd.Next(6, 11) - (forb ? 1 : 0), count = 0;
         while (count < target)
         {
             int dest = rnd.NextDouble() < 0.08 ? 8 : rnd.NextDouble() < 0.12 ? 7 : rnd.Next(1, 7);
             if (t.AllCuts.Count > 0 && t.AllCuts[^1].Dest == dest) continue;
-            int n = rnd.NextDouble() < 0.45 ? 1 : rnd.NextDouble() < 0.6 ? 2 : rnd.Next(3, 5);
+            int n = rnd.NextDouble() < 0.55 ? 1 : rnd.NextDouble() < 0.7 ? 2 : 3;
             n = Math.Min(n, target - count);
             var c = new Cut { No = nextCutNo++, Dest = dest, TrainNo = t.No };
             var kind = KindFor(dest);
@@ -246,7 +248,7 @@ public sealed class YardSim
             count += n;
         }
         // вагоны, запрещённые к роспуску с горки, ставят в хвост состава: их спускают с локомотивом
-        if (rnd.NextDouble() < 0.45)
+        if (forb)
         {
             var k = Rolling.Forbidden[rnd.Next(Rolling.Forbidden.Length)];
             int dest = k == Rolling.Service ? 7 : rnd.Next(1, 7);
@@ -342,6 +344,8 @@ public sealed class YardSim
         if (GacMode == gac) return;
         GacMode = gac;
         if (gac) foreach (var t in Trains()) foreach (var c in t.AllCuts) if (c.Route == 0 && c.State == CutState.InTrain) c.Route = c.Dest;
+        // [ДОБАВЛЕНО 17.11.2026] ручной набор — маршруты, которые ГАЦ уже взяла из листка, стираются: набираете вы
+        if (!gac) foreach (var t in Trains()) foreach (var c in t.AllCuts) if (c.State == CutState.InTrain && !(t.Escort && t.Cuts.Contains(c))) c.Route = 0;
         Say(gac ? "Маршруты отцепов: ГАЦ — из сортировочного листка" : "Маршруты отцепов: ручной набор — кнопка пути перед каждым отцепом");
     }
 
@@ -566,7 +570,7 @@ public sealed class YardSim
             _ => 0,
         };
         // пока первый вагон не дошёл до горочного светофора, состав подтягивают быстрее (до 9 км/ч)
-        if (target > 0 && !t.Escort && t.Head < Lay.SSignal - 15) target = Math.Max(target, 2.5);
+        if (target > 0 && !t.Escort && t.Head < -22) target = Math.Max(target, 2.5);   // [ИЗМЕНЕНО 17.11.2026] до −22 м (было −75): роспуск начинается быстрее
         if (t.Escort) target = t.Returning ? -1.5 : Hump is Aspect.Red or Aspect.RedN ? 0 : Math.Min(target, 1.2);
         double acc = Math.Abs(target) > Math.Abs(t.V) && Math.Sign(target) == Math.Sign(t.V == 0 ? target : t.V) ? 0.15 : 0.3;
         if (t.V < target) t.V = Math.Min(target, t.V + acc * dt);
@@ -791,7 +795,7 @@ public sealed class YardSim
         if (ahead != null) point = ahead.Tail;
         double gap = point - c.Head;
         // на пустом пути первый отцеп может не докатиться до конца — это не ошибка, если не очень далеко
-        if (gap > (ahead != null ? 50 : 200)) Violate($"недокат: отцеп {c.No} остановился на пути {c.Track}, не дойдя {gap:0} м до {(ahead != null ? "вагонов" : "конца пути")} — «окно»", 2);
+        if (gap > (ahead != null ? 50 : 100)) Violate($"недокат: отцеп {c.No} остановился на пути {c.Track}, не дойдя {gap:0} м до {(ahead != null ? "вагонов" : "конца пути")} — «окно»", 2);
         else Say($"Отцеп {c.No} остановился на пути {c.Track}" + (gap > 1 ? $" (окно {gap:0} м)" : ""));
     }
 
@@ -873,10 +877,11 @@ public sealed class YardSim
             r.Cut = on ?? near;
             r.CutOn = on != null;
             r.Target = r.Cut != null ? TargetSpeed(r, r.Cut) : 0;
-            if (!Ars) continue;
-            if (on == null || on.State == CutState.Forced) { r.Step = 0; continue; }
+            r.Advice = 0;
+            if (on == null || on.State == CutState.Forced) { if (Ars) r.Step = 0; continue; }
             // самая слабая ступень, с которой отцеп к выходу с замедлителя (когда сойдёт хвост) будет не быстрее рекомендуемой
-            if (on.V <= r.Target) { r.Step = 0; continue; }
+            // [ИЗМЕНЕНО 17.11.2026] считается и без АРС — подсказка студенту «тормози сильно / слабо / отпусти»
+            if (on.V <= r.Target) { if (Ars) r.Step = 0; continue; }
             // полная сила — пока голова на замедлителе, дальше (сходит хвост) — примерно половина
             double left = Math.Max(1, r.S1 - Math.Max(on.Head, r.S0) + 0.5 * Math.Min(on.Length, r.S1 - r.S0));
             double aim = r.Target - 0.1;
@@ -888,7 +893,8 @@ public sealed class YardSim
                 double a = Lay.G * (Lay.StepBrake[n] * frac - free) / 1000;
                 if (on.V * on.V - 2 * a * left <= aim * aim) { step = n; break; }
             }
-            r.Step = step;
+            r.Advice = step;
+            if (Ars) r.Step = step;
         }
     }
 
@@ -910,17 +916,27 @@ public sealed class YardSim
     /// <summary>Скорость отцепа в момент, когда его хвост сходит с замедлителя, чтобы он подошёл к стоящим вагонам со скоростью ~2,7 км/ч.</summary>
     public double TargetSpeed(Retarder r, Cut c)
     {
-        int track = c.Route > 0 && c.Route >= c.Lo && c.Route <= c.Hi ? c.Route : c.Lo == c.Hi ? c.Lo : c.Dest;
+        int track = TrackOf(c);
         double point = Lay.SEnd;
         var standing = OnTrack(track).Where(x => x != c).ToList();
         if (standing.Count > 0) point = standing.Min(x => x.Tail);
         // отцепы, которые сейчас катятся на тот же путь впереди, встанут к стоящим — место займут они
-        point -= Cuts.Where(x => x != c && x.State is CutState.Rolling or CutState.Forced && x.Head > c.Head && !standing.Contains(x)
-                                 && (x.Lo == x.Hi ? x.Lo == track : x.Route == track && x.Lo <= track && track <= x.Hi)).Sum(x => x.Length);
+        var rollingAhead = Cuts.Where(x => x != c && x.State is CutState.Rolling or CutState.Forced && x.Head > c.Head && !standing.Contains(x)
+                                 && (x.Lo == x.Hi ? x.Lo == track : x.Route == track && x.Lo <= track && track <= x.Hi)).ToList();
+        point -= rollingAhead.Sum(x => x.Length);
         point -= 0.5;
         double exit = r.S1 + c.Length;
+        // меньше этой скорости нельзя: отцеп остановится, не войдя на свой путь
+        double lowMin = SpeedNeeded(c, exit, Math.Max(Lay.STrack + c.Length + 25, exit + 1), CoupleSpeed);
         if (r.Lo != 1 || r.Hi != 8)
-            return SpeedNeeded(c, exit, Math.Max(point, exit + 1), CoupleSpeed);
+        {
+            double t2 = SpeedNeeded(c, exit, Math.Max(point, exit + 1), CoupleSpeed);
+            // [ДОБАВЛЕНО 17.11.2026] интервал на 2ТП: впереди на общих стрелках (до входа на путь) отцеп ближе 40 м —
+            // не догонять его (пути короче, отцепы чаще одиночные — без этого нагоны и «не на свой путь»)
+            var lead = Leader(c, 40);
+            if (lead != null) t2 = Math.Min(t2, Math.Max(lead.V - 0.3, lowMin));
+            return t2;
+        }
         // 1ТП: чтобы к 2ТП отцеп пришёл с запасом на торможение, но не быстрее 15 км/ч (интервалы на стрелках)
         var r2 = Retarders[track <= 4 ? 1 : 2];
         double need2 = TargetSpeed(r2, c);
@@ -932,6 +948,17 @@ public sealed class YardSim
         return Math.Max(low, tgt);
     }
 
+    int TrackOf(Cut c) => c.Route > 0 && c.Route >= c.Lo && c.Route <= c.Hi ? c.Route : c.Lo == c.Hi ? c.Lo : c.Dest;
+
+    /// <summary>Ближайший отцеп впереди, с которым у c ещё общие стрелки (его хвост не вошёл на путь), ближе gap метров.</summary>
+    Cut Leader(Cut c, double gap)
+    {
+        int tr = TrackOf(c);
+        return Cuts.Where(x => x != c && x.Active && x.State != CutState.Stopped && x.Head > c.Head && x.Tail < Lay.STrack + 5
+                               && x.Tail - c.Head < gap && x.Lo <= tr && tr <= x.Hi)
+                   .OrderBy(x => x.Tail).FirstOrDefault();
+    }
+
     // ---- приём, осмотр, горочный локомотив, отправление ----
     void StepOps(double dt)
     {
@@ -940,7 +967,7 @@ public sealed class YardSim
         {
             var free = Arr.Skip(1).FirstOrDefault(a => a.State == ArrState.Free && a.Train == null && !PushOccupies(a.No));
             if (free != null) Arrive(free);
-            nextArrival = T + (free != null ? 300 + rnd.Next(0, 180) : 30);
+            nextArrival = T + (free != null ? 150 + rnd.Next(0, 120) : 30);
         }
         foreach (var a in Arr.Skip(1))
         {
@@ -996,8 +1023,8 @@ public sealed class YardSim
         a.State = ArrState.Arriving;
         a.Train = null;
         var m = new Mover { Pts = Lay.ArrivalPath(a.No), Speed = 40 };
-        m.Vehicles.Add(((float)(t.TrainLoco.Length * Lay.SceneScale), t.TrainLoco, null));
-        foreach (var w in t.AllCuts.SelectMany(c => c.Wagons)) m.Vehicles.Add(((float)(w.Length * Lay.SceneScale), null, w));
+        m.Vehicles.Add(((float)(t.TrainLoco.Length * Lay.ArrScale), t.TrainLoco, null));
+        foreach (var w in t.AllCuts.SelectMany(c => c.Wagons)) m.Vehicles.Add(((float)(w.Length * Lay.ArrScale), null, w));
         m.Done = () =>
         {
             PlaceInPark(t);

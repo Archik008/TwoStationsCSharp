@@ -1,4 +1,4 @@
-namespace StationApp.Yard;
+﻿namespace StationApp.Yard;
 
 // =====================================================================
 //  ГЕОМЕТРИЯ УЧЕБНОЙ СОРТИРОВОЧНОЙ СТАНЦИИ  [ДОБАВЛЕНО 12.11.2026]
@@ -17,7 +17,9 @@ namespace StationApp.Yard;
 //       62…82    стрелка 1 на 8‰
 //       82…128   2-я тормозная позиция (2ТП-А для путей 1–4, 2ТП-Б для путей 5–8) на 9‰ (не положе 7‰)
 //      128…186   стрелочная зона 1,5‰: стрелки 2, 3 и 4–7
-//      186…735   сортировочные пути 0,6‰,  735…835 — встречный подъём 2‰ (останавливает слишком быстрые вагоны)
+//      186…440   сортировочные пути 0,6‰,  440…500 — встречный подъём 2,5‰ (останавливает слишком быстрые вагоны)
+//  [ИЗМЕНЕНО 17.11.2026] поезда короче (6–10 ваг.), поэтому пути короче: сортировочные 314 м (было 650),
+//  парк приёма 300 м (было 850) — вагоны на схеме стали крупнее.
 //  Высота горки ≈ 2,6 м. Стрелки горки — 1…7, переводятся за 0,6 с (горочный привод).
 // =====================================================================
 
@@ -57,12 +59,14 @@ public sealed class Retarder
     public Cut Cut;
     public double Target;
     public bool CutOn;
+    /// <summary>Какую ступень сейчас поставила бы АРС (0 — не тормозить) — подсказка при ручном торможении.</summary>
+    public int Advice;
 }
 
 public static class Lay
 {
     // ---- главные отметки, м ----
-    public const double Horb = 0, STrack = 186, SEnd = 835, SArrFront = -150, SArrTail = -1000, SPushTrack = -100;
+    public const double Horb = 0, STrack = 186, SEnd = 500, SArrFront = -150, SArrTail = -450, SPushTrack = -100;
     /// <summary>Горочный светофор Г — в начале подъёма к горбу.</summary>
     public const double SSignal = -60;
     /// <summary>Горочный локомотив дальше этой точки не заходит (кроме спуска вагонов с локомотивом).</summary>
@@ -77,7 +81,7 @@ public static class Lay
     public const double G = 9.3;
 
     public static double Grade(double s) =>
-        s < -60 ? 0 : s < 0 ? -10 : s < 30 ? 45 : s < 62 ? 14 : s < 82 ? 8 : s < 128 ? 9 : s < STrack ? 1.5 : s < 735 ? 0.6 : -2;
+        s < -60 ? 0 : s < 0 ? -10 : s < 30 ? 45 : s < 62 ? 14 : s < 82 ? 8 : s < 128 ? 9 : s < STrack ? 1.5 : s < SEnd - 60 ? 0.6 : -2.5;
 
     static readonly double[] elev = BuildElev();
     const double ElevFrom = -1200, ElevStep = 1;
@@ -208,6 +212,17 @@ public static class Lay
         return list.ToArray();
     }
 
+    /// <summary>Ломаная по рельсам от s0 до s1 (через горб — путь парка приёма arr и сортировочный путь track).
+    /// По ней рисуется вагон: на кривой он изгибается вместе с путём, а не срезает угол. [ДОБАВЛЕНО 17.11.2026]</summary>
+    public static PointF[] Path(double s0, double s1, int track, int arr)
+    {
+        var list = new List<PointF> { At(s0, track, arr) };
+        foreach (var (s, _) in push[Math.Clamp(arr, 1, ArrTracks)]) if (s > s0 && s < s1 && s < 0) list.Add(At(s, track, arr));
+        foreach (var (s, _) in tree[Math.Clamp(track, 1, Tracks)]) if (s > s0 && s < s1 && s >= 0) list.Add(At(s, track, arr));
+        list.Add(At(s1, track, arr));
+        return list.ToArray();
+    }
+
     public static PointF SwitchPoint(Switch sw) => At(sw.S, sw.Lo, 1);
     public static PointF SignalPoint => At(SSignal, 1, 1);
 
@@ -222,13 +237,40 @@ public static class Lay
     public static PointF[] DepotToDeparture(int d) => new PointF[] { DepotGate, new(490, 404), new(1596, 404), new(1596, DepY(d) + 12), new(1590, DepY(d)) };
     public static PointF[] Departure(int d) => new PointF[] { new(1430, DepY(d)), new(1588, DepY(d)), new(1640, DepY(d)) };
     /// <summary>Метров на точку схемы в парке отправления и на «сценах».</summary>
-    public const float SceneScale = 0.36f;
+    public const float SceneScale = 0.9f;
+    /// <summary>Метров на точку схемы в парке приёма (для «сцены» прибытия — чтобы поезд не менял длину, встав на путь).</summary>
+    public const float ArrScale = (float)(370 / (SArrFront - SArrTail));
 
     // ---- вид сбоку ----
     public static float ProfX(double s) => Profile.Left + 10 + (float)((s - ProfileFrom) / (ProfileTo - ProfileFrom)) * (Profile.Width - 20);
     public static float ProfPxPerM => (Profile.Width - 20) / (float)(ProfileTo - ProfileFrom);
-    static readonly double zMin = Elev(ProfileTo), zMax = Elev(0);
-    static float ProfVScale => Math.Min(Profile.Height - 70, 220);
-    /// <summary>Высоты на виде сбоку — с преувеличением (иначе горки в 2,6 м на 460 м не видно).</summary>
-    public static float ProfY(double s) => Profile.Bottom - 22 - (float)((Elev(s) - zMin) / (zMax - zMin)) * ProfVScale;
+    static double zMin => ElevView(ProfileTo);
+    static double zMax => ElevView(0);
+    static float ProfVScale => Math.Min(Profile.Height - 70, 150);
+    /// <summary>Высоты на виде сбоку — с преувеличением (иначе горки в 2,6 м на 460 м не видно).
+    /// [ИЗМЕНЕНО 17.11.2026] Переломы профиля сглажены вертикальными кривыми (как на настоящей горке),
+    /// преувеличение меньше — вагоны на горбу и в «ямах» не проваливаются в рельсы и не висят над ними.</summary>
+    public static float ProfY(double s) => Profile.Bottom - 22 - (float)((ElevView(s) - zMin) / (zMax - zMin)) * ProfVScale;
+
+    const double ViewFrom = ProfileFrom - 60, ViewTo = ProfileTo + 60, Smooth = 12;
+    static readonly double[] elevView = BuildView();
+    static double[] BuildView()
+    {
+        int n = (int)(ViewTo - ViewFrom) + 1;
+        var z = new double[n];
+        for (int i = 0; i < n; i++)
+        {
+            double s = ViewFrom + i, sum = 0; int m = 0;
+            for (double d = -Smooth; d <= Smooth; d += 1) { sum += Elev(s + d); m++; }
+            z[i] = sum / m;
+        }
+        return z;
+    }
+    static double ElevView(double s)
+    {
+        double f = s - ViewFrom;
+        int i = Math.Clamp((int)f, 0, elevView.Length - 2);
+        double t = Math.Clamp(f - i, 0, 1);
+        return elevView[i] + (elevView[i + 1] - elevView[i]) * t;
+    }
 }

@@ -35,7 +35,7 @@ static class P
             var c = new Cut { No = 99, Dest = 5, Route = 5, State = CutState.Rolling, Head = 8, V = 1.67 };
             c.Wagons.Add(new Wagon { Kind = Rolling.Covered, Loaded = true, Mass = mass, W0 = w0, Dest = 5 });
             s.Cuts.Add(c);
-            var marks = new[] { 30.0, 62, 95, 128, 186, 300, 500, 700, 835 };
+            var marks = new[] { 30.0, 62, 95, 128, 186, 300, 400, 440, 500 };
             int mi = 0;
             Console.Write($"{name}: ");
             for (int i = 0; i < 20 * 600 && c.State != CutState.Stopped; i++)
@@ -50,6 +50,7 @@ static class P
     static void Main(string[] a)
     {
         Console.OutputEncoding = System.Text.Encoding.UTF8;
+        if (a.Contains("-L")) { for (int sd = 1; sd <= 6; sd++) { Long.Run(true, sd, 60); Long.Run(false, sd + 10, 60); } return; }
         if (a.Contains("-l")) { Long.Run(true, 3, 90); Long.Run(false, 4, 90); return; }
         Physics(); Dbg.Ars(1.1, 90, 1); if (a.Contains("-d")) return;
         Run("АРС, ГАЦ, зелёный", true, true, Aspect.Green, 7, verbose: a.Contains("-v"));

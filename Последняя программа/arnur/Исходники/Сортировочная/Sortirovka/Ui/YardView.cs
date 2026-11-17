@@ -1,4 +1,4 @@
-using System.Drawing.Drawing2D;
+﻿using System.Drawing.Drawing2D;
 using StationApp.Core;
 using StationApp.Yard;
 
@@ -227,21 +227,46 @@ public sealed class YardView : Control
         g.DrawLine(pen, a2, b2);
     }
 
+    // [ИЗМЕНЕНО 17.11.2026] вагон рисуется ломаной по рельсам (Lay.Path), а не прямой от головы к хвосту:
+    // раньше на поворотах и на спусках/подъёмах схемы вагон срезал угол и «вылезал» за путь. Вагоны толще.
+    public const float WagonW = 12, LocoW = 14;
+    const double Gap = 0.7;   // зазор между вагонами, м
+
+    static void BodyPath(Graphics g, PointF[] pts, Color c, float w, bool sel = false)
+    {
+        if (pts.Length < 2) return;
+        if (sel) { using var sp = new Pen(Color.Gold, w + 4) { LineJoin = LineJoin.Round }; g.DrawLines(sp, pts); }
+        using var pen = new Pen(c, w) { StartCap = LineCap.Flat, EndCap = LineCap.Flat, LineJoin = LineJoin.Round };
+        g.DrawLines(pen, pts);
+    }
+
     void WagonOnScheme(Graphics g, Wagon w, double front, int track, int arr, bool sel)
     {
-        var a = Lay.At(front, track, arr);
-        var b = Lay.At(front - w.Length, track, arr);
+        var pts = Lay.Path(front - w.Length + Gap, front - Gap, track, arr);
         var c = w.Loaded ? w.Kind.Body : Blend(w.Kind.Body, Bg, 0.45f);
-        Body(g, b, a, c, 8, sel);
-        if (w.Mark != "") Body(g, b, a, Color.FromArgb(220, 30, 30), 3);
+        BodyPath(g, pts, c, WagonW, sel);
+        if (w.Mark != "") BodyPath(g, pts, Color.FromArgb(220, 30, 30), 4);
     }
 
     void LocoOnScheme(Graphics g, LocoKind k, double front, int track, int arr)
     {
-        var a = Lay.At(front, track, arr);
-        var b = Lay.At(front - k.Length, track, arr);
-        Body(g, b, a, k.Body, 10);
-        Body(g, b, a, k.Stripe, 2);
+        var pts = Lay.Path(front - k.Length + Gap, front - Gap, track, arr);
+        BodyPath(g, pts, k.Body, LocoW);
+        BodyPath(g, pts, k.Stripe, 3);
+    }
+
+    /// <summary>Ломаная «сцены» от d0 до d1 (точек схемы от начала) — тоже по рельсам.</summary>
+    static PointF[] MoverPath(Mover m, double d0, double d1)
+    {
+        var list = new List<PointF> { m.At(d0, out _) };
+        double acc = 0;
+        for (int i = 1; i < m.Pts.Length; i++)
+        {
+            acc += Mover.Dist(m.Pts[i - 1], m.Pts[i]);
+            if (acc > d0 && acc < d1) list.Add(m.Pts[i]);
+        }
+        list.Add(m.At(d1, out _));
+        return list.ToArray();
     }
 
     static Color Blend(Color a, Color b, float t) =>
@@ -283,15 +308,15 @@ public sealed class YardView : Control
             if (dt.State is DepState.BrakeTest or DepState.Ready && dt.Loco != null)
             {
                 float l = (float)(dt.Loco.Length * Lay.SceneScale);
-                Body(g, new(x - l, y), new(x, y), dt.Loco.Body, 10);
-                Body(g, new(x - l, y), new(x, y), dt.Loco.Stripe, 2);
+                Body(g, new(x - l, y), new(x, y), dt.Loco.Body, LocoW);
+                Body(g, new(x - l, y), new(x, y), dt.Loco.Stripe, 3);
                 x -= l;
             }
             foreach (var w in dt.Wagons)
             {
                 float l = (float)(w.Length * Lay.SceneScale);
                 if (x - l < 1432) break;
-                Body(g, new(x - l, y), new(x, y), w.Loaded ? w.Kind.Body : Blend(w.Kind.Body, Bg, 0.45f), 8);
+                Body(g, new(x - l, y), new(x, y), w.Loaded ? w.Kind.Body : Blend(w.Kind.Body, Bg, 0.45f), WagonW);
                 x -= l;
             }
         }
@@ -302,12 +327,11 @@ public sealed class YardView : Control
             foreach (var (len, loco, wagon) in m.Vehicles)
             {
                 if (d <= 0) break;
-                var a = m.At(d, out _);
-                var b = m.At(Math.Max(0, d - len), out _);
-                if (a.X <= Lay.W + 2 || b.X <= Lay.W)
+                var pts = MoverPath(m, Math.Max(0, d - len + 0.6), d - 0.6);
+                if (pts[0].X <= Lay.W || pts[^1].X <= Lay.W)
                 {
-                    if (loco != null) { Body(g, b, a, loco.Body, 10); Body(g, b, a, loco.Stripe, 2); }
-                    else Body(g, b, a, wagon.Loaded ? wagon.Kind.Body : Blend(wagon.Kind.Body, Bg, 0.45f), 8);
+                    if (loco != null) { BodyPath(g, pts, loco.Body, LocoW); BodyPath(g, pts, loco.Stripe, 3); }
+                    else BodyPath(g, pts, wagon.Loaded ? wagon.Kind.Body : Blend(wagon.Kind.Body, Bg, 0.45f), WagonW);
                 }
                 d -= len + 0.6;
             }
@@ -450,17 +474,31 @@ public sealed class YardView : Control
     /// <summary>Вагон или локомотив «вид сбоку»: корпус по роду, тележки; наклон — по профилю.</summary>
     void SideVehicle(Graphics g, double front, double len, Wagon w, LocoKind loco, bool sel)
     {
-        float x1 = Lay.ProfX(front - 0.4), y1 = Lay.ProfY(front - 0.4), x0 = Lay.ProfX(front - len + 0.4), y0 = Lay.ProfY(front - len + 0.4);
-        float L = MathF.Sqrt((x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0));
-        float ang = MathF.Atan2(y1 - y0, x1 - x0) * 180 / MathF.PI;
+        // [ИЗМЕНЕНО 17.11.2026] вагон стоит на двух тележках, и обе — на рельсе. Раньше корпус ставился на
+        // хорду «голова — хвост»: на горбу он проваливался в рельс, в низине — висел над ним.
+        const double B = 0.18;                               // тележка — 18 % длины от конца
+        double sf = front - 0.4 - (len - 0.8) * B, sb = front - len + 0.4 + (len - 0.8) * B;
+        float xf = Lay.ProfX(sf), yf = Lay.ProfY(sf), xb = Lay.ProfX(sb), yb = Lay.ProfY(sb);
+        // рельс между тележками выше прямой (на горбу) — корпус приподнять, чтобы рельс не «протыкал» вагон
+        float lift = 0;
+        for (double s = sb; s <= sf; s += 0.5)
+        {
+            float x = Lay.ProfX(s), y = Lay.ProfY(s);
+            float yc = xf == xb ? yb : yb + (yf - yb) * (x - xb) / (xf - xb);
+            lift = Math.Max(lift, yc - y);
+        }
+        float D = MathF.Sqrt((xf - xb) * (xf - xb) + (yf - yb) * (yf - yb));
+        float L = D / (1 - 2 * (float)B);
+        float ang = MathF.Atan2(yf - yb, xf - xb) * 180 / MathF.PI;
         var st = g.Save();
-        g.TranslateTransform((x0 + x1) / 2, (y0 + y1) / 2);
+        lift = Math.Max(0, lift - 4);                        // под полом корпуса зазор ~5 точек — тележки остаются на рельсе
+        g.TranslateTransform((xb + xf) / 2, (yb + yf) / 2 - lift);
         g.RotateTransform(ang);
         float hl = L / 2, pxm = Lay.ProfPxPerM * 1.25f;
         // тележки
         using (var wb = new SolidBrush(Color.FromArgb(25, 25, 25)))
         {
-            foreach (var x in new[] { -hl + L * 0.16f, hl - L * 0.16f })
+            foreach (var x in new[] { -D / 2, D / 2 })
             {
                 g.FillEllipse(wb, x - 5, -6, 5, 5);
                 g.FillEllipse(wb, x + 1, -6, 5, 5);
@@ -598,7 +636,7 @@ public sealed class YardView : Control
             for (double s = c.Tail; s <= c.Head; s += 3)
             {
                 var p = Lay.At(s, c.Lo, 1);
-                if (Math.Abs(p.X - v.X) < 5 && Math.Abs(p.Y - v.Y) < 6) { cut = c; return "отцеп " + c.No; }
+                if (Math.Abs(p.X - v.X) < 6 && Math.Abs(p.Y - v.Y) < 8) { cut = c; return "отцеп " + c.No; }
             }
         if (v.X > 990 && v.X < 1410)
             for (int k = 1; k <= Lay.Tracks; k++)
