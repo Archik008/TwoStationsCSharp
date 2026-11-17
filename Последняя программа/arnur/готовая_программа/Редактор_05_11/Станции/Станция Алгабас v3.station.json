@@ -569,10 +569,11 @@
       "sigs": [
         {
           "dir": "L",
-          "kind": "humprep",
-          "name": "П1",
+          "kind": "shunt",
+          "name": "М7",
           "id": 36,
-          "fixed": true
+          "ltr": "Н",
+          "seq": 7
         }
       ]
     },
@@ -590,7 +591,17 @@
     "5,1": {
       "t": "curve",
       "v": 1,
-      "sec": "СГП-2"
+      "sec": "СГП-2",
+      "sigs": [
+        {
+          "dir": "R",
+          "kind": "shunt",
+          "name": "М14",
+          "id": 37,
+          "ltr": "Ч",
+          "seq": 14
+        }
+      ]
     },
     "4,1": {
       "t": "straight",
@@ -808,7 +819,17 @@
     "5,2": {
       "t": "straight",
       "v": 0,
-      "sec": "M4-Past-M12"
+      "sec": "M4-Past-M12",
+      "sigs": [
+        {
+          "dir": "R",
+          "kind": "shunt",
+          "name": "М16",
+          "id": 38,
+          "ltr": "Ч",
+          "seq": 16
+        }
+      ]
     },
     "-6,4": {
       "t": "curve",
