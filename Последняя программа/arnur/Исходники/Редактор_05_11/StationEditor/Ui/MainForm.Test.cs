@@ -216,6 +216,38 @@ public sealed partial class MainForm
     {
         var T = ui.Test;
         var k = Core.Key(gx, gy);
+        // [ДОБАВЛЕНО 16.11.2026] начало уже выбрано, щёлкнули другой светофор — это конец маршрута (n2): светофор конца
+        // или любой светофор на пути назначения (раньше он становился новым началом — маршрут по двум светофорам не задавался)
+        if (sg is SigRef s2 && T.Pending is SigRef p0 && p0 != s2 && !st.Tiles[s2.Key].Sigs[s2.Idx].IsReadOnly)
+        {
+            var sig2 = st.Tiles[s2.Key].Sigs[s2.Idx];
+            var from = Routes.Where(r => r.Start == p0).ToList();
+            string sec2 = st.Tiles[s2.Key].Sec;
+            var byEnd = from.Where(r => RouteFinder.RouteEndSignal(st, r)?.Ref == s2).ToList();
+            var cand = byEnd.Count > 0 ? byEnd
+                     : from.Where(r => !string.IsNullOrEmpty(sec2) && r.Dest == sec2).ToList() is { Count: > 0 } onDest ? onDest
+                     : from.Where(r => r.Tiles.Contains(s2.Key)).ToList();
+            var name0 = st.Tiles[p0.Key].Sigs[p0.Idx].Name;
+            if (cand.Count > 0)
+            {
+                T.Pending = null;
+                cand = ui.RouteFilter == "shunt" ? cand.OrderByDescending(r => r.Shunt).ToList() : cand.OrderBy(r => r.Shunt).ToList();
+                if (!cand.Any(r => SetRoute(r, true))) SetRoute(cand[0]);
+                RefreshPanels();
+                Draw();
+                return;
+            }
+            // маршрута до него нет — если от щёлкнутого есть свои маршруты, он становится новым началом (как раньше)
+            if (!Routes.Any(r => r.Start == s2))
+            {
+                T.Pending = null;
+                Msg($"Маршрута от {name0} до светофора {sig2.Name} нет", true);
+                RefreshPanels();
+                Draw();
+                return;
+            }
+            T.Pending = null;
+        }
         if (sg is SigRef s)
         {
             var sig = st.Tiles[s.Key].Sigs[s.Idx];
@@ -245,7 +277,7 @@ public sealed partial class MainForm
                 Msg($"{Core.SigKindName(sig.Kind)} {name}: {(T.Aspects.TryGetValue(id, out var a) ? a.Text : "")} — " +
                     (sig.Kind is "block" or "warning" or "repeater" or "other" ? "показание меняется само" : "маршрутов от него нет"),
                     !(sig.Kind is "block" or "warning" or "repeater" or "other"));
-            else { T.Pending = s; Msg($"Начало маршрута — {name}. Щёлкните по пути назначения"); }
+            else { T.Pending = s; Msg($"Начало маршрута — {name}. Щёлкните по пути назначения или светофору конца"); }
         }
         else if (T.Pending is SigRef pend)
         {
@@ -288,10 +320,10 @@ public sealed partial class MainForm
         if (set != null)
             m.Items.Add($"Отменить маршрут {set.Name}", null, (_, _) => { CancelRoute(set); RefreshPanels(); Draw(); });
         else if (Routes.Any(r => r.Start == s))
-            m.Items.Add("Маневровый маршрут от него… (щёлкните путь назначения)", null, (_, _) =>
+            m.Items.Add("Маневровый маршрут от него… (щёлкните путь или светофор конца)", null, (_, _) =>
             {
                 T.Pending = s;
-                Msg($"Начало маршрута — {name}. Щёлкните по пути назначения");
+                Msg($"Начало маршрута — {name}. Щёлкните по пути назначения или светофору конца");
                 Draw();
             });
         m.Show(Cursor.Position);

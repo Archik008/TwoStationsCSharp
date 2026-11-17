@@ -308,6 +308,7 @@ public class JsonLayout
                 Id = Unique(name), Label = name, Title = $"{kindName} {name}", Kind = kind, Dir = dir, Lamps = lamps
             });
             if (kind == SignalKind.Controlled) s.Approach = SecOfTile(e.Key);
+            s.At = SecOfTile(e.Key);    // [ДОБАВЛЕНО 16.11.2026] для клика вторым светофором (RouteFinder.Find)
             if (e.Sig.Kind == "hump") { s.Hump = HumpMode.Stop; s.Indicator = true; }       // [ДОБАВЛЕНО 13.11.2026]
             if (e.Sig.Kind == "humprep") s.Indicator = true;
             if (e.Sig.Kind == "entry") View.InviteSignals.Add(s);

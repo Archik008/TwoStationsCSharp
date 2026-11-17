@@ -676,7 +676,8 @@ class RailSchemePanel : Panel
         float ly = sg.Above ? y - 22 : y + 22;
         Color tc = Color.White;
         if (selected != null && selected != s)
-            tc = IL.Routes.Any(r => r.Start == selected && r.End == s) ? Color.FromArgb(255, 255, 160) : Dimmed;
+            tc = IL.Routes.Any(r => r.Start == selected && (r.End == s || (s.At != null && (r.Dest == s.At || r.ExitSection == s.At))))   // [16.11.2026] и любой на пути назначения
+                ? Color.FromArgb(255, 255, 160) : Dimmed;
         if (s.Kind == SignalKind.Automatic && s.Aspect == Aspect.Dark) tc = Dimmed;
         using var tb = new SolidBrush(tc);
         var font = s.Kind == SignalKind.Automatic || s.IsShuntOnly ? fSigSmall : fSig;
