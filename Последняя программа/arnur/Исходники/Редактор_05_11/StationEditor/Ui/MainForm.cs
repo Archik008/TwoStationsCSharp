@@ -148,6 +148,17 @@ public sealed partial class MainForm : Form
         vGost.CheckedChanged += (_, _) => { Renderer.GostLamps = vGost.Checked; Draw(); };
         top.Items.Add(vGost);
         this.vGost = vGost;
+        // [ДОБАВЛЕНО 17.11.2026] проверка огней: зажечь все лампы всех светофоров — видно, где какой огонь
+        var vLamps = new ToolStripButton("Все огни") { CheckOnClick = true, Checked = false, DisplayStyle = ToolStripItemDisplayStyle.Text,
+            ToolTipText = "Проверка огней: на всех светофорах горят все лампы своими цветами (и «Н», указатель, полоса) —\n" +
+                          "видно, где какой огонь. Только вид: в файл не пишется. Один светофор — галочка в его «Свойствах»" };
+        vLamps.CheckedChanged += (_, _) =>
+        {
+            Renderer.LampTestAll = vLamps.Checked;
+            Msg(vLamps.Checked ? "Проверка огней: горят все лампы всех светофоров" : "Проверка огней выключена");
+            Draw();
+        };
+        top.Items.Add(vLamps);
         var help = Btn("Справка", "Справка и горячие клавиши (F1)", ShowHelp);
         help.Alignment = ToolStripItemAlignment.Right;
         // [ДОБАВЛЕНО 17.11.2026] инструкция для пользователя: по шагам, главное — маршруты здесь только для проверки схемы

@@ -198,6 +198,23 @@ public sealed class Signal
     /// <summary>[ДОБАВЛЕНО 17.11.2026] Маневровый: красный огонь вместо синего — Инструкция РК п. 98.</summary>
     [JsonPropertyName("red")] public bool? RedShunt { get; set; }
     [JsonIgnore] public bool HasStrip => Strip == true && Kind is "entry" or "exit" or "route";
+    /// <summary>[ДОБАВЛЕНО 17.11.2026] Головки — огни группами от мачты: "2+2", "1+2+2", "2+3"… (null — в ряд, как на схемах РУ-30-80).</summary>
+    [JsonPropertyName("heads")] public string Heads { get; set; }
+    /// <summary>[ДОБАВЛЕНО 17.11.2026] Маршрутный указатель на отдельной мачте рядом со светофором (Инструкция РК п. 70:
+    /// «на мачтах светофоров или на отдельной мачте»). null — на мачте светофора, между пригласительным и основными огнями.</summary>
+    [JsonPropertyName("rimast")] public bool? RouteIndOwnMast { get; set; }
+    [JsonIgnore] public bool RouteIndOnMast => HasRouteInd && RouteIndOwnMast != true;
+
+    /// <summary>Размеры головок от мачты, если их сумма равна числу огней n; иначе null (огни в ряд).</summary>
+    public int[] HeadGroups(int n)
+    {
+        if (string.IsNullOrWhiteSpace(Heads)) return null;
+        var parts = Heads.Split('+', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var res = new int[parts.Length];
+        for (int i = 0; i < parts.Length; i++)
+            if (!int.TryParse(parts[i], out res[i]) || res[i] < 1 || res[i] > 3) return null;
+        return res.Length > 1 && res.Sum() == n ? res : null;
+    }
     [JsonIgnore] public bool IsRedShunt => RedShunt == true && Kind == "shunt";
     [JsonIgnore] public bool HasRouteInd => RouteInd == true && Aspects.CanHaveRouteInd(Kind);
 }

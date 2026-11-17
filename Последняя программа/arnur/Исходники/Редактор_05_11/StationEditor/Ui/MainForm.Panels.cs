@@ -240,6 +240,18 @@ public sealed partial class MainForm
 
     int LeftW => S(214);
 
+    /// <summary>[ДОБАВЛЕНО 17.11.2026] Разбивки n огней на головки по 1–3 (больше одной головки), от мачты.</summary>
+    static IEnumerable<int[]> HeadCompositions(int n)
+    {
+        IEnumerable<List<int>> Go(int left)
+        {
+            if (left == 0) { yield return new List<int>(); yield break; }
+            for (int p = 1; p <= Math.Min(3, left); p++)
+                foreach (var rest in Go(left - p)) { rest.Insert(0, p); yield return rest; }
+        }
+        return Go(n).Where(c => c.Count > 1).Select(c => c.ToArray());
+    }
+
     PaletteItem PalItem(string caption, string key, bool on, Action<Graphics, RectangleF> icon, string tip)
     {
         var it = new PaletteItem
@@ -815,10 +827,45 @@ public sealed partial class MainForm
                     ri.CheckedChanged += (_, _) =>
                     {
                         bool v = ri.Checked;
-                        Edit(() => { if (SigAt(k, ii) is Signal c) c.RouteInd = v ? true : null; }, false);
+                        Edit(() => { if (SigAt(k, ii) is Signal c) c.RouteInd = v ? true : null; });
                     };
                     ri.Enter += (_, _) => { ui.SelSig = new SigRef(k, ii); Draw(); };
                     f.Controls.Add(ri);
+                    // [ДОБАВЛЕНО 17.11.2026] на мачте светофора или на отдельной мачте — Инструкция по сигнализации РК п. 70
+                    if (s.RouteInd == true)
+                    {
+                        var om = new CheckBox { Text = "на отдельной мачте", Checked = s.RouteIndOwnMast == true, AutoSize = true, Margin = new Padding(S(22), 0, 0, S(4)) };
+                        tips.SetToolTip(om, "Указатель на своей мачте рядом со светофором (позади него); горит по маршруту этого светофора.\n" +
+                                            "Без галочки — на мачте светофора, между пригласительным и основными огнями (РУ-30-80 лист 10).\n" +
+                                            "«…помещаемые на мачтах светофоров или на отдельной мачте» — Инструкция по сигнализации РК п. 70.");
+                        om.CheckedChanged += (_, _) => { bool v = om.Checked; Edit(() => { if (SigAt(k, ii) is Signal c) c.RouteIndOwnMast = v ? true : null; }, false); };
+                        f.Controls.Add(om);
+                    }
+                }
+                // [ДОБАВЛЕНО 17.11.2026] проверка огней этого светофора (только вид, в файл не пишется)
+                {
+                    var lt = new CheckBox { Text = "зажечь все огни (проверка)", Checked = Renderer.LampTestSigs.Contains(s), AutoSize = true, Margin = new Padding(S(2), S(2), 0, S(2)) };
+                    tips.SetToolTip(lt, "Горят все лампы этого светофора своими цветами — видно, где какой огонь.\nТолько вид: в файл не пишется. Все светофоры сразу — кнопка «Все огни» вверху.");
+                    lt.CheckedChanged += (_, _) =>
+                    {
+                        if (SigAt(k, ii) is not Signal c) return;
+                        if (lt.Checked) Renderer.LampTestSigs.Add(c); else Renderer.LampTestSigs.Remove(c);
+                        Draw();
+                    };
+                    f.Controls.Add(lt);
+                }
+                // [ДОБАВЛЕНО 17.11.2026] головки — огни группами (по 2, по 3), считая от мачты
+                {
+                    int nLamps = Aspects.FullHead(s, t, false).Length;
+                    if (nLamps >= 2)
+                    {
+                        var opts = new List<Opt> { new() { V = "", T = "в ряд (как на схемах РУ-30-80)" } };
+                        foreach (var comp in HeadCompositions(nLamps)) { var v = string.Join("+", comp); opts.Add(new Opt { V = v, T = v }); }
+                        var hc = Row(f, w, "Головки (от мачты)", Combo(opts, s.Heads ?? ""));
+                        tips.SetToolTip(hc, "Огни группами по 1–3 в отдельных головках, считая от мачты: например 1+2+2 — пригласительный отдельно\n" +
+                                            "и две головки по два огня. В цветном виде у каждой головки свой корпус.");
+                        hc.SelectedIndexChanged += (_, _) => { var v = OptV(hc); Later(() => Edit(() => { if (SigAt(k, ii) is Signal c) c.Heads = v == "" ? null : v; }, false)); };
+                    }
                 }
             }
             if (ui.SelSig is SigRef ss && ss.Key == k && SigAt(k, ss.Idx) is Signal sel)
