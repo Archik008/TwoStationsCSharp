@@ -82,9 +82,48 @@ public sealed class ExportForm : Form
     }
 }
 
-/// <summary>Окно «Справка».</summary>
+/// <summary>Окно «Справка». [ИЗМЕНЕНО 17.11.2026] две вкладки: «Инструкция» (по шагам, с предупреждением о маршрутах)
+/// и «Справка» (клавиши и подробности, как было).</summary>
 public sealed class HelpForm : Form
 {
+    /// <summary>[ДОБАВЛЕНО 17.11.2026] Главное предупреждение инструкции — вверху, на цветной плашке.</summary>
+    public const string RoutesWarning =
+        "ВАЖНО: маршруты в редакторе — только для проверки схемы, это не настоящие маршруты станции.\n" +
+        "Их находит сам редактор по нарисованным путям, стрелкам, участкам и светофорам, чтобы схему можно было испытать " +
+        "(«Испытание»). Таблица маршрутов, зависимости и показания здесь упрощены. Маршрутов сортировочной горки " +
+        "(роспуск отцепов, программный и маршрутный режимы ГАЦ, торможение на тормозных позициях) редактор делать не умеет: " +
+        "горочный светофор в «Испытании» только переключается вручную. Рабочие маршруты задаются во второй программе — " +
+        "«Станция по схеме», кнопка «Настройка…» → «Свои маршруты».";
+
+    /// <summary>[ДОБАВЛЕНО 17.11.2026] Инструкция для пользователя — по шагам.</summary>
+    static readonly (string, string)[] Steps =
+    {
+        ("1. Начало", "«Новая» — пустая схема, «Открыть…» — файл .station.json, «Пример…» — готовая станция. " +
+                      "Название станции — поле слева вверху."),
+        ("2. Пути", "Выберите кубик в палитре (1 путь, 2 изгиб, 3 стрелка, Y симметричная стрелка, 4 пересечение, 5 тупик, " +
+                    "6 выход за край, 7 переезд, K тормозная позиция) и щёлкайте или тяните по сетке. R — повернуть, ПКМ — стереть. " +
+                    "Красная точка — конец пути, который никуда не ведёт."),
+        ("3. Участки", "Инструмент B (кисть) — раскрасить кубики по участкам. Тип подбирается по названию: 1П — путь, 2-4СП — стрелочный, " +
+                       "Б12 / НАУ — перегон, ВТ — тупик; поменять — вкладка «Участки». Без участков нет занятости и маршрутов."),
+        ("4. Светофоры", "Инструмент S, вид — в панели слева (входной, выходной, маневровый, проходной, горочный…). " +
+                         "Щелчок у правого края клетки — «→», у левого — «←». Имена даются сами по правилам РУ-30-80; " +
+                         "«Обозначения…» и «Нумерация» — настроить и перенумеровать."),
+        ("5. Проверка", "Вкладка «Проверка»: разрывы путей, светофоры без маршрутов, повторители без основного и т. п. " +
+                        "Исправьте замечания до испытания."),
+        ("6. Испытание (M)", "Щелчок по светофору начала, затем по светофору конца или по пути назначения — маршрут задан, стрелки " +
+                             "переводятся, светофор открывается. Щелчок по стрелке — перевести, ПКМ по пути — занять / освободить. " +
+                             "Горочный светофор — щелчок открывает меню оператора горки (стоп, роспуск, осаживание, маневры). " +
+                             "Помните: это проверка схемы, а не настоящие маршруты (см. вверху)."),
+        ("7. Сохранение", "Ctrl+S — сохранить в файл .station.json (папка «Станции» рядом с программой). " +
+                          "Схема ещё и сохраняется сама (автосохранение) и откроется после перезапуска."),
+        ("8. Вторая программа", "«Экспорт JSON» — вся станция или только выделенные клетки. Файл открывается в «Станции по схеме» " +
+                                "кнопкой «Схема…». Там — пульт ДСП, поезда и окно «Настройка…»: свои маршруты (клик n1 → n2, " +
+                                "какие участки жёлтым, какие стрелки, какие показания), имена светофоров, времена."),
+        ("9. Сортировочная горка", "Можно нарисовать: тормозные позиции ТП1–ТП3 (K), симметричные стрелки (Y), перекрёстный съезд, " +
+                                   "горочный светофор Г и его повторитель ПГ (указатель «Н»). Нельзя: маршруты роспуска и логику горки — " +
+                                   "редактор показывает только вид; маршруты на горку и к Г задавайте сами в «Станции по схеме»."),
+    };
+
     static readonly (string, string)[] Rows =
     {
         ("Кубики", "1 путь, 2 изгиб, 3 стрелка, 4 пересечение, 5 тупик, 6 выход за край схемы, 7 переезд. R / Shift+R — повернуть. " +
@@ -121,30 +160,59 @@ public sealed class HelpForm : Form
         ("Формат файла", "JSON, тот же, что у веб-макета (index.html): файлы открываются в обеих версиях редактора."),
     };
 
-    public HelpForm()
+    /// <param name="instructions">true — открыть на вкладке «Инструкция», false — на «Справке».</param>
+    public HelpForm(bool instructions = false)
     {
-        Text = "Справка — Редактор станций";
+        Text = "Инструкция и справка — Редактор станций";
         Font = new Font("Segoe UI", 10f);
         StartPosition = FormStartPosition.CenterParent;
         ShowInTaskbar = false;
         int s(int v) => v * DeviceDpi / 96;
-        Size = new Size(s(760), s(620));
-        var rtb = new RichTextBox { Dock = DockStyle.Fill, ReadOnly = true, BorderStyle = BorderStyle.None, BackColor = Color.White, DetectUrls = false };
+        Size = new Size(s(780), s(660));
         var bold = new Font(Font, FontStyle.Bold);
-        foreach (var (h, t) in Rows)
+
+        RichTextBox Body((string, string)[] rows)
         {
-            rtb.SelectionFont = bold;
-            rtb.SelectionColor = Color.FromArgb(0x1f, 0x7a, 0x68);
-            rtb.AppendText(h + "\n");
-            rtb.SelectionFont = Font;
-            rtb.SelectionColor = Color.FromArgb(0x23, 0x37, 0x32);
-            rtb.AppendText(t + "\n\n");
+            var rtb = new RichTextBox { Dock = DockStyle.Fill, ReadOnly = true, BorderStyle = BorderStyle.None, BackColor = Color.White, DetectUrls = false };
+            foreach (var (h, t) in rows)
+            {
+                rtb.SelectionFont = bold;
+                rtb.SelectionColor = Color.FromArgb(0x1f, 0x7a, 0x68);
+                rtb.AppendText(h + "\n");
+                rtb.SelectionFont = Font;
+                rtb.SelectionColor = Color.FromArgb(0x23, 0x37, 0x32);
+                rtb.AppendText(t + "\n\n");
+            }
+            rtb.Select(0, 0);
+            return rtb;
         }
-        rtb.Select(0, 0);
+        Panel Pad(TabPage pg)
+        {
+            var pad = new Panel { Dock = DockStyle.Fill, Padding = new Padding(s(14)), BackColor = Color.White };
+            pg.Controls.Add(pad);
+            return pad;
+        }
+
+        var tabs = new TabControl { Dock = DockStyle.Fill };
+        // [ДОБАВЛЕНО 17.11.2026] «Инструкция»: предупреждение о маршрутах — оранжевая плашка, ниже шаги
+        var pGuide = new TabPage("Инструкция") { BackColor = Color.White };
+        var padG = Pad(pGuide);
+        padG.Controls.Add(Body(Steps));
+        padG.Controls.Add(new Panel { Dock = DockStyle.Top, Height = s(10), BackColor = Color.White });
+        padG.Controls.Add(new Label
+        {
+            Text = RoutesWarning, Dock = DockStyle.Top, AutoSize = false, Height = s(150), Padding = new Padding(s(10)),
+            BackColor = Color.FromArgb(0xff, 0xf1, 0xd6), ForeColor = Color.FromArgb(0x7a, 0x3e, 0x00),
+            Font = new Font(Font.FontFamily, 10f, FontStyle.Bold), BorderStyle = BorderStyle.FixedSingle,
+        });
+        tabs.TabPages.Add(pGuide);
+        var pRef = new TabPage("Справка: клавиши и подробности") { BackColor = Color.White };
+        Pad(pRef).Controls.Add(Body(Rows));
+        tabs.TabPages.Add(pRef);
+        tabs.SelectedIndex = instructions ? 0 : 1;
+
         var close = new Button { Text = "Закрыть", Dock = DockStyle.Bottom, Height = s(34), DialogResult = DialogResult.Cancel };
-        var pad = new Panel { Dock = DockStyle.Fill, Padding = new Padding(s(14)), BackColor = Color.White };
-        pad.Controls.Add(rtb);
-        Controls.Add(pad);
+        Controls.Add(tabs);
         Controls.Add(close);
         CancelButton = close;
     }

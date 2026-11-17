@@ -215,6 +215,14 @@ public static class RouteFinder
     public static RailRoute Find(IEnumerable<RailRoute> routes, RailSignal start, object target, bool shunting)
     {
         bool Match(RailRoute r) => r.Start == start && (target is RailSignal sg ? r.End == sg : target is TrackSection ts && r.Dest == ts);
-        return routes.FirstOrDefault(r => Match(r) && r.Shunting == shunting) ?? routes.FirstOrDefault(Match);
+        var found = routes.FirstOrDefault(r => Match(r) && r.Shunting == shunting) ?? routes.FirstOrDefault(Match);
+        // [ДОБАВЛЕНО 16.11.2026] второй клик — по любому светофору на пути назначения (ПГ, Г на пути надвига, светофор
+        // попутного направления), если светофор знает свой участок (At; у Алгабаса и АКЖТ — нет, там как раньше)
+        if (found == null && target is RailSignal s2 && s2.At != null)
+        {
+            bool OnDest(RailRoute r) => r.Start == start && (r.Dest == s2.At || r.ExitSection == s2.At);
+            found = routes.FirstOrDefault(r => OnDest(r) && r.Shunting == shunting) ?? routes.FirstOrDefault(OnDest);
+        }
+        return found;
     }
 }

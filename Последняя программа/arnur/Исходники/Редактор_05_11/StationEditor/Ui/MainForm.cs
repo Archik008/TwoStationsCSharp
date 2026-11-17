@@ -148,8 +148,23 @@ public sealed partial class MainForm : Form
         vGost.CheckedChanged += (_, _) => { Renderer.GostLamps = vGost.Checked; Draw(); };
         top.Items.Add(vGost);
         this.vGost = vGost;
+        // [ДОБАВЛЕНО 17.11.2026] проверка огней: зажечь все лампы всех светофоров — видно, где какой огонь
+        var vLamps = new ToolStripButton("Все огни") { CheckOnClick = true, Checked = false, DisplayStyle = ToolStripItemDisplayStyle.Text,
+            ToolTipText = "Проверка огней: на всех светофорах горят все лампы своими цветами (и «Н», указатель, полоса) —\n" +
+                          "видно, где какой огонь. Только вид: в файл не пишется. Один светофор — галочка в его «Свойствах»" };
+        vLamps.CheckedChanged += (_, _) =>
+        {
+            Renderer.LampTestAll = vLamps.Checked;
+            Msg(vLamps.Checked ? "Проверка огней: горят все лампы всех светофоров" : "Проверка огней выключена");
+            Draw();
+        };
+        top.Items.Add(vLamps);
         var help = Btn("Справка", "Справка и горячие клавиши (F1)", ShowHelp);
         help.Alignment = ToolStripItemAlignment.Right;
+        // [ДОБАВЛЕНО 17.11.2026] инструкция для пользователя: по шагам, главное — маршруты здесь только для проверки схемы
+        var guide = Btn("Инструкция", "Как пользоваться редактором — по шагам. Маршруты в редакторе — только для проверки схемы", () => ShowHelp(true));
+        guide.Alignment = ToolStripItemAlignment.Right;
+        guide.Font = new Font(guide.Font, FontStyle.Bold);
 
         // ---- строка состояния ----
         status = new StatusStrip { SizingGrip = true };
@@ -598,9 +613,11 @@ public sealed partial class MainForm : Form
         f.ShowDialog(this);
     }
 
-    void ShowHelp()
+    void ShowHelp() => ShowHelp(false);
+
+    void ShowHelp(bool instructions)
     {
-        using var f = new HelpForm();
+        using var f = new HelpForm(instructions);
         f.ShowDialog(this);
     }
 
@@ -757,6 +774,7 @@ public sealed partial class MainForm : Form
             case Keys.S: SetTool("signal"); return true;
             case Keys.T: SetTool("text"); return true;
             case Keys.L: SetTool("label"); return true;    // [ДОБАВЛЕНО 10.11.2026] свободный текст
+            case Keys.P: SetTool("sign"); return true;     // [ДОБАВЛЕНО 17.11.2026] знак у пути
             case Keys.R: RotateSelected(shift ? -1 : 1); return true;
             case Keys.K: ui.PlaceType = "brake"; SetTool("place"); return true;    // [ДОБАВЛЕНО 12.11.2026] тормозная позиция
             case Keys.Y: ui.PlaceType = "symswitch"; SetTool("place"); return true;    // [ДОБАВЛЕНО 12.11.2026] симметричная стрелка

@@ -51,6 +51,7 @@ public sealed class UiState
     public string Tool = "place";             // select | place | erase | brush | signal | text | object
     public string PlaceType = "straight";
     public string ObjType = "building";       // [ДОБАВЛЕНО 05.11.2026] какой объект ставит инструмент «object»
+    public string SignType = "limit";         // [ДОБАВЛЕНО 17.11.2026] какой знак ставит инструмент «sign» (Core.SignTypes)
     public string SelObj;                     // выбранный объект (ключ левого верхнего угла)
     public Point? ObjMove;                    // объект перетаскивают: сдвиг в клетках
     public int? SelLabel;                     // [ДОБАВЛЕНО 10.11.2026] выбранный свободный текст (номер в Station.Labels)

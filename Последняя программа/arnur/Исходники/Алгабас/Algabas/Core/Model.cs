@@ -293,6 +293,9 @@ public class RailSignal
     public RailSignal RepeatOf;
     /// <summary>Есть световой указатель «Н» (горит при «красный и Н»).</summary>
     public bool Indicator;
+    /// <summary>[ДОБАВЛЕНО 16.11.2026] Участок, на котором стоит светофор («Станция по схеме»): клик по нему вторым
+    /// задаёт маршрут, у которого этот участок — путь назначения (RouteFinder.Find). null — не известно (Алгабас, АКЖТ).</summary>
+    public TrackSection At;
 
     /// <summary>Чисто маневровый светофор (нет ни зелёного, ни жёлтого).</summary>
     public bool IsShuntOnly => !Has("green") && !Has("yellow");

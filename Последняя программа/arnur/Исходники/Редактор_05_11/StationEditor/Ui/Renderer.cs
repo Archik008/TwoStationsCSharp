@@ -51,6 +51,13 @@ public sealed class SigGeom
     /// <summary>[ДОБАВЛЕНО 09.11.2026] Карликовый в виде ГОСТ: огни блоком у основания «|», основание — от Bar0 до Bar1 по Y</summary>
     public bool DwarfBlock;
     public float Bar0, Bar1;
+    /// <summary>[ДОБАВЛЕНО 17.11.2026] Головки (размеры групп огней от мачты) — null, если огни в ряд.</summary>
+    public int[] Groups;
+    /// <summary>[ДОБАВЛЕНО 17.11.2026] «Окно» на мачте между пригласительным и основными огнями: центр маршрутного указателя
+    /// и полоса (X вдоль ряда огней); NaN — нет.</summary>
+    public float IndX = float.NaN, StripX0 = float.NaN, StripX1 = float.NaN, Half;
+    /// <summary>Высота (Y) центра указателя и полосы: у мачтового — ряд огней, у карликового блока ГОСТ — свой ряд сбоку.</summary>
+    public float IndY = float.NaN, StripY = float.NaN;
     /// <summary>[ДОБАВЛЕНО 09.11.2026] Поворот светофора вокруг точки (Ax, Ay), градусы: светофор лежит параллельно пути
     /// у края клетки (на наклонном пути и на изгибе — тоже, как Ч22 на стр. 89 РУ-30-80). Box и всё остальное — до поворота.</summary>
     public float Angle;
@@ -147,6 +154,52 @@ public static class Renderer
             if (arrow > 0) g.FillPolygon(ab, new[] { new PointF(tr + arrow, cy - ah), new PointF(tr, cy), new PointF(tr + arrow, cy + ah) });
             g.DrawString(gp.Sec, f, tb, gp.Center, Center);
         }
+    }
+
+    /// <summary>[ДОБАВЛЕНО 17.11.2026] Знаки у пути. Предельный столбик — белый столбик с чёрной верхушкой посреди клетки сбоку от пути
+    /// (ПТЭ РК п. 114, 116); «Граница станции» (ГС, ПТЭ п. 133) и «Граница блок-участка» (ГБ, Инструкция п. 81) — белая табличка
+    /// на стойке справа по ходу (ПТЭ п. 115): «→» — под путём, «←» — над путём.</summary>
+    public static void DrawSigns(Graphics g, Tile t, float x, float y, float cs)
+    {
+        using var dark = new Pen(Pal.Dark, Math.Max(1f, cs * 0.03f));
+        foreach (var s in t.Signs)
+        {
+            if (s.Type == "limit")
+            {
+                float w = cs * 0.09f, h = cs * 0.22f, cx = x + cs * 0.5f, top = y + cs * 0.62f;
+                g.FillRectangle(Brushes.White, cx - w / 2, top, w, h);
+                using (var bb = new SolidBrush(Pal.Dark)) g.FillRectangle(bb, cx - w / 2, top, w, h * 0.35f);
+                g.DrawRectangle(dark, cx - w / 2, top, w, h);
+                continue;
+            }
+            var info = Core.SignTypes.FirstOrDefault(q => q.Id == s.Type);
+            bool below = s.Dir != "L";
+            float pw = cs * 0.5f, ph = cs * 0.26f, px = x + cs * 0.5f - pw / 2;
+            float py = below ? y + cs * 0.68f : y + cs * 0.06f;
+            float poleFrom = below ? y + cs * 0.56f : y + cs * 0.44f, poleTo = below ? py : py + ph;
+            g.DrawLine(dark, x + cs * 0.5f, poleFrom, x + cs * 0.5f, poleTo);
+            g.FillRectangle(Brushes.White, px, py, pw, ph);
+            g.DrawRectangle(dark, px, py, pw, ph);
+            if (cs >= 14)
+                using (var tb = new SolidBrush(Pal.Dark))
+                    g.DrawString(info.Short, GetFont(cs * 0.16f, true), tb, new PointF(x + cs * 0.5f, py + ph / 2), Center);
+        }
+    }
+
+    /// <summary>[ДОБАВЛЕНО 17.11.2026] Стрелочный указатель нецентрализованной стрелки (ПТЭ РК п. 107; Инструкция РК п. 72):
+    /// по прямому (плюс) — узкий белый прямоугольник (ночью молочно-белый огонь), на боковой (минус) — широкая сторона,
+    /// ночью жёлтый огонь. Рисуется у конца стрелки, со стороны, противоположной ответвлению.</summary>
+    public static void DrawSwitchIndicator(Graphics g, Tile t, float x, float y, float cs)
+    {
+        var v = Core.VariantOf(t);
+        // у конца стрелки (не у остряка — там часто светофор), со стороны, противоположной ответвлению
+        float fx = v.Trunk is "W" or "NW" or "SW" ? 0.8f : 0.2f;
+        float fy = v.Minus.Contains('N') ? 0.84f : 0.16f;
+        bool plus = t.IsPlus;
+        float w = plus ? cs * 0.08f : cs * 0.22f, h = cs * 0.2f;
+        var r = new RectangleF(x + cs * fx - w / 2, y + cs * fy - h / 2, w, h);
+        using (var b = new SolidBrush(plus ? Color.White : Pal.LampYellow)) g.FillRectangle(b, r);
+        using (var p = new Pen(Pal.Dark, Math.Max(1f, cs * 0.025f))) g.DrawRectangle(p, r.X, r.Y, r.Width, r.Height);
     }
 
     /// <summary>[ДОБАВЛЕНО 12.11.2026] Где подписать тормозную позицию: сбоку от полосы, со стороны «вниз» по экрану.</summary>
@@ -338,6 +391,12 @@ public static class Renderer
         return (float)deg;
     }
 
+    // ---- [ДОБАВЛЕНО 17.11.2026] проверка огней: зажечь все лампы светофора (все — кнопка «Все огни», выбранные — галочка
+    // в свойствах). Только вид: в файл не пишется, маршруты и показания не меняет ----
+    public static bool LampTestAll;
+    public static readonly HashSet<Signal> LampTestSigs = new();
+    public static bool IsLampTest(Signal s) => LampTestAll || LampTestSigs.Contains(s);
+
     public static SigGeom GetSigGeom(Tile t, Signal sig, float x, float y, float cs, bool diamond = false)
     {
         var gm = GetSigGeomFlat(t, sig, x, y, cs, diamond);
@@ -354,9 +413,44 @@ public static class Renderer
         // [ИЗМЕНЕНО 09.11.2026] в виде «Огни по ГОСТ» — все лампы головки вплотную, как цельные светофоры в РУ-30-80:
         // мачтовый — «⊢» и ножка, огни в ряд вдоль пути («1 ⊢●○⊘», «Н1 ⊢◎⊘●○⊘», «◆—⊣З», стр. 9, 49);
         // у входного пригласительный отделён чёрточкой («Н ⊢◎-⊘●○⊘», стр. 9, 49); карликовый — см. ниже
-        int n = GostLamps ? Aspects.FullHead(sig, t, diamond).Length : Aspects.LampCount(sig, t);
+        // [ИЗМЕНЕНО 17.11.2026] при проверке огней — все лампы полной головки и в цветном виде
+        int n = GostLamps || IsLampTest(sig) ? Aspects.FullHead(sig, t, diamond).Length : Aspects.LampCount(sig, t);
         float gap = GostLamps && Aspects.InvitationApart(sig) && n > 1 ? r * 0.8f : 0;
-        float Off(int i) => (diamond ? r * 1.3f : r) + i * 2 * r + (i >= 1 ? gap : 0);    // от конца ножки до центра i-й лампы
+        // [ДОБАВЛЕНО 17.11.2026] головки (группы огней, свойство «Головки») и «окно» на мачте: маршрутный указатель и зелёная
+        // полоса — между пригласительным и основными огнями, а если пригласительного нет — у мачты (не над светофором)
+        var groups = sig.HeadGroups(n);
+        float grpGap = groups != null ? r * 0.7f : 0;
+        float half = r * 0.95f, g0 = r * 0.35f, stripW = r * 0.7f;
+        bool slotInd = sig.RouteIndOnMast, slotStrip = sig.HasStrip;
+        float slotContent = (slotInd ? g0 + 2 * half : 0) + (slotStrip ? g0 + stripW : 0);
+        float slotW = slotContent > 0 ? slotContent + g0 : 0;
+        int slotAt = -1;
+        if (slotW > 0)
+        {
+            var headArr = GostLamps ? Aspects.FullHead(sig, t, diamond) : Aspects.Head(sig, t);
+            bool inv = sig.Kind is "entry" or "exit" or "route" && headArr != null && headArr.Length > 1 && headArr[0] == Lamp.White;
+            slotAt = inv ? 1 : 0;
+            if (groups != null && slotAt > 0)
+            {
+                // на границе головок: первая граница не ближе к мачте, чем нужно (но не над последней лампой)
+                int acc = 0;
+                foreach (var p in groups) { acc += p; if (acc >= slotAt && acc < n) { slotAt = acc; break; } }
+            }
+        }
+        bool Boundary(int i)
+        {
+            if (groups == null || i <= 0) return false;
+            int acc = 0;
+            foreach (var p in groups) { acc += p; if (acc == i) return true; if (acc > i) return false; }
+            return false;
+        }
+        float Off(int i)    // от конца ножки до центра i-й лампы
+        {
+            float o = (diamond ? r * 1.3f : r) + i * 2 * r + (i >= 1 ? gap : 0);
+            for (int j = 1; j <= i; j++) if (Boundary(j)) o += grpGap;
+            if (slotAt >= 0 && i >= slotAt) o += slotW;
+            return o;
+        }
         var lamps = new PointF[n];
         if (GostLamps && dwarf)
         {
@@ -378,12 +472,24 @@ public static class Renderer
             for (int i = 0; i < n; i++)
                 lamps[i] = new PointF(a.X + fwd * (r + cells[i].C * 2 * r), start + side * (r + cells[i].Rw * 2 * r));
             float end = start + side * rows * 2 * r;
+            // [ДОБАВЛЕНО 17.11.2026] указатель и полоса у карликового — отдельным рядом у основания, за огнями (дальше от пути)
+            float dIndX = float.NaN, dStripX0 = float.NaN, dStripX1 = float.NaN, rowY = float.NaN;
+            float dh = r * 0.95f, dg = r * 0.35f;
+            if (sig.RouteIndOnMast || sig.HasStrip)
+            {
+                rowY = end + side * (dg + dh);
+                float cur = 0;
+                if (sig.RouteIndOnMast) { cur += dg; dIndX = a.X + fwd * (cur + dh); cur += 2 * dh; }
+                if (sig.HasStrip) { cur += dg; dStripX0 = a.X + fwd * cur; dStripX1 = a.X + fwd * (cur + r * 0.7f); }
+                end = rowY + side * dh;
+            }
             var lab = new PointF(a.X + fwd * cols * r, end + side * cs * 0.2f);
             float bx0 = Math.Min(a.X, a.X + fwd * cols * 2 * r), bx1 = Math.Max(a.X, a.X + fwd * cols * 2 * r);
             return new SigGeom
             {
                 Ax = a.X, Ay = a.Y, Sy = start, Side = side, Fwd = fwd, R = r, Lamps = lamps, Label = lab,
                 DwarfBlock = true, Bar0 = start, Bar1 = end,
+                IndX = dIndX, IndY = rowY, StripX0 = dStripX0, StripX1 = dStripX1, StripY = rowY, Half = dh,
                 Box = RectangleF.FromLTRB(bx0 - 3, Math.Min(a.Y, lab.Y) - cs * 0.15f, bx1 + 3, Math.Max(a.Y, lab.Y) + cs * 0.15f),
             };
         }
@@ -397,10 +503,18 @@ public static class Renderer
             minX = Math.Min(minX, lx); maxX = Math.Max(maxX, lx);
         }
         var label = new PointF(a.X + fwd * (leg + (Off(0) + Off(n - 1)) / 2), sy + side * (r + cs * 0.22f));
+        float indX = float.NaN, stripX0 = float.NaN, stripX1 = float.NaN;
+        if (slotAt >= 0)
+        {
+            float cur = slotAt == 0 ? leg : leg + Off(slotAt - 1) + r;    // вдоль ряда от точки привязки
+            if (slotInd) { cur += g0; indX = a.X + fwd * (cur + half); cur += 2 * half; }
+            if (slotStrip) { cur += g0; stripX0 = a.X + fwd * cur; stripX1 = a.X + fwd * (cur + stripW); }
+        }
         return new SigGeom
         {
             Ax = a.X, Ay = a.Y, Sy = sy, Side = side, Fwd = fwd, R = r, Lamps = lamps, Label = label,
             MastRow = GostLamps && !dwarf, Gap = gap,
+            Groups = groups, IndX = indX, StripX0 = stripX0, StripX1 = stripX1, Half = half, IndY = sy, StripY = sy,
             Box = RectangleF.FromLTRB(minX - 3, Math.Min(a.Y, label.Y) - cs * 0.15f, maxX + 3, Math.Max(a.Y, label.Y) + cs * 0.15f),
         };
     }
@@ -431,8 +545,19 @@ public static class Renderer
         }
         aspect ??= Aspects.Static(sig, t);
         // в виде «Огни по ГОСТ» — полная головка: горящие огни раскладываются по её лампам
-        var fullHead = GostLamps ? Aspects.FullHead(sig, t, dia) : null;
+        bool lampTest = IsLampTest(sig);
+        var fullHead = GostLamps || lampTest ? Aspects.FullHead(sig, t, dia) : null;
         var shown = GostLamps ? Aspects.OnFullHead(fullHead, aspect.Lamps) : aspect.Lamps;
+        if (lampTest)
+        {
+            // [ДОБАВЛЕНО 17.11.2026] проверка огней: горят все лампы своими цветами, «Н», указатель (8) и полоса
+            shown = fullHead.Select(c => new LampLit(c)).ToArray();
+            aspect = new Aspect
+            {
+                Lamps = shown, Text = "проверка огней", Indicator = Aspects.HasIndicator(sig) ? "Н" : null,
+                RouteText = sig.HasRouteInd ? "8" : null, RouteColor = Aspects.RouteIndColor(sig.Kind),
+            };
+        }
         float lw = Math.Max(1f, cs * 0.045f);
         using var pen = new Pen(A(Pal.Dark, alpha), lw);
         var foot = new PointF(gm.Ax, gm.Ay + gm.Side * cs * 0.1f);
@@ -469,6 +594,19 @@ public static class Renderer
         {
             float ty = foot.Y + (top.Y - foot.Y) * (0.45f + 0.25f * i);
             g.DrawLine(pen, gm.Ax - cs * 0.07f, ty, gm.Ax + cs * 0.07f, ty);
+        }
+        // [ДОБАВЛЕНО 17.11.2026] головки: у каждой группы огней — свой тёмный корпус (в цветном виде; в виде ГОСТ — только промежутки)
+        if (!GostLamps && !dia && gm.Groups != null)
+        {
+            using var hb = new SolidBrush(A(Color.FromArgb(0x2a, 0x30, 0x2e), alpha));
+            int i0 = 0;
+            foreach (var p in gm.Groups)
+            {
+                var l0 = gm.Lamps[i0]; var l1 = gm.Lamps[i0 + p - 1];
+                float hx0 = Math.Min(l0.X, l1.X) - gm.R * 1.25f, hx1 = Math.Max(l0.X, l1.X) + gm.R * 1.25f;
+                g.FillRectangle(hb, hx0, gm.Sy - gm.R * 1.25f, hx1 - hx0, gm.R * 2.5f);
+                i0 += p;
+            }
         }
         for (int i = 0; i < gm.Lamps.Length; i++)
         {
@@ -510,6 +648,47 @@ public static class Renderer
             if (aspect.Indicator != null && cs >= 10)
                 using (var ib = new SolidBrush(A(Color.White, alpha)))
                     g.DrawString(aspect.Indicator, GetFont(half * 1.5f, true), ib, c, Center);
+        }
+        // [ИЗМЕНЕНО 17.11.2026] маршрутный (путевой) указатель — на мачте между пригласительным и основными огнями
+        // (РУ-30-80 лист 10: «Ч ⊣◎□⊘●○⊘»), без пригласительного — у мачты; или на отдельной мачте рядом (Инструкция РК п. 70).
+        // Тёмный, при открытом маршруте горит номер пути: белым (входной, маневровый) или зелёным (выходной, маршрутный)
+        if (sig.HasRouteInd && gm.Lamps.Length > 0)
+        {
+            float half = gm.Half > 0 ? gm.Half : gm.R * 0.95f;
+            PointF c;
+            if (sig.RouteIndOwnMast == true)
+            {
+                // отдельная мачта позади светофора (против хода), ножка и указатель — в ту же сторону, что у светофора
+                float mx = gm.Ax - gm.Fwd * cs * 0.45f;
+                g.DrawLine(pen, mx, foot.Y, mx, gm.Sy);
+                g.DrawLine(pen, mx, gm.Sy, mx + gm.Fwd * cs * 0.08f, gm.Sy);
+                c = new PointF(mx + gm.Fwd * (cs * 0.08f + half), gm.Sy);
+            }
+            else if (!float.IsNaN(gm.IndX)) c = new PointF(gm.IndX, gm.IndY);
+            else c = new PointF(gm.Lamps[^1].X + gm.Fwd * (gm.R + half + gm.R * 0.35f + (Aspects.HasIndicator(sig) ? 2 * half + gm.R * 0.35f : 0)), gm.Lamps[^1].Y);
+            var box = new RectangleF(c.X - half, c.Y - half, 2 * half, 2 * half);
+            using (var bb = new SolidBrush(A(Pal.Dark, alpha))) g.FillRectangle(bb, box);
+            using (var bp = new Pen(A(LampColor(Aspects.RouteIndColor(sig.Kind)), alpha), Math.Max(1f, lw * 0.8f)))
+                g.DrawRectangle(bp, box.X, box.Y, box.Width, box.Height);
+            if (aspect.RouteText != null && cs >= 10)
+                using (var ib = new SolidBrush(A(LampColor(aspect.RouteColor), alpha)))
+                    g.DrawString(aspect.RouteText, GetFont(half * (aspect.RouteText.Length > 2 ? 0.9f : 1.4f), true), ib, c, Center);
+        }
+        // [ИЗМЕНЕНО 17.11.2026] зелёная светящаяся полоса (Инструкция РК п. 15, 19) — под основными огнями (над пригласительным),
+        // поперёк ряда огней, как горизонтальная полоса на мачте; в редакторе не горит (сигналы с полосой — во второй программе)
+        if (sig.HasStrip && gm.Lamps.Length > 0)
+        {
+            RectangleF bar;
+            if (!float.IsNaN(gm.StripX0))
+                bar = RectangleF.FromLTRB(Math.Min(gm.StripX0, gm.StripX1), gm.StripY - gm.R * 1.2f, Math.Max(gm.StripX0, gm.StripX1), gm.StripY + gm.R * 1.2f);
+            else
+            {
+                var last = gm.Lamps[^1];
+                float x0 = last.X + gm.Fwd * gm.R * 1.4f, x1 = x0 + gm.Fwd * gm.R * 0.7f;
+                bar = RectangleF.FromLTRB(Math.Min(x0, x1), last.Y - gm.R * 1.2f, Math.Max(x0, x1), last.Y + gm.R * 1.2f);
+            }
+            using (var bb = new SolidBrush(A(lampTest ? Pal.LampGreen : Color.FromArgb(0x1d, 0x4a, 0x2c), alpha))) g.FillRectangle(bb, bar);
+            using (var bp = new Pen(A(Pal.LampGreen, alpha), Math.Max(1f, lw * 0.8f))) g.DrawRectangle(bp, bar.X, bar.Y, bar.Width, bar.Height);
         }
         if (label && cs >= 14)
         {
@@ -936,6 +1115,15 @@ public static class Renderer
                 g.DrawString(t.Brk.Label, f, bt, BrakeLabelPos(t, SX(x), SY(y), cs), Center);
             }
         }
+
+        // ---- [ДОБАВЛЕНО 17.11.2026] знаки у пути и стрелочные указатели нецентрализованных стрелок ----
+        if (cs >= 10)
+            foreach (var e in entries)
+            {
+                if (IsHidden(e.K)) continue;
+                if (e.T.Signs != null) DrawSigns(g, e.T, SX(e.X), SY(e.Y), cs);
+                if (e.T.T == "switch" && e.T.IsManual) DrawSwitchIndicator(g, e.T, SX(e.X), SY(e.Y), cs);
+            }
 
         // ---- названия участков ----
         if (st.SecLabels == true && cs >= 14)    // [ИЗМЕНЕНО 11.11.2026] настройка станции, по умолчанию выкл.
