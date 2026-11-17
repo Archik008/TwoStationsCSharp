@@ -1022,6 +1022,9 @@ public sealed partial class MainForm
         var flt = ui.RouteFilter;
         var list = all.Where(r => flt == "all" || (flt == "shunt") == r.Shunt).ToList();
         H3(f, w, $"Маршруты ({all.Count})");
+        // [ДОБАВЛЕНО 17.11.2026] найдены автоматически — только для проверки схемы (кнопка «Инструкция»)
+        Hint(f, w, "Найдены редактором автоматически — только для проверки схемы, это не настоящие маршруты станции " +
+                   "(маршрутов сортировочной горки редактор не делает). Рабочие маршруты — в «Станции по схеме» → «Настройка…».");
 
         var seg = new FlowLayoutPanel { AutoSize = true, Margin = new Padding(0, 0, 0, S(4)) };
         foreach (var (id, text) in new[] { ("all", "Все"), ("train", "Поездные"), ("shunt", "Маневровые") })

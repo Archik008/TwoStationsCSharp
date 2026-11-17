@@ -150,6 +150,10 @@ public sealed partial class MainForm : Form
         this.vGost = vGost;
         var help = Btn("Справка", "Справка и горячие клавиши (F1)", ShowHelp);
         help.Alignment = ToolStripItemAlignment.Right;
+        // [ДОБАВЛЕНО 17.11.2026] инструкция для пользователя: по шагам, главное — маршруты здесь только для проверки схемы
+        var guide = Btn("Инструкция", "Как пользоваться редактором — по шагам. Маршруты в редакторе — только для проверки схемы", () => ShowHelp(true));
+        guide.Alignment = ToolStripItemAlignment.Right;
+        guide.Font = new Font(guide.Font, FontStyle.Bold);
 
         // ---- строка состояния ----
         status = new StatusStrip { SizingGrip = true };
@@ -598,9 +602,11 @@ public sealed partial class MainForm : Form
         f.ShowDialog(this);
     }
 
-    void ShowHelp()
+    void ShowHelp() => ShowHelp(false);
+
+    void ShowHelp(bool instructions)
     {
-        using var f = new HelpForm();
+        using var f = new HelpForm(instructions);
         f.ShowDialog(this);
     }
 
