@@ -235,6 +235,7 @@ public sealed partial class MainForm
     {
         ("select", "Выбор", "V"), ("erase", "Ластик", "E"), ("brush", "Участок", "B"), ("signal", "Светофор", "S"), ("text", "Надпись", "T"),
         ("label", "Свободный текст", "L"),    // [ДОБАВЛЕНО 10.11.2026] подпись в любом месте, тянется мышью не по клеткам
+        ("sign", "Знак", "P"),                // [ДОБАВЛЕНО 17.11.2026] предельный столбик, «Граница станции», «Граница блок-участка»
     };
 
     int LeftW => S(214);
@@ -264,6 +265,17 @@ public sealed partial class MainForm
             case "signal":
                 Renderer.DrawSignalIcon(g, r);
                 return;
+            case "sign":    // [ДОБАВЛЕНО 17.11.2026] табличка «ГС» на стойке
+            {
+                using var p = new Pen(CText, 1.6f);
+                var pl = new RectangleF(r.X + r.Width * 0.22f, r.Y + r.Height * 0.2f, r.Width * 0.56f, r.Height * 0.32f);
+                g.DrawLine(p, r.X + r.Width / 2, pl.Bottom, r.X + r.Width / 2, r.Y + r.Height * 0.86f);
+                g.FillRectangle(Brushes.White, pl);
+                g.DrawRectangle(p, pl.X, pl.Y, pl.Width, pl.Height);
+                using (var ft = new Font(Font.FontFamily, 8.5f, FontStyle.Bold))
+                    TextRenderer.DrawText(g, "ГС", ft, Rectangle.Round(pl), CText, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+                return;
+            }
             case "select":
             {
                 using var p = new Pen(CText, 2) { DashPattern = new[] { 2f, 1.5f } };
@@ -443,6 +455,30 @@ public sealed partial class MainForm
             Hint(optsPanel, w, hints["signal"] + " Имя подставится само по «Обозначениям…»: буква — от ближайшего светофора " +
                                "(рядом с Ч→ новый ← будет Н), выходной — по номеру пути (Н3). Поменять можно в «Свойствах».").Margin = new Padding(0, S(6), 0, 0);
         }
+        else if (ui.Tool == "sign")    // [ДОБАВЛЕНО 17.11.2026]
+        {
+            Hint(optsPanel, w, "Какой знак:").Margin = new Padding(0, 0, 0, S(2));
+            var cs = AddTo(optsPanel, Combo(Core.SignTypes.Select(q => new Opt { V = q.Id, T = q.Name }), ui.SignType));
+            cs.Width = w;
+            cs.SelectedIndexChanged += (_, _) => { ui.SignType = OptV(cs); RefreshToolOpts(); };
+            var info = Core.SignTypes.First(q => q.Id == ui.SignType);
+            Hint(optsPanel, w, info.Rule + ".").Margin = new Padding(0, S(4), 0, 0);
+            if (ui.SignType != "limit")
+            {
+                Hint(optsPanel, w, "Для какого направления (знак — справа по ходу, ПТЭ РК п. 115):").Margin = new Padding(0, S(6), 0, S(2));
+                var dirs = new FlowLayoutPanel { AutoSize = true, Margin = Padding.Empty };
+                foreach (var (d, text) in new[] { ("R", "→ под путём"), ("L", "← над путём") })
+                {
+                    var b = new Button { Text = text, Width = (w - S(8)) / 2, Height = S(30), Margin = new Padding(0, 0, S(4), 0), UseVisualStyleBackColor = ui.SigDir != d };
+                    if (ui.SigDir == d) { b.BackColor = Color.FromArgb(0xd8, 0xef, 0xe9); b.Font = FH4; }
+                    b.Click += (_, _) => { ui.SigDir = d; RefreshToolOpts(); };
+                    dirs.Controls.Add(b);
+                }
+                optsPanel.Controls.Add(dirs);
+            }
+            Hint(optsPanel, w, "Щелчок по кубику пути — поставить знак, ещё щелчок — убрать. Знаки только рисуются, на маршруты не влияют.")
+                .Margin = new Padding(0, S(6), 0, 0);
+        }
         else if (ui.Tool == "object")
         {
             var O = Core.ObjTypeOf(ui.ObjType);
@@ -472,6 +508,7 @@ public sealed partial class MainForm
             "text" => "Надпись: щелчок по клетке",
             "label" => "Свободный текст: щелчок — новый, тяните — подвинуть, двойной щелчок — поправить",
             "object" => $"Объект «{Core.ObjTypeOf(ui.ObjType).Name}»: щелчок по сетке",
+            "sign" => $"Знак «{Core.SignTypeName(ui.SignType)}»: щелчок по пути — поставить / убрать",
             _ => "",
         };
         sHint.Text = hint + " · колесо — масштаб, средняя кнопка или пробел+мышь — сдвинуть схему";
@@ -608,6 +645,30 @@ public sealed partial class MainForm
                     Later(() => Edit(() => { if (TileAt(k) is Tile c) c.Plus = minus ? false : null; }));
                 };
                 Hint(f, w, "Стрелки с одинаковым «съездом» переводятся вместе (спаренные).");
+                // [ДОБАВЛЕНО 17.11.2026] данные с бумаги: марка крестовины (Инструкция РК п. 15, 19 — пологие марки),
+                // нецентрализованная стрелка со стрелочным указателем (ПТЭ РК п. 107, Инструкция РК п. 72–73)
+                var mk = Row(f, w, "Марка крестовины", Combo(new[] { new Opt { V = "", T = "— не указана" } }
+                    .Concat(Core.FrogMarks.Select(m => new Opt { V = m, T = m + (m is "1/18" or "1/22" ? " (пологая)" : "") })), t.Mark ?? ""));
+                mk.SelectedIndexChanged += (_, _) => { var v = OptV(mk); Later(() => Edit(() => { if (TileAt(k) is Tile c) c.Mark = v == "" ? null : v; }, false)); };
+                var man = new CheckBox { Text = "нецентрализованная (стрелочный указатель)", Checked = t.IsManual, AutoSize = true, Margin = new Padding(S(2), S(2), 0, S(2)) };
+                tips.SetToolTip(man, "Стрелка переводится на месте, не с пульта. Стрелочный указатель: по прямому — узкий белый прямоугольник\n" +
+                                     "(ночью молочно-белый огонь), на боковой путь — широкая сторона (ночью жёлтый огонь).\n" +
+                                     "ПТЭ РК п. 107, Инструкция по сигнализации РК п. 72–73.");
+                man.CheckedChanged += (_, _) => { bool v = man.Checked; Edit(() => { if (TileAt(k) is Tile c) c.Manual = v ? true : null; }, false); };
+                f.Controls.Add(man);
+                Hint(f, w, "Марка крестовины нужна для сигналов с зелёной полосой (пологие 1/18, 1/22 — Инструкция РК п. 15, 19); " +
+                           "их показывает «Станция по схеме».");
+            }
+            // [ДОБАВЛЕНО 17.11.2026] знаки на клетке
+            if (t.Signs is { Count: > 0 })
+            {
+                H4(f, w, "Знаки на клетке");
+                foreach (var sgn in t.Signs.ToList())
+                {
+                    var sg = sgn;
+                    var nm = Core.SignTypeName(sg.Type) + (sg.Type == "limit" ? "" : sg.Dir == "L" ? " (←)" : " (→)");
+                    AddButton(f, "Убрать: " + nm, () => Edit(() => { if (TileAt(k) is Tile c && c.Signs != null) { c.Signs.Remove(c.Signs.FirstOrDefault(q => q.Type == sg.Type && q.Dir == sg.Dir)); if (c.Signs.Count == 0) c.Signs = null; } }));
+                }
             }
 
             if (t.T == "brake" && t.Brk != null) BrakeProps(f, w, k, t.Brk);
@@ -722,6 +783,43 @@ public sealed partial class MainForm
                 row3.Controls.AddRange(new Control[] { fx, ro });
                 f.Controls.Add(row2);
                 f.Controls.Add(row3);
+                // [ДОБАВЛЕНО 17.11.2026] зелёная светящаяся полоса (Инструкция РК п. 15, 19), красный вместо синего (п. 98)
+                if (s.Kind is "entry" or "exit" or "route")
+                {
+                    var sp = new CheckBox { Text = "зелёная светящаяся полоса (пологие марки)", Checked = s.Strip == true, AutoSize = true, Margin = new Padding(S(2), S(2), 0, S(2)) };
+                    tips.SetToolTip(sp, "Полоса под огнями для приёма и отправления по стрелкам пологих марок (1/18, 1/22):\n" +
+                                        "«зелёный мигающий и жёлтый + одна (две) зелёные полосы» и т. п. — Инструкция по сигнализации РК п. 15, 19.\n" +
+                                        "В редакторе только рисуется; показания с полосой — во второй программе.");
+                    sp.CheckedChanged += (_, _) => { bool v = sp.Checked; Edit(() => { if (SigAt(k, ii) is Signal c) c.Strip = v ? true : null; }, false); };
+                    f.Controls.Add(sp);
+                }
+                if (s.Kind == "shunt")
+                {
+                    var rs = new CheckBox { Text = "красный огонь вместо синего", Checked = s.RedShunt == true, AutoSize = true, Margin = new Padding(S(2), S(2), 0, S(2)) };
+                    tips.SetToolTip(rs, "«На маневровых светофорах вместо синих могут применяться красные огни» — Инструкция по сигнализации РК п. 98.");
+                    rs.CheckedChanged += (_, _) => { bool v = rs.Checked; Edit(() => { if (SigAt(k, ii) is Signal c) c.RedShunt = v ? true : null; }, false); };
+                    f.Controls.Add(rs);
+                }
+                // [ДОБАВЛЕНО 17.11.2026] маршрутный (путевой) указатель — РУ-30-80 лист 10; Инструкция по сигнализации РК п. 70–71; ПТЭ РК п. 134
+                if (Aspects.CanHaveRouteInd(s.Kind))
+                {
+                    bool green = Aspects.RouteIndColor(s.Kind) == Lamp.Green;
+                    var ri = new CheckBox { Text = "маршрутный указатель (номер пути, " + (green ? "зелёный)" : "белый)"), Checked = s.RouteInd == true, AutoSize = true,
+                                            Margin = new Padding(S(2), S(2), 0, S(4)) };
+                    tips.SetToolTip(ri, green
+                        ? "Зелёный указатель номера пути, с которого разрешено отправление (и маневры при лунно-белом).\n" +
+                          "Обязателен на групповых выходных и маршрутных светофорах: ПТЭ РК п. 134, Инструкция по сигнализации РК п. 71,\n" +
+                          "РУ-30-80 лист 10. В «Испытании» горит, пока маршрут от светофора открыт."
+                        : "Белый указатель: у входного — номер пути приёма, у маневрового — номер пути, с которого маршрут.\n" +
+                          "Инструкция по сигнализации РК п. 70, РУ-30-80 лист 10 (прим. 2). В «Испытании» горит, пока маршрут открыт.");
+                    ri.CheckedChanged += (_, _) =>
+                    {
+                        bool v = ri.Checked;
+                        Edit(() => { if (SigAt(k, ii) is Signal c) c.RouteInd = v ? true : null; }, false);
+                    };
+                    ri.Enter += (_, _) => { ui.SelSig = new SigRef(k, ii); Draw(); };
+                    f.Controls.Add(ri);
+                }
             }
             if (ui.SelSig is SigRef ss && ss.Key == k && SigAt(k, ss.Idx) is Signal sel)
                 Hint(f, w, $"{Core.SigKindName(sel.Kind)}: {Core.SigKindHint(sel.Kind)}");

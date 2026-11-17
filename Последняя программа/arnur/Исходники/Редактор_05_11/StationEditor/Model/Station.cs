@@ -120,6 +120,26 @@ public sealed class Tile
 
     [JsonIgnore] public bool IsPlus => Plus != false;
     [JsonIgnore] public bool HasSigs => Sigs != null && Sigs.Count > 0;
+
+    // ---- [ДОБАВЛЕНО 17.11.2026] данные «с бумаги» по правилам РК (ЗАДАЧИ_расхождения_РК.md, раздел 3) ----
+    /// <summary>Марка крестовины стрелки: "1/9", "1/11", "1/18", "1/22" (null — не указана). Пологие марки (1/18, 1/22) нужны
+    /// сигналам с зелёной светящейся полосой — Инструкция по сигнализации РК п. 15, 19 (считает «Станция по схеме»).</summary>
+    [JsonPropertyName("mark")] public string Mark { get; set; }
+    /// <summary>Нецентрализованная стрелка (переводится на месте): у неё стрелочный указатель — ПТЭ РК п. 107,
+    /// Инструкция РК п. 72–73. null — централизованная.</summary>
+    [JsonPropertyName("manual")] public bool? Manual { get; set; }
+    /// <summary>Знаки у пути: предельный столбик, «Граница станции», «Граница блок-участка».</summary>
+    [JsonPropertyName("signs")] public List<TrackSign> Signs { get; set; }
+    [JsonIgnore] public bool IsManual => Manual == true;
+}
+
+/// <summary>[ДОБАВЛЕНО 17.11.2026] Знак у пути. type: limit — предельный столбик (ПТЭ РК п. 114, 116), station — «Граница станции»
+/// (ПТЭ РК п. 133), block — «Граница блок-участка» (Инструкция РК п. 81, ПТЭ РК п. 135). dir — для какого направления
+/// (знак ставится справа по ходу, ПТЭ п. 115): R — под путём, L — над путём; у предельного столбика не нужен.</summary>
+public sealed class TrackSign
+{
+    [JsonPropertyName("type")] public string Type { get; set; } = "limit";
+    [JsonPropertyName("dir")] public string Dir { get; set; }
 }
 
 /// <summary>[ДОБАВЛЕНО 12.11.2026] Тормозная позиция сортировочной горки — вагонный замедлитель на пути
@@ -166,6 +186,20 @@ public sealed class Signal
     [JsonPropertyName("num")] public string Num { get; set; }
     /// <summary>Порядковый номер, выданный при добавлении, — когда светофор стоит не на пути (М1 в горловине, проходной 3).</summary>
     [JsonPropertyName("seq")] public int? Seq { get; set; }
+
+    /// <summary>[ДОБАВЛЕНО 17.11.2026] Маршрутный (путевой) указатель у мачты — квадрат с номером пути (РУ-30-80 лист 10, стр. 18;
+    /// Инструкция по сигнализации РК п. 70–71; ПТЭ РК п. 134). true — есть; null — нет.
+    /// Входной и маневровый — белый, номер пути приёма / пути, с которого маршрут; выходной и маршрутный — зелёный,
+    /// номер пути отправления. Горит, пока маршрут от светофора открыт; маршрутов не меняет.</summary>
+    [JsonPropertyName("ri")] public bool? RouteInd { get; set; }
+    /// <summary>[ДОБАВЛЕНО 17.11.2026] Зелёная светящаяся полоса под огнями (входной, выходной, маршрутный) — для приёма и отправления
+    /// по стрелкам пологих марок: Инструкция РК п. 15, 19. В редакторе только рисуется (не горит), сигналы с полосой — во второй программе.</summary>
+    [JsonPropertyName("strip")] public bool? Strip { get; set; }
+    /// <summary>[ДОБАВЛЕНО 17.11.2026] Маневровый: красный огонь вместо синего — Инструкция РК п. 98.</summary>
+    [JsonPropertyName("red")] public bool? RedShunt { get; set; }
+    [JsonIgnore] public bool HasStrip => Strip == true && Kind is "entry" or "exit" or "route";
+    [JsonIgnore] public bool IsRedShunt => RedShunt == true && Kind == "shunt";
+    [JsonIgnore] public bool HasRouteInd => RouteInd == true && Aspects.CanHaveRouteInd(Kind);
 }
 
 public sealed class SectionInfo
@@ -307,6 +341,15 @@ public static class StationFile
         }
         Core.AssignSignalIds(st);    // [ДОБАВЛЕНО 09.11.2026] старые файлы без id и повторы — получают новые номера
         Core.AssignBrakes(st);       // [ДОБАВЛЕНО 12.11.2026] тормозные позиции: данные и id
+        // [ДОБАВЛЕНО 17.11.2026] марка крестовины и «нецентрализованная» — только у стрелки; знаки — только известные
+        foreach (var t in st.Tiles.Values)
+        {
+            if (t.T != "switch") { t.Mark = null; t.Manual = null; }
+            if (t.Manual == false) t.Manual = null;
+            if (string.IsNullOrWhiteSpace(t.Mark)) t.Mark = null;
+            t.Signs?.RemoveAll(s => s == null || Core.SignTypeName(s.Type) == null);
+            if (t.Signs is { Count: 0 }) t.Signs = null;
+        }
         Core.AssignScissors(st);     // [ДОБАВЛЕНО 12.11.2026] перекрёстный съезд — две спаренные диагонали (16/20, 14/18)
         // [ДОБАВЛЕНО 11.11.2026] одна настройка направления: старое «rightOdd: true» (→ нечётное) = «чётные идут ←» (even: "L")
         if (st.RightOdd == true) st.Even = "L";

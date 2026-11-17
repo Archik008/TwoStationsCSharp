@@ -149,6 +149,52 @@ public static class Renderer
         }
     }
 
+    /// <summary>[ДОБАВЛЕНО 17.11.2026] Знаки у пути. Предельный столбик — белый столбик с чёрной верхушкой посреди клетки сбоку от пути
+    /// (ПТЭ РК п. 114, 116); «Граница станции» (ГС, ПТЭ п. 133) и «Граница блок-участка» (ГБ, Инструкция п. 81) — белая табличка
+    /// на стойке справа по ходу (ПТЭ п. 115): «→» — под путём, «←» — над путём.</summary>
+    public static void DrawSigns(Graphics g, Tile t, float x, float y, float cs)
+    {
+        using var dark = new Pen(Pal.Dark, Math.Max(1f, cs * 0.03f));
+        foreach (var s in t.Signs)
+        {
+            if (s.Type == "limit")
+            {
+                float w = cs * 0.09f, h = cs * 0.22f, cx = x + cs * 0.5f, top = y + cs * 0.62f;
+                g.FillRectangle(Brushes.White, cx - w / 2, top, w, h);
+                using (var bb = new SolidBrush(Pal.Dark)) g.FillRectangle(bb, cx - w / 2, top, w, h * 0.35f);
+                g.DrawRectangle(dark, cx - w / 2, top, w, h);
+                continue;
+            }
+            var info = Core.SignTypes.FirstOrDefault(q => q.Id == s.Type);
+            bool below = s.Dir != "L";
+            float pw = cs * 0.5f, ph = cs * 0.26f, px = x + cs * 0.5f - pw / 2;
+            float py = below ? y + cs * 0.68f : y + cs * 0.06f;
+            float poleFrom = below ? y + cs * 0.56f : y + cs * 0.44f, poleTo = below ? py : py + ph;
+            g.DrawLine(dark, x + cs * 0.5f, poleFrom, x + cs * 0.5f, poleTo);
+            g.FillRectangle(Brushes.White, px, py, pw, ph);
+            g.DrawRectangle(dark, px, py, pw, ph);
+            if (cs >= 14)
+                using (var tb = new SolidBrush(Pal.Dark))
+                    g.DrawString(info.Short, GetFont(cs * 0.16f, true), tb, new PointF(x + cs * 0.5f, py + ph / 2), Center);
+        }
+    }
+
+    /// <summary>[ДОБАВЛЕНО 17.11.2026] Стрелочный указатель нецентрализованной стрелки (ПТЭ РК п. 107; Инструкция РК п. 72):
+    /// по прямому (плюс) — узкий белый прямоугольник (ночью молочно-белый огонь), на боковой (минус) — широкая сторона,
+    /// ночью жёлтый огонь. Рисуется у конца стрелки, со стороны, противоположной ответвлению.</summary>
+    public static void DrawSwitchIndicator(Graphics g, Tile t, float x, float y, float cs)
+    {
+        var v = Core.VariantOf(t);
+        // у конца стрелки (не у остряка — там часто светофор), со стороны, противоположной ответвлению
+        float fx = v.Trunk is "W" or "NW" or "SW" ? 0.8f : 0.2f;
+        float fy = v.Minus.Contains('N') ? 0.84f : 0.16f;
+        bool plus = t.IsPlus;
+        float w = plus ? cs * 0.08f : cs * 0.22f, h = cs * 0.2f;
+        var r = new RectangleF(x + cs * fx - w / 2, y + cs * fy - h / 2, w, h);
+        using (var b = new SolidBrush(plus ? Color.White : Pal.LampYellow)) g.FillRectangle(b, r);
+        using (var p = new Pen(Pal.Dark, Math.Max(1f, cs * 0.025f))) g.DrawRectangle(p, r.X, r.Y, r.Width, r.Height);
+    }
+
     /// <summary>[ДОБАВЛЕНО 12.11.2026] Где подписать тормозную позицию: сбоку от полосы, со стороны «вниз» по экрану.</summary>
     public static PointF BrakeLabelPos(Tile t, float x, float y, float cs)
     {
@@ -510,6 +556,34 @@ public static class Renderer
             if (aspect.Indicator != null && cs >= 10)
                 using (var ib = new SolidBrush(A(Color.White, alpha)))
                     g.DrawString(aspect.Indicator, GetFont(half * 1.5f, true), ib, c, Center);
+        }
+        // [ДОБАВЛЕНО 17.11.2026] маршрутный (путевой) указатель — квадрат за огнями (РУ-30-80 лист 10: «⊢□◎○●⊘»);
+        // тёмный, при открытом маршруте горит номер пути: белым (входной, маневровый) или зелёным (выходной, маршрутный)
+        if (sig.HasRouteInd && gm.Lamps.Length > 0)
+        {
+            var last = gm.Lamps[^1];
+            float half = gm.R * 0.95f;
+            float off = gm.R + half + gm.R * 0.35f + (Aspects.HasIndicator(sig) ? 2 * half + gm.R * 0.35f : 0);
+            var c = new PointF(last.X + gm.Fwd * off, last.Y);
+            var box = new RectangleF(c.X - half, c.Y - half, 2 * half, 2 * half);
+            using (var bb = new SolidBrush(A(Pal.Dark, alpha))) g.FillRectangle(bb, box);
+            using (var bp = new Pen(A(LampColor(Aspects.RouteIndColor(sig.Kind)), alpha), Math.Max(1f, lw * 0.8f)))
+                g.DrawRectangle(bp, box.X, box.Y, box.Width, box.Height);
+            if (aspect.RouteText != null && cs >= 10)
+                using (var ib = new SolidBrush(A(LampColor(aspect.RouteColor), alpha)))
+                    g.DrawString(aspect.RouteText, GetFont(half * (aspect.RouteText.Length > 2 ? 0.9f : 1.4f), true), ib, c, Center);
+        }
+        // [ДОБАВЛЕНО 17.11.2026] зелёная светящаяся полоса (Инструкция РК п. 15, 19) — короткая горизонтальная полоса за огнями;
+        // в редакторе не горит (сигналы с полосой считает «Станция по схеме»)
+        if (sig.HasStrip && gm.Lamps.Length > 0)
+        {
+            var last = gm.Lamps[^1];
+            float half = gm.R * 0.95f, gap0 = gm.R * 0.35f;
+            float off = gm.R + gap0 + (Aspects.HasIndicator(sig) ? 2 * half + gap0 : 0) + (sig.HasRouteInd ? 2 * half + gap0 : 0);
+            float x0 = last.X + gm.Fwd * off, x1 = x0 + gm.Fwd * gm.R * 2.4f;
+            var bar = RectangleF.FromLTRB(Math.Min(x0, x1), last.Y - gm.R * 0.32f, Math.Max(x0, x1), last.Y + gm.R * 0.32f);
+            using (var bb = new SolidBrush(A(Color.FromArgb(0x1d, 0x4a, 0x2c), alpha))) g.FillRectangle(bb, bar);
+            using (var bp = new Pen(A(Pal.LampGreen, alpha), Math.Max(1f, lw * 0.8f))) g.DrawRectangle(bp, bar.X, bar.Y, bar.Width, bar.Height);
         }
         if (label && cs >= 14)
         {
@@ -936,6 +1010,15 @@ public static class Renderer
                 g.DrawString(t.Brk.Label, f, bt, BrakeLabelPos(t, SX(x), SY(y), cs), Center);
             }
         }
+
+        // ---- [ДОБАВЛЕНО 17.11.2026] знаки у пути и стрелочные указатели нецентрализованных стрелок ----
+        if (cs >= 10)
+            foreach (var e in entries)
+            {
+                if (IsHidden(e.K)) continue;
+                if (e.T.Signs != null) DrawSigns(g, e.T, SX(e.X), SY(e.Y), cs);
+                if (e.T.T == "switch" && e.T.IsManual) DrawSwitchIndicator(g, e.T, SX(e.X), SY(e.Y), cs);
+            }
 
         // ---- названия участков ----
         if (st.SecLabels == true && cs >= 14)    // [ИЗМЕНЕНО 11.11.2026] настройка станции, по умолчанию выкл.

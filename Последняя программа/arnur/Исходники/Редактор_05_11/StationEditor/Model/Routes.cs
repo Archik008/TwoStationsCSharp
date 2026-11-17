@@ -323,6 +323,10 @@ public static class Validator
         {
             if (s.Sig.Kind == "warning" && Aspects.MainAhead(st, s, null) == null)
                 Add("warn", $"Предупредительный {Nz(s.Sig.Name)} ({s.Key}): впереди по ходу нет входного, проходного, заградительного или прикрытия", s.Key);
+            // [ДОБАВЛЕНО 17.11.2026] групповой выходной / маршрутный (позади сходятся 2+ пути) — нужен маршрутный указатель (ПТЭ РК п. 134)
+            if (s.Sig.Kind is "exit" or "route" && !s.Sig.HasRouteInd && Aspects.TracksBehind(st, s) >= 2)
+                Add("info", $"{Core.SigKindName(s.Sig.Kind)} {Nz(s.Sig.Name)} ({s.Key}) — групповой (позади {Aspects.TracksBehind(st, s)} пути): " +
+                            "по ПТЭ РК п. 134 нужен маршрутный указатель номера пути — галочка в свойствах светофора", s.Key);
             if (s.Sig.Kind == "humprep" && Aspects.MainAhead(st, s, null) == null)     // [ДОБАВЛЕНО 13.11.2026]
                 Add("warn", $"Повторитель горочного {Nz(s.Sig.Name)} ({s.Key}): впереди по ходу нет горочного светофора", s.Key);
             if (s.Sig.Kind == "repeater" && Aspects.MainAhead(st, s, null) == null)

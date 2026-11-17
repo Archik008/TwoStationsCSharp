@@ -44,6 +44,9 @@ public sealed class Aspect
     public bool Diverging;
     /// <summary>[ДОБАВЛЕНО 13.11.2026] Горит буква на световом указателе (горочный: «Н» — осаживание назад); null — указатель тёмный.</summary>
     public string Indicator;
+    /// <summary>[ДОБАВЛЕНО 17.11.2026] Горит маршрутный указатель: номер пути и цвет (белый / зелёный); null — тёмный.</summary>
+    public string RouteText;
+    public Lamp RouteColor = Lamp.White;
 
     static Aspect Of(string text, bool perm, params LampLit[] l) => new() { Lamps = l, Text = text, Permissive = perm };
     public static Aspect Red(int n = 1) => Of("красный", false, Pad(n, new LampLit(Lamp.Red)));
@@ -98,6 +101,64 @@ public static class Aspects
         ("маневры на пути сортировочного парка — лунно-белый", false, null, new[] { Lamp.White }),
     };
 
+    // ---- [ДОБАВЛЕНО 17.11.2026] маршрутный (путевой) указатель: РУ-30-80 лист 10 (стр. 18); Инструкция по сигнализации РК
+    // (приказ № 209 от 18.04.2011) п. 70 — белый, путь приёма или направление; п. 71 и ПТЭ РК п. 134 — зелёный на групповых
+    // выходных и маршрутных, номер пути, с которого разрешено отправление (и маневры при лунно-белом) ----
+
+    /// <summary>Каким светофорам можно поставить маршрутный указатель.</summary>
+    public static bool CanHaveRouteInd(string kind) => kind is "entry" or "exit" or "route" or "shunt";
+
+    /// <summary>Цвет указателя: выходной и маршрутный — зелёный (п. 71), входной и маневровый — белый (п. 70).</summary>
+    public static Lamp RouteIndColor(string kind) => kind is "exit" or "route" ? Lamp.Green : Lamp.White;
+
+    /// <summary>Номер пути, который показывает указатель при открытом маршруте route: у входного — путь приёма
+    /// (путь назначения маршрута), у остальных — путь, с которого отправление (за светофором, по стрелкам как стоят);
+    /// у маневрового без пути позади — путь назначения.</summary>
+    public static string RouteIndText(Station st, SignalEntry s, Route route)
+    {
+        if (route == null) return null;
+        string sec;
+        if (s.Sig.Kind == "entry") sec = route.Exit ? null : route.Dest;
+        else sec = TrackBehind(st, s);
+        // маневровый в горловине (позади пути нет) — номер пути, на который маршрут
+        if (sec == null && s.Sig.Kind == "shunt" && !route.Exit) sec = route.Dest;
+        if (string.IsNullOrEmpty(sec)) return null;
+        return Core.TrackNo(sec) ?? sec;
+    }
+
+    /// <summary>Путь (участок типа «путь»), с которого отправляется поезд от светофора s: свой участок, если это путь,
+    /// иначе первый путь позади светофора (против его направления) по стрелкам в их текущем положении.</summary>
+    public static string TrackBehind(Station st, SignalEntry s)
+    {
+        if (Core.SecType(st, s.Tile.Sec) == "path") return s.Tile.Sec;
+        var back = new SignalEntry { Key = s.Key, Idx = s.Idx, Tile = s.Tile, Sig = new Signal { Dir = s.Sig.Dir == "R" ? "L" : "R", Kind = s.Sig.Kind } };
+        var w = Go(st, back, null, (_, t) => Core.SecType(st, t.Sec) == "path", maxSteps: 120);
+        return w.StopTile != null ? st.Tiles[w.StopTile].Sec : null;
+    }
+
+    /// <summary>Сколько путей (участков «путь») сходится позади выходного / маршрутного — по всем веткам стрелок.
+    /// 2 и больше — групповой светофор: по ПТЭ РК п. 134 ему нужен маршрутный указатель.</summary>
+    public static int TracksBehind(Station st, SignalEntry s)
+    {
+        if (Core.SecType(st, s.Tile.Sec) == "path") return 1;
+        string dir = s.Sig.Dir == "R" ? "L" : "R";
+        var outs = Core.EndsOf(s.Tile).Where(d => (dir == "R") == Core.IsRight(d)).ToList();
+        var found = new HashSet<string>();
+        var seen = new HashSet<string>();
+        var stack = new Stack<(string Key, string Out, int Depth)>();
+        foreach (var o in outs) stack.Push((s.Key, o, 0));
+        while (stack.Count > 0)
+        {
+            var (key, outDir, depth) = stack.Pop();
+            if (depth > 120) continue;
+            var nb = Core.NeighborOf(st, key, outDir);
+            if (nb == null || !seen.Add(nb.Key + "|" + nb.InSide)) continue;
+            if (Core.SecType(st, nb.Tile.Sec) == "path") { found.Add(nb.Tile.Sec); continue; }
+            foreach (var p in Core.Through(nb.Tile, nb.InSide)) stack.Push((nb.Key, p.Out, depth + 1));
+        }
+        return found.Count;
+    }
+
     /// <summary>Есть ли у светофора световой указатель «Н» (горочный и его повторитель).</summary>
     public static bool HasIndicator(Signal s) => s.Kind is "hump" or "humprep";
 
@@ -129,7 +190,7 @@ public static class Aspects
     {
         "block" => new[] { Lamp.Red, Lamp.Green, Lamp.Yellow },
         "warning" => diamond ? new[] { Lamp.Yellow } : new[] { Lamp.Green, Lamp.Yellow },
-        "shunt" => new[] { Lamp.Blue, Lamp.White },
+        "shunt" => new[] { s.IsRedShunt ? Lamp.Red : Lamp.Blue, Lamp.White },    // [17.11.2026] красный вместо синего (РК п. 98)
         "cover" => new[] { Lamp.Red, Lamp.Green },
         "barrier" => new[] { Lamp.Red },
         "repeater" => new[] { Lamp.Green },
@@ -265,7 +326,7 @@ public static class Aspects
     {
         "entry" or "exit" or "route" => RedOn(Head(s, t)),
         "hump" or "humprep" => ClosedOn(Head(s, t)),
-        "shunt" => Aspect.Make("синий", false, 1, new LampLit(Lamp.Blue)),
+        "shunt" => s.IsRedShunt ? Aspect.Make("красный", false, 1, new LampLit(Lamp.Red)) : Aspect.Make("синий", false, 1, new LampLit(Lamp.Blue)),
         "warning" => Aspect.Make("жёлтый", false, 1, new LampLit(Lamp.Yellow)),
         "repeater" => Aspect.Make("зелёный", false, 1, new LampLit(Lamp.Green)),
         "other" => Aspect.Make("соседний", false, 1, new LampLit(Lamp.Gray)),
@@ -331,6 +392,7 @@ public static class Aspects
                 case "shunt":
                     return route != null
                         ? Aspect.Make("лунно-белый", false, 1, new LampLit(Lamp.White))
+                        : s.Sig.IsRedShunt ? Aspect.Make("красный", false, 1, new LampLit(Lamp.Red))     // [17.11.2026] РК п. 98
                         : Aspect.Make("синий", false, 1, new LampLit(Lamp.Blue));
                 case "block":
                 {
@@ -402,6 +464,18 @@ public static class Aspects
         }
 
         foreach (var s in all) Get(s);
+        // [ДОБАВЛЕНО 17.11.2026] маршрутный указатель горит, пока маршрут от светофора открыт (показание разрешающее или лунно-белый)
+        foreach (var s in all)
+        {
+            if (!s.Sig.HasRouteInd || !w.OpenRoutes.TryGetValue(Id(s), out var r)) continue;
+            var a = memo[Id(s)];
+            bool open = a.Permissive || a.Lamps.Any(l => l.Color == Lamp.White);
+            var txt = open ? RouteIndText(st, s, r) : null;
+            if (txt == null) continue;
+            // показание может быть общим объектом (Aspect.Make) — указатель пишем в копию
+            memo[Id(s)] = new Aspect { Lamps = a.Lamps, Text = a.Text + $", указатель «{txt}»", Permissive = a.Permissive, Diverging = a.Diverging,
+                                       Indicator = a.Indicator, RouteText = txt, RouteColor = RouteIndColor(s.Sig.Kind) };
+        }
         return memo;
     }
 }

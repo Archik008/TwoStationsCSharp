@@ -299,6 +299,22 @@ public sealed partial class MainForm
         return res;
     }
 
+    /// <summary>[ДОБАВЛЕНО 17.11.2026] Поставить или убрать знак выбранного вида на кубике пути.</summary>
+    void ToggleSign(string k)
+    {
+        if (!st.Tiles.TryGetValue(k, out var t)) { Msg("Знак ставится на кубик пути", true); return; }
+        string type = ui.SignType, dir = type == "limit" ? null : ui.SigDir;
+        var name = Core.SignTypeName(type);
+        Edit(() =>
+        {
+            var c = st.Tiles[k];
+            var have = c.Signs?.FirstOrDefault(q => q.Type == type && q.Dir == dir);
+            if (have != null) { c.Signs.Remove(have); if (c.Signs.Count == 0) c.Signs = null; }
+            else (c.Signs ??= new List<TrackSign>()).Add(new TrackSign { Type = type, Dir = dir });
+        });
+        Msg(st.Tiles[k].Signs?.Any(q => q.Type == type && q.Dir == dir) == true ? $"Знак «{name}» поставлен" : $"Знак «{name}» убран");
+    }
+
     void DeleteSelection()
     {
         if (ui.SelLabel is int li && li < st.Labels.Count)    // [ДОБАВЛЕНО 10.11.2026]
@@ -563,6 +579,9 @@ public sealed partial class MainForm
                 break;
             case "signal":
                 AddSignal(k, ui.SigDir, ui.SigKind);
+                break;
+            case "sign":    // [ДОБАВЛЕНО 17.11.2026] знак у пути: поставить / убрать
+                ToggleSign(k);
                 break;
             case "text":
                 EditText(k);

@@ -565,22 +565,22 @@
     "8,3": {
       "t": "straight",
       "v": 2,
+      "sec": "СГП"
+    },
+    "7,2": {
+      "t": "curve",
+      "v": 1,
       "sec": "СГП",
       "sigs": [
         {
           "dir": "L",
           "kind": "shunt",
-          "name": "М7",
+          "name": "М3",
           "id": 36,
           "ltr": "Н",
-          "seq": 7
+          "seq": 3
         }
       ]
-    },
-    "7,2": {
-      "t": "curve",
-      "v": 1,
-      "sec": "M4-Turn10"
     },
     "6,2": {
       "t": "switch",
@@ -591,17 +591,7 @@
     "5,1": {
       "t": "curve",
       "v": 1,
-      "sec": "СГП-2",
-      "sigs": [
-        {
-          "dir": "R",
-          "kind": "shunt",
-          "name": "М14",
-          "id": 37,
-          "ltr": "Ч",
-          "seq": 14
-        }
-      ]
+      "sec": "СГП-2"
     },
     "4,1": {
       "t": "straight",
@@ -720,43 +710,59 @@
       "t": "switch",
       "v": 6,
       "sec": "Turn1-22",
-      "name": "22"
-    },
-    "-7,-1": {
-      "t": "straight",
-      "v": 0,
-      "sec": "Past-Turn12-1",
+      "name": "22",
       "sigs": [
         {
           "dir": "R",
           "kind": "shunt",
-          "name": "М12",
-          "id": 21,
+          "name": "М14",
+          "id": 37,
           "ltr": "Ч",
-          "seq": 12
+          "seq": 14
+        },
+        {
+          "dir": "L",
+          "kind": "shunt",
+          "name": "М7",
+          "id": 42,
+          "ltr": "Н",
+          "seq": 7
         }
       ]
+    },
+    "-7,-1": {
+      "t": "straight",
+      "v": 0,
+      "sec": "Past-Turn12-1"
     },
     "-6,-1": {
       "t": "switch",
       "v": 4,
       "sec": "Turn-12",
-      "name": "12"
-    },
-    "-5,-2": {
-      "t": "straight",
-      "v": 1,
-      "sec": "Past-Turn12-2",
+      "name": "12",
       "sigs": [
+        {
+          "dir": "R",
+          "kind": "shunt",
+          "name": "М12",
+          "id": 40,
+          "ltr": "Ч",
+          "seq": 12
+        },
         {
           "dir": "L",
           "kind": "shunt",
           "name": "М5",
-          "id": 22,
+          "id": 41,
           "ltr": "Н",
           "seq": 5
         }
       ]
+    },
+    "-5,-2": {
+      "t": "straight",
+      "v": 1,
+      "sec": "Past-Turn12-2"
     },
     "-5,0": {
       "t": "brake",
@@ -770,17 +776,7 @@
     "-4,1": {
       "t": "curve",
       "v": 2,
-      "sec": "ТП-Д2",
-      "sigs": [
-        {
-          "dir": "L",
-          "kind": "shunt",
-          "name": "М3",
-          "id": 29,
-          "ltr": "Н",
-          "seq": 3
-        }
-      ]
+      "sec": "ТП-Д2"
     },
     "-3,2": {
       "t": "switch",
@@ -819,17 +815,7 @@
     "5,2": {
       "t": "straight",
       "v": 0,
-      "sec": "M4-Past-M12",
-      "sigs": [
-        {
-          "dir": "R",
-          "kind": "shunt",
-          "name": "М16",
-          "id": 38,
-          "ltr": "Ч",
-          "seq": 16
-        }
-      ]
+      "sec": "M4-Past-M12"
     },
     "-6,4": {
       "t": "curve",

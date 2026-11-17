@@ -763,6 +763,7 @@ public sealed partial class MainForm : Form
             case Keys.S: SetTool("signal"); return true;
             case Keys.T: SetTool("text"); return true;
             case Keys.L: SetTool("label"); return true;    // [ДОБАВЛЕНО 10.11.2026] свободный текст
+            case Keys.P: SetTool("sign"); return true;     // [ДОБАВЛЕНО 17.11.2026] знак у пути
             case Keys.R: RotateSelected(shift ? -1 : 1); return true;
             case Keys.K: ui.PlaceType = "brake"; SetTool("place"); return true;    // [ДОБАВЛЕНО 12.11.2026] тормозная позиция
             case Keys.Y: ui.PlaceType = "symswitch"; SetTool("place"); return true;    // [ДОБАВЛЕНО 12.11.2026] симметричная стрелка
