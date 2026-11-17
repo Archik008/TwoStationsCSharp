@@ -64,6 +64,13 @@ class StationPane : UserControl
     Label lblClock;                                  // часы (панель «Название станции и часы»)
     ClassicPanel classic;
     int classicRow;
+    // [ДОБАВЛЕНО 17.11.2026] нижние колонки под размер окна (FitBottom): ширины «как задумано» и номер строки
+    const int BottomH = 290;
+    TableLayoutPanel bottomTbl;
+    int bottomRow = -1;
+    readonly List<int> bottomBase = new();
+    bool bottomStretched;
+    FlowLayoutPanel routesModes;
     readonly System.Windows.Forms.Timer clockTimer = new() { Interval = 1000 };
 
     record LogItem(string Text, LogKind Kind);
@@ -128,7 +135,7 @@ class StationPane : UserControl
             Console.Error.WriteLine(ex);
             AddLog("Ошибка перестройки окна: " + ex.Message, LogKind.Refuse);
         }
-        finally { ResumeLayout(true); }
+        finally { FitBottom(); ResumeLayout(true); }
         RefreshUi();
         Scheme.Invalidate();
     }
@@ -343,6 +350,7 @@ class StationPane : UserControl
         if (panelBottom) cols.Add((null, 380));          // [ДОБАВЛЕНО 21.10.2026, этап 6] «Пульт ДСП»
         if (simOn) cols.Add((null, 370));
         TableLayoutPanel bottom = null;
+        bottomTbl = null; bottomRow = -1; bottomBase.Clear(); routesModes = null;
         if (cols.Count > 0)
         {
             bottom = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = cols.Count, RowCount = 1, BackColor = Bg };
@@ -351,8 +359,12 @@ class StationPane : UserControl
             {
                 bool last = i == cols.Count - 1;
                 bottom.ColumnStyles.Add(cols[i].width == 0 || (last && !stretched) ? new ColumnStyle(SizeType.Percent, 100) : new ColumnStyle(SizeType.Absolute, cols[i].width));
+                bottomBase.Add(cols[i].width);
             }
-            AddRow(bottom, new RowStyle(SizeType.Absolute, 290));
+            bottomTbl = bottom;
+            bottomStretched = stretched;
+            bottomRow = root.RowCount;
+            AddRow(bottom, new RowStyle(SizeType.Absolute, BottomH));
         }
         int col = 0;
 
@@ -384,6 +396,7 @@ class StationPane : UserControl
             modes.Controls.Add(btnTrain);
             modes.Controls.Add(btnShunt);
             routesCol.Controls.Add(modes, 0, 0);
+            routesModes = modes;
             routesCol.Controls.Add(SmallTitle("Маршруты (клик — задать / отменить):"), 0, 1);
             routesList = new FlowLayoutPanel
             {
@@ -400,6 +413,7 @@ class StationPane : UserControl
                 routesList.Controls.Add(b);
             }
             routesCol.Controls.Add(routesList, 0, 2);
+            routesCol.Resize += (_, _) => FitRoutes(routesCol);   // [ДОБАВЛЕНО 17.11.2026] узкая колонка — кнопки уже
             bottom.Controls.Add(routesCol, col++, 0);
         }
 
@@ -434,7 +448,12 @@ class StationPane : UserControl
         else AddLineControls(linesInPanel ? panelCol : ctlCol, Breaker, SmallTitle);
 
         // 3а) [ДОБАВЛЕНО 21.10.2026, этап 6] пульт ДСП: замыкание стрелок, автодействие, ИР, взрез, ключ-жезл, переезд
-        if (panelBottom) bottom.Controls.Add(panelCol, col++, 0);
+        if (panelBottom)
+        {
+            var pc = panelCol;
+            pc.Resize += (_, _) => WrapRows(pc);   // [ДОБАВЛЕНО 17.11.2026] узкая колонка — ряды кнопок переносятся
+            bottom.Controls.Add(panelCol, col++, 0);
+        }
 
         // 4) имитация
         if (simOn) bottom.Controls.Add(BuildSim(), col++, 0);
@@ -796,9 +815,72 @@ class StationPane : UserControl
         if (Visible && dirty) OnModelChanged();
     }
 
+    /// <summary>[ДОБАВЛЕНО 17.11.2026] Маленький монитор: нижние колонки сужаются пропорционально ширине окна
+    /// (не больше задуманной ширины и не уже половины), нижняя полоса — около трети высоты (170…290), остальное — схеме.
+    /// Раньше колонки были фиксированной ширины и на узком окне первая уезжала за левый край.</summary>
+    void FitBottom()
+    {
+        if (bottomTbl == null || root == null || bottomRow < 0 || bottomRow >= root.RowStyles.Count || Width <= 0 || Height <= 0) return;
+        int h = Math.Clamp((int)(Height * 0.34f), 170, BottomH);
+        if ((int)root.RowStyles[bottomRow].Height != h) root.RowStyles[bottomRow].Height = h;
+        int need = bottomBase.Sum() + (bottomStretched ? 160 : 0);   // журналу (тянется) — хотя бы 160
+        float k = need <= 0 ? 1 : Math.Clamp((Width - 8) / (float)need, 0.55f, 1f);
+        for (int i = 0; i < bottomBase.Count && i < bottomTbl.ColumnStyles.Count; i++)
+        {
+            var cs = bottomTbl.ColumnStyles[i];
+            if (cs.SizeType != SizeType.Absolute) continue;
+            int w = (int)(bottomBase[i] * k);
+            if ((int)cs.Width != w) cs.Width = w;
+        }
+    }
+
+    /// <summary>[ДОБАВЛЕНО 17.11.2026] Кнопки ПОЕЗДНЫЕ / МАНЕВРОВЫЕ и маршрутов — по ширине колонки маршрутов.</summary>
+    void FitRoutes(Control routesCol)
+    {
+        int cw = routesCol.ClientSize.Width - routesCol.Padding.Horizontal;
+        if (cw <= 0) return;
+        int mw = Math.Clamp((cw - 16) / 2, 120, 200);
+        float fs = mw < 170 ? 9.5f : 12f;   // «МАНЕВРОВЫЕ» не влезает в узкую кнопку крупным шрифтом
+        foreach (var b in new[] { btnTrain, btnShunt })
+            if (b != null && b.Parent == routesModes)
+            {
+                if (b.Width != mw) b.Width = mw;
+                if (b.Font.Size != fs) b.Font = new Font(b.Font.FontFamily, fs, FontStyle.Bold);
+            }
+        if (routesList == null) return;
+        int rw = Math.Clamp(cw - SystemInformation.VerticalScrollBarWidth - 8, 120, 400);
+        foreach (var b in routeBtns.Values)
+            if (b.Parent == routesList && b.Width != rw) b.Width = rw;
+    }
+
+    /// <summary>[ДОБАВЛЕНО 17.11.2026] Ряды кнопок пульта ДСП (вложенные полосы) переносятся по ширине колонки,
+    /// а не уходят вправо под горизонтальную прокрутку.</summary>
+    static void WrapRows(FlowLayoutPanel col)
+    {
+        int w = col.ClientSize.Width - col.Padding.Horizontal - SystemInformation.VerticalScrollBarWidth;
+        if (w <= 60) return;
+        bool changed = false;
+        foreach (Control c in col.Controls)
+            if (c is FlowLayoutPanel row && row.AutoSize)
+            {
+                if (!row.WrapContents) { row.WrapContents = true; changed = true; }
+                var m = new Size(w - row.Margin.Horizontal, 0);
+                if (row.MaximumSize != m) { row.MaximumSize = m; changed = true; }
+            }
+            else if (c is Label lb && lb.AutoSize)
+            {
+                // заголовок — на всю ширину: иначе FlowLayout примеряет следующий (переносимый) ряд в строку заголовка
+                // и берёт высоту строки по нему — под заголовком появлялся пустой зазор
+                var m = new Size(w - lb.Margin.Horizontal, 0);
+                if (lb.MinimumSize != m) { lb.MinimumSize = m; changed = true; }
+            }
+        if (changed) col.PerformLayout();   // высота рядов поменялась — переложить колонку (иначе пустой зазор сверху)
+    }
+
     protected override void OnResize(EventArgs e)
     {
         base.OnResize(e);
+        FitBottom();
         // высота кнопочного пульта зависит от ширины (ряды кнопок переносятся)
         if (classic != null && root != null && classicRow < root.RowStyles.Count)
         {

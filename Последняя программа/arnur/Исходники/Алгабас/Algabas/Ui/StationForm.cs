@@ -43,7 +43,7 @@ class StationForm : Form
     // [ДОБАВЛЕНО 06.11.2026] ИИ-помощник (папка Ai, как у АКЖТ): окно вопросов, кнопка «ИИ» вверху
     readonly Button btnAi;
     Ai.AiChatWindow aiWindow;
-    readonly FlowLayoutPanel topRight;
+    readonly FlowLayoutPanel topRight, left;
     readonly ToolTip tips = new();
     SchemePalette shownPalette = SchemePalette.Current;
 
@@ -53,15 +53,21 @@ class StationForm : Form
         Text = view.Title;
         BackColor = Bg;
         Font = new Font("Bahnschrift", 10f);
-        MinimumSize = new Size(1200, 780);
-        Size = new Size(1600, 950);
+        // [ИЗМЕНЕНО 17.11.2026] размеры — по экрану: на маленьком мониторе (1366×768, 1280×720…) окно было
+        // больше экрана (минимум 1200×780). Теперь минимум и начальный размер не больше рабочей области экрана.
+        var wa = Screen.FromPoint(Cursor.Position).WorkingArea;
+        MinimumSize = new Size(Math.Min(900, wa.Width), Math.Min(600, wa.Height));
+        Size = new Size(Math.Min(1600, wa.Width), Math.Min(950, wa.Height));
         StartPosition = FormStartPosition.Manual;
+        Location = wa.Location;
 
         Pane = new StationPane(view) { Dock = DockStyle.Fill, Margin = new Padding(0) };
 
         // ---------- верхняя полоса ----------
+        // [ИЗМЕНЕНО 17.11.2026] раскладка полосы — LayoutTopBar: левая группа и кнопки справа в одну строку,
+        // а если не помещаются — кнопки уходят второй строкой (раньше на узком окне кнопки справа ложились поверх левых)
         topBar = new Panel { Dock = DockStyle.Top, Height = 74, BackColor = Bg };
-        var left = new FlowLayoutPanel { Dock = DockStyle.Left, AutoSize = true, WrapContents = false, Padding = new Padding(10, 10, 0, 0) };
+        left = new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = false, Padding = new Padding(10, 10, 0, 0) };
         lblArduino = new Label
         {
             AutoSize = true, BackColor = Color.White, ForeColor = Color.Red,
@@ -101,7 +107,7 @@ class StationForm : Form
                                     "Если тут «данных нет» — проверьте, что выбран порт Arduino Алгабаса и плата 165 подключена.");
 
         // «Отмена набора» и «Отменить маршрут» — в заголовке панели станции (StationPane)
-        topRight = new FlowLayoutPanel { Dock = DockStyle.Right, AutoSize = true, WrapContents = false, Padding = new Padding(0, 10, 10, 0) };
+        topRight = new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = true, Padding = new Padding(0, 10, 10, 0) };
         btnParams = PinkButton("Параметры", () => { using var f = new UiParamsForm(); f.ShowDialog(this); });   // [ДОБАВЛЕНО 28.10.2026]
         tips.SetToolTip(btnParams, "Режим интерфейса (инженерный, учебный, рабочий, павлодарский) и какие панели показывать");
         topRight.Controls.Add(btnParams);
@@ -123,6 +129,7 @@ class StationForm : Form
         topBar.Controls.Add(topRight);
         topBar.Controls.Add(left);
         topBar.Controls.Add(lblSensors);   // добавлен последним → прижимается к низу первым, на всю ширину
+        topBar.Layout += (_, _) => LayoutTopBar();
 
         Controls.Add(Pane);
         Controls.Add(topBar);
@@ -178,13 +185,35 @@ class StationForm : Form
         shownPalette = pal;
         bool hw = UiSettings.Show(UiSettings.Hw);
         lblArduino.Visible = cmbPort.Visible = lblSensors.Visible = hw;
-        topBar.Height = hw ? 74 : 50;
+        topBar.PerformLayout();   // высота полосы — в LayoutTopBar (без датчиков ниже)
         btnDu46.Visible = btnJournals.Visible = UiSettings.Show(UiSettings.Journals);
         btnTest.Visible = UiSettings.Show(UiSettings.Test);
         btnParams.Text = $"Параметры: {UiSettings.ModeName(mode)}";
         // [ИЗМЕНЕНО 09.11.2026] окно ИИ-помощника само не открывается ни в одном режиме — только кнопкой «ИИ»
         RefreshTop();
         Invalidate(true);
+    }
+
+    /// <summary>[ДОБАВЛЕНО 17.11.2026] Верхняя полоса под ширину окна: порт Arduino и связь слева, кнопки справа.
+    /// Не помещаются в одну строку — кнопки уходят второй строкой (и сами переносятся, если окно совсем узкое);
+    /// высота полосы — по содержимому, строка датчиков — внизу.</summary>
+    void LayoutTopBar()
+    {
+        int w = topBar.ClientSize.Width;
+        if (w <= 0) return;
+        int cw = w < 1600 ? 190 : 300;             // список портов на узком окне короче
+        if (cmbPort.Width != cw) cmbPort.Width = cw;
+        var ls = left.GetPreferredSize(Size.Empty);
+        var max = new Size(w, 0);
+        if (topRight.MaximumSize != max) topRight.MaximumSize = max;
+        var rs = topRight.GetPreferredSize(max);
+        bool oneRow = ls.Width + rs.Width <= w;
+        if (left.Location != Point.Empty) left.Location = Point.Empty;
+        var rp = new Point(Math.Max(0, w - rs.Width), oneRow ? 0 : ls.Height - 6);
+        if (topRight.Location != rp) topRight.Location = rp;
+        int rowsH = oneRow ? Math.Max(ls.Height, rs.Height) : ls.Height - 6 + rs.Height;
+        int h = Math.Max(rowsH, 40) + (lblSensors.Visible ? lblSensors.Height : 0) + 6;
+        if (topBar.Height != h) topBar.Height = h;
     }
 
     /// <summary>[ДОБАВЛЕНО 06.11.2026] Кнопка «ИИ»: показать / спрятать окно помощника (как у АКЖТ).</summary>

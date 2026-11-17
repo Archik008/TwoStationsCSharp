@@ -118,7 +118,7 @@ class RailSchemePanel : Panel
             int bottom = group.Min(p => p.PointToScreen(Point.Empty).Y + p.Height);
             if (bottom - top > 60) { bandTop = top - myTop; bandH = bottom - top; }
         }
-        float usableH = bandH - 30;
+        float usableH = bandH - (view.MinScale > 0 ? 30 : hintBoxH + 6);   // [ИЗМЕНЕНО 17.11.2026] было 30 — под одну строку подсказки
         scale = group.Min(p => Math.Min(p.Width / p.G.DesignW, usableH / designH));
         if (scale <= 0) scale = 1;
         if (view.MinScale > 0 && group.Count == 1) { ScrollTransform(scale); return; }   // [ДОБАВЛЕНО 12.11.2026]
@@ -211,6 +211,7 @@ class RailSchemePanel : Panel
         var g = e.Graphics;
         g.SmoothingMode = SmoothingMode.AntiAlias;
         g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
+        MeasureHint(g);
         UpdateTransform();
 
         var st = g.Save();
@@ -236,14 +237,11 @@ class RailSchemePanel : Panel
 
         if (!UiSettings.Show(UiSettings.Hint) && hoverText.Length == 0) return;   // [ДОБАВЛЕНО 28.10.2026] подсказка скрыта в «Параметрах»
         using var hb = new SolidBrush(TextDark);
-        string line = hoverText.Length > 0
-            ? hoverText
-            : "ЛКМ: светофор начала → светофор конца или путь назначения = маршрут  |  ЛКМ по номеру стрелки — перевод  |  " +
-              "ПКМ по пути, светофору, стрелке или поезду — меню  |  обе кнопки мыши — положение стрелок" +
-              (view.MinScale > 0 ? "  |  колесо, Shift+колесо — прокрутка, Ctrl+колесо — масштаб" : "");
+        string line = hoverText.Length > 0 ? hoverText : DefaultHint;
         // [ИЗМЕНЕНО 12.11.2026] ClientSize — без полос прокрутки (у Алгабаса полос нет, то же, что Width / Height)
         var cl = ClientSize;
-        var hr = new RectangleF(8, cl.Height - 26, cl.Width - 16, 24);
+        // [ИЗМЕНЕНО 17.11.2026] высота — по тексту: на узком окне подсказка в две строки (было 24 — вторая обрезалась)
+        var hr = new RectangleF(8, cl.Height - hintBoxH - 2, cl.Width - 16, hintBoxH);
         if (view.MinScale > 0)
         {
             // [ДОБАВЛЕНО 12.11.2026] схема прокручивается под подсказкой — подсказке своя полоса фона, до двух строк
@@ -254,6 +252,26 @@ class RailSchemePanel : Panel
             g.FillRectangle(bgb, 0, hr.Y - 2, cl.Width, cl.Height - hr.Y + 2);
         }
         g.DrawString(L.T(line), fInfo, hb, hr);   // [ДОБАВЛЕНО 22.10.2026, этап 8] L.T — перевод
+    }
+
+    string DefaultHint =>
+        "ЛКМ: светофор начала → светофор конца или путь назначения = маршрут  |  ЛКМ по номеру стрелки — перевод  |  " +
+        "ПКМ по пути, светофору, стрелке или поезду — меню  |  обе кнопки мыши — положение стрелок" +
+        (view.MinScale > 0 ? "  |  колесо, Shift+колесо — прокрутка, Ctrl+колесо — масштаб" : "");
+
+    /// <summary>[ДОБАВЛЕНО 17.11.2026] Высота подсказки под схемой (обычная подсказка, в 1–2 строки по ширине панели).
+    /// Схема вписывается в высоту без неё — на маленьком мониторе подсказка не наезжает на пути и не обрезается.</summary>
+    float hintBoxH = 24;
+
+    void MeasureHint(Graphics g)
+    {
+        float h = 24;
+        if (UiSettings.Show(UiSettings.Hint))
+        {
+            var sz = g.MeasureString(L.T(DefaultHint), fInfo, Math.Max(50, ClientSize.Width - 16));
+            h = Math.Clamp(sz.Height + 2, 24, 64);
+        }
+        hintBoxH = h;
     }
 
     Font TextFont(float size, bool bold)
