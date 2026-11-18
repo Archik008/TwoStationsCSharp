@@ -136,7 +136,7 @@ public static class Classroom
     {
         foreach (var (id, p) in DispatchLink.Peers)
         {
-            if (id == Me) continue;
+            if (id == Me || id == "dnc") continue;   // [ДОБАВЛЕНО 18.11.2026] «dnc» — программа ДНЦ, не станция
             if (!Stations.TryGetValue(id, out var st)) Stations[id] = st = new StationRt { Id = id };
             st.Name = p.Name.Length > 0 ? p.Name : id;
             if (st.Online != p.Online) Say($"Станция «{st.Name}» {(p.Online ? "на связи" : "отключилась")}");

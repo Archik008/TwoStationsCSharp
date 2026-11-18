@@ -28,6 +28,39 @@ namespace StationApp.Core;
 //      s_progress {...}, s_result {..., faults, du46}, s_screen {jpg,w,h,tag,parts:[{name,x,y,w,h}]},
 //      s_objects {signals,switches,sections,lines,trains:[{id,label}], kinds, states}, s_faults {list}  [этап 3]
 //      s_train_event {ev{number,station,kind:arr|dep|pass,clock,track}}, s_result.trains — для ГИД  [этап 5]
+//
+//  [ДОБАВЛЕНО 18.11.2026] Программа «ДНЦ» (панель диспетчера) — на том же сервере под именем "dnc".
+//  От неё станция принимает только просмотр и управление (занятие, вход, неисправности — только от преподавателя):
+//    ДНЦ → станция:
+//      t_info    {ui}                  что есть на станции → s_info
+//      t_scheme  {name, k, x0, x1, tag} кусок схемы name по X от x0 до x1 (единицы чертежа), нарисованный заново
+//                                      в масштабе k пикселей на единицу (чётко при любом масштабе) → s_scheme
+//      t_screen  {w, rx,ry,rw,rh, tag} снимок части окна, как у преподавателя → s_screen {jpg, w, h, tag}
+//      t_take    {on}                  ДНЦ забрал / вернул управление (студент в это время не нажимает)
+//      t_input   {act, x, y, btn, delta, text, rx,ry,rw,rh}   мышь над снимком: x, y — доли рамки rx..rh окна
+//                {act, scheme, dx, dy, btn}                    или мышь над нарисованной схемой: dx, dy — точка чертежа
+//                                                              (клик уходит прямо в панель схемы, окно станции может быть перекрыто)
+//      t_click   {id, btn}             нажата копия кнопки / надписи пульта (id из последнего s_info.ui)
+//      t_route   {i, on, tag}          задать / отменить маршрут № i (из s_info.routes) → s_result
+//      t_dir     {line, aux, tag}      сменить направление перегона (Id перегона) → s_result
+//      t_unselect {}                   сбросить набор маршрута (выбранный светофор начала) на всех схемах
+//      t_depart  {wire, tag}           сквозной маршрут: маршрут отправления от выбранного светофора на общий перегон wire
+//                                      → s_result {i, name, dirOk}
+//      t_arrive  {wire, scheme, dx, dy, tag}  сквозной маршрут: маршрут приёма с перегона wire до точки чертежа → s_result {i, name}
+//      t_consent {id, ok, reason}      ответ ДНЦ на запрос смены направления (s_consent)
+//    [ДОБАВЛЕНО 18.11.2026] пока ДНЦ на связи, запрос соседа на смену направления идёт ДНЦ, а не дежурному:
+//      s_consent {id, wire, title, text, seconds, station} / s_consent_end {id} (ответ уже не нужен)
+//      t_mode    {mode}                режим интерфейса станции (Work — «Медеуский», Classic — «Павлодарский»…):
+//                                      ДНЦ держит у всех станций один режим  [ДОБАВЛЕНО 18.11.2026]
+//    станция → ДНЦ:
+//      s_info    {schemes:[{name, aspect, dw, dh, shared:[{n, x1,y1,x2,y2}], lvl, lvlpos, x,y,w,h}], popup, control, mode, bg, ui:[{id, g, t, text, w, h, bg, fg, en, chk, nl, f, bold}]}
+//                schemes — схемы станции: название, ширина/высота рисунка, где на экране (доли окна);
+//                  dw, dh — размер чертежа; shared — общие с соседом участки (имя в сети и концы на чертеже) —
+//                  по ним ДНЦ стыкует схемы соседних станций; lvl, lvlpos — схемы одной программы в общей системе
+//                  координат (АКЖТ и пост: пути стыкуются край в край), lvlpos — порядок слева направо;
+//                popup — на станции открыто окно-вопрос или меню; control — управление у ДНЦ;
+//                ui (если просили) — кнопки (t:"b"), галочки ("c") и надписи ("l") пульта по порядку; g — группа, gw — её ширина, nl — с новой строки
+//      s_scheme  {name, png, w, h, k, x0, tag}
 //      s_result.docs [{title, columns, rows}] — журналы ДУ-2/47/58/60, бланки, предупреждения, радиосвязь, автопроверка  [этап 4]
 //      s_result.supplied, removed, localDeparted; docs — журнал ПНП, восстановительный поезд  [этап 7]
 //
@@ -105,6 +138,8 @@ public class TrainingEvent
 public static class Training
 {
     public const string TeacherId = "teacher";
+    /// <summary>[ДОБАВЛЕНО 18.11.2026] Программа «ДНЦ» — панель диспетчера: смотрит схемы станций и может забрать управление.</summary>
+    public const string AdminId = "dnc";
     static readonly JsonSerializerOptions Json = new() { PropertyNameCaseInsensitive = true };
 
     // ------------------------ состояние ------------------------
@@ -116,7 +151,18 @@ public static class Training
     public static double Clock { get; private set; }
     public static bool Running { get; private set; }
     public static int Speed { get; private set; } = 1;
-    public static bool TeacherControl { get; private set; }
+    /// <summary>[ИЗМЕНЕНО 18.11.2026] Кто забрал управление пультом: "" — никто, TeacherId — преподаватель, AdminId — ДНЦ.</summary>
+    public static string ControlBy { get; private set; } = "";
+    /// <summary>Управление пультом не у студента (у преподавателя или ДНЦ). Сброс (false) снимает только управление
+    /// преподавателя — управление ДНЦ занятие преподавателя не отменяет.</summary>
+    public static bool TeacherControl
+    {
+        get => ControlBy.Length > 0;
+        private set => ControlBy = value ? TeacherId : ControlBy == TeacherId ? "" : ControlBy;
+    }
+    /// <summary>[ДОБАВЛЕНО 18.11.2026] Кто управляет — для подписей («у преподавателя» / «у ДНЦ»).</summary>
+    public static string ControlByName => ControlBy == AdminId ? "ДНЦ" : "преподавателя";
+    public static bool AdminOnline => DispatchLink.IsConnected && DispatchLink.Peers.TryGetValue(AdminId, out var p) && p.Online;
     public static List<StudentInfo> Students { get; private set; } = new();
     public static bool AllowAdd { get; private set; }
 
@@ -141,6 +187,14 @@ public static class Training
     public static Func<IEnumerable<(string name, double x, double y, double w, double h)>> ScreenParts;
     /// <summary>Ввод преподавателя (задаёт окно).</summary>
     public static Action<JsonElement> InjectInput;
+    /// <summary>[ДОБАВЛЕНО 18.11.2026] Для ДНЦ (задаёт окно): схемы, окно-вопрос, кнопки пульта (если true) — ответ s_info без kind.</summary>
+    public static Func<JsonElement, Dictionary<string, object>> AdminInfo;
+    /// <summary>[ДОБАВЛЕНО 18.11.2026] Команды ДНЦ (t_route, t_dir, t_unselect, t_depart, t_arrive) — ответ s_result или null.</summary>
+    public static Func<string, JsonElement, object> AdminCommand;
+    /// <summary>[ДОБАВЛЕНО 18.11.2026] Нарисовать кусок схемы по запросу t_scheme: (png base64, w, h, масштаб).</summary>
+    public static Func<JsonElement, (string png, int w, int h, float k)?> RenderScheme;
+    /// <summary>[ДОБАВЛЕНО 18.11.2026] ДНЦ нажал копию кнопки пульта: id, правой кнопкой мыши.</summary>
+    public static Action<string, bool> ClickUi;
     /// <summary>Преподаватель забрал управление (окно выводит себя вперёд).</summary>
     public static Action TakeOver;
     /// <summary>Откуда подавать поезда урока: название → действие (кнопки имитации станции).</summary>
@@ -332,6 +386,18 @@ public static class Training
 
     static void OnPeers()
     {
+        // [ДОБАВЛЕНО 18.11.2026] ДНЦ пропал со связи — управление возвращается дежурному
+        if (ControlBy == AdminId && !AdminOnline)
+        {
+            ControlBy = "";
+            Say("ДНЦ отключился — управление пультом вернулось", LogKind.Refuse);
+            Changed?.Invoke();
+        }
+        if (!AdminOnline && adminConsents.Count > 0)   // ДНЦ не ответит — отказ
+        {
+            foreach (var r in adminConsents.Values.ToList()) r.Answer?.Invoke(false, "ДНЦ отключился");
+            adminConsents.Clear();
+        }
         bool on = TeacherOnline;
         if (on == teacherWasOnline) return;
         teacherWasOnline = on;
@@ -349,8 +415,139 @@ public static class Training
     public static void Login(string id, string pwd) => Send(new { kind = "s_login", id, pwd });
     public static void Register(string name, string group, string pwd) => Send(new { kind = "s_register", name, group, pwd });
 
+    /// <summary>[ИЗМЕНЕНО 18.11.2026] Снимок части окна (общий для преподавателя и ДНЦ); null — кадра нет.</summary>
+    static object ScreenMessage(JsonElement d)
+    {
+        int w = d.TryGetProperty("w", out var we) && we.TryGetInt32(out var wi) ? wi : 1600;
+        // [ИЗМЕНЕНО 21.10.2026] область окна и метка кадра (большое окно экрана у преподавателя)
+        double Num(string n, double def) => d.TryGetProperty(n, out var v) && v.TryGetDouble(out var x) ? x : def;
+        (double, double, double, double)? region = d.TryGetProperty("rw", out _)
+            ? (Num("rx", 0), Num("ry", 0), Num("rw", 1), Num("rh", 1)) : null;
+        var shot = CaptureScreen?.Invoke(w, region);
+        if (shot is not { } s) return null;
+        var parts = ScreenParts?.Invoke()?.Select(p => new { name = p.name, x = p.x, y = p.y, w = p.w, h = p.h }).ToList();
+        return new { kind = "s_screen", jpg = s.jpg, w = s.w, h = s.h, tag = Str(d, "tag"), parts };
+    }
+
+    // =================================================================
+    //  [ДОБАВЛЕНО 18.11.2026] СОГЛАСИЕ НА СМЕНУ НАПРАВЛЕНИЯ — У ДНЦ
+    // =================================================================
+    static int consentSeq;
+    static readonly Dictionary<int, ConsentRequest> adminConsents = new();
+
+    /// <summary>Сосед просит сменить направление: если ДНЦ на связи — вопрос уходит ему (true), иначе — дежурному (false).
+    /// Не ответил за Seconds — отказ.</summary>
+    public static bool AskAdminConsent(ConsentRequest req, string wire)
+    {
+        if (!AdminOnline) return false;
+        int id = ++consentSeq;
+        adminConsents[id] = req;
+        req.Cancelled += () => { if (adminConsents.Remove(id)) SendAdmin(new { kind = "s_consent_end", id }); };
+        SendAdmin(new { kind = "s_consent", id, wire, title = req.Title, text = req.Text, seconds = req.Seconds, station = DispatchLink.StationName });
+        var t = new System.Windows.Forms.Timer { Interval = (int)(Math.Max(1, req.Seconds) * 1000) };
+        t.Tick += (_, _) =>
+        {
+            t.Stop();
+            t.Dispose();
+            if (!adminConsents.Remove(id)) return;
+            req.Answer?.Invoke(false, "ДНЦ не ответил");
+            SendAdmin(new { kind = "s_consent_end", id });
+        };
+        t.Start();
+        Say("Запрос смены направления передан ДНЦ — согласие даёт он", LogKind.Aux);
+        return true;
+    }
+
+    static void SendAdmin(object data)
+    {
+        if (data != null && DispatchLink.IsConnected) DispatchLink.SendEvent(AdminId, data);
+    }
+
+    /// <summary>[ДОБАВЛЕНО 18.11.2026] Сообщения от программы «ДНЦ»: просмотр схем и управление пультом.</summary>
+    static void OnAdmin(JsonElement d)
+    {
+        try
+        {
+            switch (Str(d, "kind"))
+            {
+                case "t_info":
+                {
+                    var info = AdminInfo?.Invoke(d);
+                    if (info == null) return;
+                    info["kind"] = "s_info";
+                    info["control"] = ControlBy == AdminId;
+                    SendAdmin(info);
+                    return;
+                }
+                case "t_scheme":
+                {
+                    if (RenderScheme?.Invoke(d) is { } r)
+                        SendAdmin(new { kind = "s_scheme", name = Str(d, "name"), png = r.png, w = r.w, h = r.h, k = r.k, tag = Str(d, "tag") });
+                    return;   // без Changed — кадры идут часто
+                }
+                case "t_screen":
+                    SendAdmin(ScreenMessage(d));
+                    return;
+                case "t_take":
+                    if (Bool(d, "on"))
+                    {
+                        if (ControlBy == AdminId) return;
+                        ControlBy = AdminId;
+                        TakeOver?.Invoke();
+                        Say("Управление пультом забрал ДНЦ");
+                    }
+                    else if (ControlBy == AdminId)
+                    {
+                        ControlBy = "";
+                        Say("ДНЦ вернул управление пультом");
+                    }
+                    else return;
+                    break;
+                case "t_input":
+                    if (ControlBy == AdminId) InjectInput?.Invoke(d);
+                    return;
+                case "t_click":
+                    if (ControlBy == AdminId) ClickUi?.Invoke(Str(d, "id"), Str(d, "btn") == "right");
+                    return;
+                case "t_route" or "t_dir" or "t_unselect" or "t_depart" or "t_arrive":
+                {
+                    string kind = Str(d, "kind");
+                    if (ControlBy != AdminId)
+                    {
+                        SendAdmin(new { kind = "s_result", op = kind, tag = Str(d, "tag"), ok = false, reason = "управление не у ДНЦ" });
+                        return;
+                    }
+                    var res = AdminCommand?.Invoke(kind, d);
+                    if (res != null) SendAdmin(res);
+                    break;
+                }
+                case "t_consent":
+                {
+                    // ответ ДНЦ на запрос смены направления (управление тут не нужно — ДНЦ согласует за станцию)
+                    int cid = d.TryGetProperty("id", out var ce) && ce.TryGetInt32(out var cv) ? cv : 0;
+                    if (adminConsents.Remove(cid, out var req)) req.Answer?.Invoke(Bool(d, "ok"), Str(d, "reason"));
+                    break;
+                }
+                case "t_mode":
+                    // [ДОБАВЛЕНО 18.11.2026] режим интерфейса — один у всех станций, задаёт ДНЦ
+                    if (!Enum.TryParse<StationApp.Ui.UiMode>(Str(d, "mode"), true, out var mode) || StationApp.Ui.UiSettings.Mode == mode) return;
+                    StationApp.Ui.UiSettings.SetMode(mode);
+                    Say($"ДНЦ установил режим интерфейса: {StationApp.Ui.UiSettings.ModeName(mode)}");
+                    break;
+                default:
+                    return;
+            }
+        }
+        catch (Exception ex)
+        {
+            Say("ошибка сообщения ДНЦ: " + ex.Message, LogKind.Refuse);
+        }
+        Changed?.Invoke();
+    }
+
     static void OnEvent(string from, JsonElement d)
     {
+        if (from == AdminId) { OnAdmin(d); return; }   // [ДОБАВЛЕНО 18.11.2026]
         if (from != TeacherId) return;
         try
         {
@@ -378,27 +575,25 @@ public static class Training
                 case "t_lang": L.Set(Str(d, "lang")); return;   // [ДОБАВЛЕНО 22.10.2026, этап 8] язык от преподавателя
                 case "t_time": ReadTime(d); break;
                 case "t_take":
-                    TeacherControl = Bool(d, "on");
+                {
+                    bool on = Bool(d, "on");
+                    if (!on && ControlBy != TeacherId) return;   // [ДОБАВЛЕНО 18.11.2026] управление у ДНЦ — не наше
+                    TeacherControl = on;
                     if (TeacherControl) TakeOver?.Invoke();
                     Say(TeacherControl ? "Управление пультом забрал преподаватель" : "Преподаватель вернул управление");
+                }
                     break;
                 case "t_stop":
                     if (Active) Finish();
                     break;
                 case "t_screen":
                 {
-                    int w = d.TryGetProperty("w", out var we) && we.TryGetInt32(out var wi) ? wi : 1600;
-                    // [ИЗМЕНЕНО 21.10.2026] область окна и метка кадра (большое окно экрана у преподавателя)
-                    double Num(string n, double def) => d.TryGetProperty(n, out var v) && v.TryGetDouble(out var x) ? x : def;
-                    (double, double, double, double)? region = d.TryGetProperty("rw", out _)
-                        ? (Num("rx", 0), Num("ry", 0), Num("rw", 1), Num("rh", 1)) : null;
-                    var shot = CaptureScreen?.Invoke(w, region);
-                    var parts = ScreenParts?.Invoke()?.Select(p => new { name = p.name, x = p.x, y = p.y, w = p.w, h = p.h }).ToList();
-                    if (shot is { } s) Send(new { kind = "s_screen", jpg = s.jpg, w = s.w, h = s.h, tag = Str(d, "tag"), parts });
+                    var msg = ScreenMessage(d);   // [ИЗМЕНЕНО 18.11.2026] общий с ДНЦ
+                    if (msg != null) Send(msg);
                     return;   // без Changed — кадры идут часто
                 }
                 case "t_input":
-                    if (TeacherControl) InjectInput?.Invoke(d);
+                    if (ControlBy == TeacherId) InjectInput?.Invoke(d);   // [ИЗМЕНЕНО 18.11.2026] пока управляет ДНЦ — не мешаем
                     return;
                 case "t_objects":
                     Send(Faults.ObjectsMessage());
@@ -439,7 +634,7 @@ public static class Training
         string id = Str(d, "gameId");
         if (d.TryGetProperty("student", out var s) && s.ValueKind == JsonValueKind.Object)
             Student = s.Deserialize<StudentInfo>(Json);
-        TeacherControl = Bool(d, "take");
+        if (Bool(d, "take") || ControlBy == TeacherId) TeacherControl = Bool(d, "take");   // [ИЗМЕНЕНО 18.11.2026] управление ДНЦ не сбрасываем
         if (id != GameId || !Active)
         {
             Lesson = d.GetProperty("lesson").Deserialize<LessonTask>(Json);
@@ -549,7 +744,7 @@ public static class Training
             critical = CriticalCount,
             wrong = WrongCount,
             score = Score,
-            take = TeacherControl,
+            take = ControlBy == TeacherId,   // [ИЗМЕНЕНО 18.11.2026] управление ДНЦ — не управление преподавателя
         };
         string json = JsonSerializer.Serialize(p);
         if (!force && json == lastProgress) return;

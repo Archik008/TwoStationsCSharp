@@ -202,6 +202,39 @@ class RailSchemePanel : Panel
 
     PointF ToDesign(Point p) => new((p.X - off.X) / scale, (p.Y - off.Y) / scale);
 
+    /// <summary>[ДОБАВЛЕНО 18.11.2026] Для программы «ДНЦ»: невидимая копия схемы рисуется как настоящая —
+    /// с выбранным светофором начала маршрута и тем же видом (упрощённый).</summary>
+    public void CopyLook(RailSchemePanel from)
+    {
+        selected = from.selected;
+        Simple = from.Simple;
+        ShuntMode = from.ShuntMode;
+    }
+
+    /// <summary>[ДОБАВЛЕНО 18.11.2026] Что на схеме в точке чертежа: светофор или участок (null — ничего) — для ДНЦ.</summary>
+    public object HitDesign(float x, float y)
+    {
+        var p = new PointF(x, y);
+        return (object)SignalAt(p) ?? SectionAt(p);
+    }
+
+    /// <summary>[ДОБАВЛЕНО 18.11.2026] Точка чертежа → точка на панели (клиентские координаты): ДНЦ кликает по чертежу.</summary>
+    public Point DesignToClient(float x, float y)
+    {
+        UpdateTransform();
+        return new Point((int)Math.Round(off.X + x * scale), (int)Math.Round(off.Y + y * scale));
+    }
+
+    /// <summary>[ДОБАВЛЕНО 18.11.2026] Где на панели нарисована схема (клиентские координаты) — для программы «ДНЦ».</summary>
+    public RectangleF DrawnRect
+    {
+        get
+        {
+            UpdateTransform();
+            return new RectangleF(off.X, off.Y, G.DesignW * scale, G.DesignH * scale);
+        }
+    }
+
     // =================================================================
     //  РИСОВАНИЕ
     // =================================================================

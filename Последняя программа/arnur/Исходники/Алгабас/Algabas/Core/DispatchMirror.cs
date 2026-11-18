@@ -118,6 +118,12 @@ public class DispatchMirror
     RailSignal Find(string id) => il.Signals.TryGetValue(id, out var s) ? s
         : throw new ArgumentException($"Связь диспетчеров: светофора «{id}» нет в схеме");
 
+    /// <summary>[ДОБАВЛЕНО 18.11.2026] Общие с соседом однопутные перегоны: имя в сети → перегон (для ДНЦ).</summary>
+    public IEnumerable<(string wire, DirectionLine line)> SharedLines => lines.Select(l => (l.Wire, l.Line));
+
+    /// <summary>[ДОБАВЛЕНО 18.11.2026] Общие с соседом участки: имя в сети → Id участка (для стыковки схем у ДНЦ).</summary>
+    public IEnumerable<(string wire, string id)> SharedSectionIds => sections.Select(x => (x.wire, x.sec.Id));
+
     TrackSection FindSection(string id) => il.Sections.TryGetValue(id, out var s) ? s
         : throw new ArgumentException($"Связь диспетчеров: участка «{id}» нет в схеме");
 
@@ -350,7 +356,8 @@ public class DispatchMirror
         };
         il.Say($"{line.Title}: станция {PeerName} просит сменить направление на {Arrow(line, target)} — ждём решения дежурного", LogKind.Aux);
         il.NotifyChanged();
-        AskConsent(inc.Request);
+        // [ИЗМЕНЕНО 18.11.2026] ДНЦ на связи — согласие даёт он (за обе станции), окна у дежурного нет
+        if (!Training.AskAdminConsent(inc.Request, sl.Wire)) AskConsent(inc.Request);
     }
 
     /// <summary>Дежурный ответил в окне (или окно закрылось по времени).</summary>

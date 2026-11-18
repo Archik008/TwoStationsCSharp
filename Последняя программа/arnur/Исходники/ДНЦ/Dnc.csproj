@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- [ДОБАВЛЕНО 18.11.2026] Программа «ДНЦ» — панель диспетчера: схемы станций, подключённых к серверу, в одном окне -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>disable</Nullable>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>DncApp</RootNamespace>
+    <AssemblyName>Dnc</AssemblyName>
+    <ApplicationHighDpiMode>SystemAware</ApplicationHighDpiMode>
+  </PropertyGroup>
+
+  <!-- Связь с сервером — те же файлы, что у программ станций и преподавателя -->
+  <ItemGroup>
+    <Compile Include="..\АКЖТ\Station\Core\Model.cs" Link="Shared\Model.cs" />
+    <Compile Include="..\АКЖТ\Station\Core\DispatchLink.cs" Link="Shared\DispatchLink.cs" />
+  </ItemGroup>
+
+</Project>

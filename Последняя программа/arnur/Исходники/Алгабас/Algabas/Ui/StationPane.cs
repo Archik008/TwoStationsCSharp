@@ -82,8 +82,14 @@ class StationPane : UserControl
 
     /// <param name="sectionsOnLeft">список «Занятость участков» слева от схемы (иначе справа)</param>
     /// <param name="showLog">показывать журнал; без него свои сообщения уходят в LogForward</param>
+    /// <summary>[ДОБАВЛЕНО 18.11.2026] Все панели станций программы — и спрятанные кнопкой «Вид» у АКЖТ (их убирают из окна):
+    /// программа «ДНЦ» видит и рисует обе схемы, что бы ни было на экране станции.</summary>
+    public static readonly List<StationPane> All = new();
+
     public StationPane(StationView view, bool sectionsOnLeft = false, bool showLog = true)
     {
+        All.Add(this);
+        Disposed += (_, _) => All.Remove(this);
         View = view;
         this.sectionsOnLeft = sectionsOnLeft;
         this.showLog = showLog;
@@ -164,6 +170,10 @@ class StationPane : UserControl
     }
 
     public void ClearSelection() => Scheme.ClearSelection();
+
+    /// <summary>[ДОБАВЛЕНО 18.11.2026] Схема этой панели и её вид — для программы «ДНЦ» (Ui/TrainingUi.cs).</summary>
+    public RailSchemePanel SchemeControl => Scheme;
+    public StationView SchemeView => View;
 
     /// <summary>Схемы этих половин рисуются в общем масштабе — пути на одном уровне.</summary>
     public static void SameTrackLevel(params StationPane[] panes)
