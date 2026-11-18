@@ -8,6 +8,7 @@ call "%~dp0Исходники\Преподаватель\build_exe.bat" x || got
 call "%~dp0Исходники\ДНЦ\build_exe.bat" x || goto fail
 call "%~dp0Исходники\Редактор станций CSharp\build_exe.bat" x || goto fail
 call "%~dp0Исходники\Станция по схеме\build_exe.bat" x || goto fail
+call "%~dp0Исходники\Сортировочная\build_exe.bat" x || goto fail
 echo.
 echo ===== ВСЁ СОБРАНО: папка готовая_программа =====
 pause

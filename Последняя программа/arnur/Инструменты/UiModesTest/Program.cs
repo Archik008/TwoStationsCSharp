@@ -64,12 +64,47 @@ foreach (var m in Enum.GetValues<UiMode>())
     bool err = All(pane).Any(c => c is ListBox lb && lb.Items.Cast<object>().Any(i => i.ToString()!.Contains("Ошибка перестройки")));
     Check(hasScheme && !err && hasClassic == (m == UiMode.Classic) && hasLog == UiSettings.Show(UiSettings.Log) && hasSim == UiSettings.Show(UiSettings.Sim),
           $"{UiSettings.ModeName(m)}: схема видна, журнал {(hasLog ? "есть" : "нет")}, имитация {(hasSim ? "есть" : "нет")}, кнопочный пульт {(hasClassic ? "есть" : "нет")}");
+    // [ДОБАВЛЕНО 18.11.2026] виртуальный поезд — в любом режиме: колонка «Имитация» или кнопка «Поезд ▾»
+    bool trainBtn = All(pane).Any(c => c is Button bt && bt.Text == "Поезд ▾");
+    Check(hasSim || trainBtn, $"{UiSettings.ModeName(m)}: виртуальный поезд — {(hasSim ? "колонка «Имитация»" : trainBtn ? "кнопка «Поезд ▾»" : "НЕТ")}");
+}
+
+// ---- [ДОБАВЛЕНО 18.11.2026] рабочий и павлодарский: поставить виртуальный поезд кнопкой «Поезд ▾» и ПКМ по участку ----
+foreach (var m in new[] { UiMode.Work, UiMode.Classic })
+{
+    UiSettings.SetMode(m);
+    Application.DoEvents();
+    ModelHost.Model.Trains.RemoveAll();
+    ModelHost.Model.IL.ResetAll();
+    var menu = (ContextMenuStrip)paneType.GetMethod("VirtualTrainMenu", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(pane, null)!;
+    var place = A.View.TrainPlaces.First(tp => !tp.section.Occupied);
+    var it = menu.Items.OfType<ToolStripMenuItem>().First(i => i.Text == place.name);
+    it.DropDownItems.OfType<ToolStripMenuItem>().First(i => i.Text == "головой вправо →").PerformClick();
+    var vt = ModelHost.Model.Trains.At(place.section);
+    Check(vt != null && vt.Dir == Dir.Right && !vt.Shunting, $"{UiSettings.ModeName(m)}: «Поезд ▾» → {place.name} → поезд №{vt?.Number} поставлен");
+    var spawn = menu.Items.OfType<ToolStripMenuItem>().FirstOrDefault(i => A.View.SpawnButtons.Any(sb => sb.text == i.Text));
+    Check(spawn != null, $"{UiSettings.ModeName(m)}: в меню есть поезд от соседа ({spawn?.Text})");
+
+    var scheme = Find("RailSchemePanel")!;
+    var free = A.View.Sections.First(x => !x.Occupied && A.View.TrainPlaces.Any(tp => tp.section == x));
+    var sm = (ContextMenuStrip)scheme.GetType().GetMethod("SectionMenu", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(scheme, new object[] { free })!;
+    var put = sm.Items.OfType<ToolStripMenuItem>().FirstOrDefault(i => i.Text == "Поставить виртуальный поезд");
+    put?.DropDownItems.OfType<ToolStripMenuItem>().First(i => i.Text == "маневровый ←").PerformClick();
+    var vt2 = ModelHost.Model.Trains.At(free);
+    Check(put != null && vt2 != null && vt2.Shunting && vt2.Dir == Dir.Left, $"{UiSettings.ModeName(m)}: ПКМ по участку {free.Label} → маневровый поезд поставлен");
+    var tm = (ContextMenuStrip)scheme.GetType().GetMethod("TrainMenu", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(scheme, new object[] { vt2!, free })!;
+    tm.Items.OfType<ToolStripMenuItem>().FirstOrDefault(i => i.Text.StartsWith("Развернуть"))?.PerformClick();
+    Check(vt2!.Dir == Dir.Right, $"{UiSettings.ModeName(m)}: ПКМ по поезду → «Развернуть» работает");
+    menu = (ContextMenuStrip)paneType.GetMethod("VirtualTrainMenu", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(pane, null)!;
+    menu.Items.OfType<ToolStripMenuItem>().First(i => i.Text == "Убрать поезда").PerformClick();
+    Check(ModelHost.Model.Trains.Trains.Count(t => !t.Leaving) == 0, $"{UiSettings.ModeName(m)}: «Убрать поезда» убрал все");
 }
 
 // ---- павлодарский: маршрут кнопками светофоров ----
 UiSettings.SetMode(UiMode.Classic);
 Application.DoEvents();
 var il = ModelHost.Model.IL;
+il.ResetAll();
 var route = A.View.Routes.First(r => !r.Shunting && r.End != null && !r.Active);
 Button Btn(string row, string label)
 {

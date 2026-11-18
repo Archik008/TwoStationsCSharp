@@ -395,12 +395,24 @@ public class JsonLayout
         return res;
     }
 
+    readonly HashSet<string> loopWarned = new();
+
     void BuildRoutes()
     {
         var customs = BuildCustomRoutes();
         bool Replaced(RailSignal start, RailSignal end, TrackSection dest) =>
             customs.Any(c => c.Start == start && ((c.End != null && c.End == end) || c.Dest == dest));
-        var found = Ed.RouteFinder.FindRoutes(St);
+        // [ИЗМЕНЕНО 18.11.2026] из одинаковых маршрутов (то же начало и тот же путь, разные стрелки) первым — самый прямой:
+        // меньше стрелок в минусе, потом короче. Клик «светофор → путь» берёт первый — раньше это мог быть объезд
+        // через съезды и петлю (у Алгабаса из файла: Н2 → Ч-М2 через пять стрелок вместо трёх).
+        var found = Ed.RouteFinder.FindRoutes(St)
+            .OrderBy(r => r.Shunt)
+            .ThenBy(r => r.StartName, Ed.NaturalComparer.Instance)
+            .ThenBy(r => r.Exit)
+            .ThenBy(r => r.Dest ?? "", Ed.NaturalComparer.Instance)
+            .ThenBy(r => r.Switches.Count(x => !x.Plus))
+            .ThenBy(r => r.Tiles.Count)
+            .ToList();
         var seen = new Dictionary<string, int>();
         int skipped = 0, off = 0, replaced = 0;
         foreach (var r in found)
@@ -445,6 +457,14 @@ public class JsonLayout
                 if (swByGroup.TryGetValue(x.Group, out var sw)) rr.Switches.Add((sw, x.Plus));
             IL.AddRoute(rr);
             View.Routes.Add(rr);
+            // [ДОБАВЛЕНО 18.11.2026] маршрут заходит на один и тот же участок дважды (участок обходит петлю или съезд) —
+            // в ЭЦ так не бывает: поезд не поймёт, куда ехать, посекционное размыкание путается. Схему надо поправить.
+            var order = new List<string>();
+            foreach (var k in r.Tiles) { var sc = St.Tiles[k].Sec ?? ""; if (order.Count == 0 || order[^1] != sc) order.Add(sc); }
+            var twice = order.Where(x => x != "").GroupBy(x => x).FirstOrDefault(gr => gr.Count() > 1)?.Key;
+            if (twice != null && loopWarned.Add(twice))
+                Notes.Add($"Маршрут {name} проходит участок {twice} дважды (участок обходит петлю или съезд). Так в ЭЦ не бывает — " +
+                          $"поезд по такому маршруту может поехать не туда. Разделите участок {twice} в редакторе на два.");
         }
         foreach (var rr in customs) { IL.AddRoute(rr); View.Routes.Add(rr); }
         if (!Set.AutoOn) Notes.Add($"Автомаршруты выключены в настройке — работают только свои ({customs.Count}).");
@@ -637,11 +657,37 @@ public class JsonLayout
 
         if (cands.Count == 0) return null;
         var step = cands.FirstOrDefault(c => c.Section != null || c.Exit || c.Buffer);
+        // [ДОБАВЛЕНО 18.11.2026] из участка несколько выходов (большой участок, петля, перекрёстный съезд) — поезд едет
+        // по своему заданному маршруту: на следующий участок маршрута, а не на первый попавшийся выход.
+        // Раньше в таких схемах поезд уходил не туда, куда маршрут (или бегал по кругу между двумя участками).
+        var route = live ? RouteThrough(s) : null;
+        if (route != null && cands.Count > 1)
+        {
+            var want = NextInRoute(route, s);
+            var byRoute = want == null ? null : cands.FirstOrDefault(c => c.Section == want);
+            if (byRoute != null) step = byRoute;
+        }
         // за пределы станции на перегон — только поездом по маршруту отправления (манёвры за границу не выходят),
         // как у Алгабаса: if (s == CH_M2) return CH_M2.LockedBy is { Shunting: false } ? To(B12) : null
-        if (live && step?.Section != null && TypeOf(step.Section) == "line" && TypeOf(s) != "line" && s.LockedBy is not { Shunting: false })
+        // [ИЗМЕНЕНО 18.11.2026] и когда выходной стоит прямо на границе перегона (в маршруте нет своих участков)
+        if (live && step?.Section != null && TypeOf(step.Section) == "line" && TypeOf(s) != "line" && s.LockedBy is not { Shunting: false }
+            && !IL.ActiveRoutes.Any(r => !r.Shunting && r.ExitSection == step.Section && r.Start.At == s))
             return null;
         return step;
+    }
+
+    /// <summary>[ДОБАВЛЕНО 18.11.2026] Заданный маршрут, по которому поезд едет из участка s: участок в маршруте
+    /// (ещё не разомкнут) или это участок светофора начала. Последний заданный — первым.</summary>
+    RailRoute RouteThrough(TrackSection s) =>
+        IL.ActiveRoutes.Where(r => !r.Releasing && ((r.Sections.Contains(s) && !r.Released.Contains(s)) || r.Start.At == s))
+                       .OrderByDescending(r => r.Sections.Contains(s)).ThenByDescending(r => r.SetOrder).FirstOrDefault();
+
+    static TrackSection NextInRoute(RailRoute r, TrackSection s)
+    {
+        int i = r.Sections.IndexOf(s);
+        if (i < 0) return r.Sections.Count > 0 ? r.Sections[0] : r.ExitSection ?? r.Dest;   // стоит у светофора начала
+        if (i + 1 < r.Sections.Count) return r.Sections[i + 1];
+        return r.ExitSection ?? (r.Dest != s ? r.Dest : null);
     }
 
     /// <summary>Можно ли проехать участок sec насквозь, въехав в клетку key со стороны inSide (стрелки — как стоят сейчас).</summary>

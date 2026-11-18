@@ -225,6 +225,17 @@ class StationPane : UserControl
             Font = new Font("Bahnschrift", clock ? 16f : 12f, FontStyle.Bold), Padding = new Padding(12, clock ? 8 : 9, 0, 0), Margin = new Padding(0)
         };
         headerButtons = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Padding = new Padding(0, clock ? 10 : 5, 10, 0), Margin = new Padding(0) };
+        // [ДОБАВЛЕНО 18.11.2026] виртуальный поезд в любом режиме: если колонки «Имитация» нет (рабочий, павлодарский) —
+        // кнопка «Поезд ▾» в заголовке: поезда от соседей, поставить на путь, убрать все
+        if (!Show(UiSettings.Sim) && (View.SpawnButtons.Count > 0 || View.TrainPlaces.Count > 0))
+        {
+            Button bTrain = null;
+            bTrain = PinkButton("Поезд ▾", () => VirtualTrainMenu().Show(bTrain, new Point(0, bTrain.Height)));
+            bTrain.BackColor = Color.FromArgb(40, 110, 170);
+            tips.SetToolTip(bTrain, "Виртуальный поезд: от соседней станции или на выбранный путь, убрать все поезда.\n" +
+                                    "Ещё — ПКМ по свободному участку схемы. Развернуть, сделать маневровым — ПКМ по поезду.");
+            headerButtons.Controls.Add(bTrain);
+        }
         headerButtons.Controls.Add(PinkButton("Отмена набора", Scheme.CancelSelection));   // [ДОБАВЛЕНО 20.10.2026]
         headerButtons.Controls.Add(PinkButton("Отменить маршрут", () => IL.CancelLast(View.Routes)));
         top.Controls.Add(title, 0, 0);
@@ -520,6 +531,36 @@ class StationPane : UserControl
         tips.SetToolTip(lblCounters, "Счётчики кнопок: ИР — искусственная разделка, ВК — вспомогательный перевод стрелки,\n" +
                                      "ВСН — вспомогательная смена направления. Каждое нажатие нужно записать в журнал ДУ-46.");
         host.Controls.Add(brk(lblCounters));
+    }
+
+    /// <summary>[ДОБАВЛЕНО 18.11.2026] Меню кнопки «Поезд ▾» (режимы без колонки «Имитация»).</summary>
+    ContextMenuStrip VirtualTrainMenu()
+    {
+        var m = new ContextMenuStrip();
+        foreach (var (text, action) in View.SpawnButtons)
+        {
+            var a = action;
+            m.Items.Add(text, null, (_, _) => a());
+        }
+        if (View.TrainPlaces.Count > 0)
+        {
+            if (m.Items.Count > 0) m.Items.Add(new ToolStripSeparator());
+            m.Items.Add(new ToolStripMenuItem("Поставить поезд на путь:") { Enabled = false });
+            foreach (var (name, section) in View.TrainPlaces)
+            {
+                var sec = section;
+                var it = new ToolStripMenuItem(name) { Enabled = !sec.Occupied };
+                it.DropDownItems.Add("← головой влево", null, (_, _) => Trains.Spawn(sec, Dir.Left, shuntMode));
+                it.DropDownItems.Add("головой вправо →", null, (_, _) => Trains.Spawn(sec, Dir.Right, shuntMode));
+                it.DropDownItems.Add(new ToolStripSeparator());
+                it.DropDownItems.Add("маневровый ←", null, (_, _) => Trains.Spawn(sec, Dir.Left, true));
+                it.DropDownItems.Add("маневровый →", null, (_, _) => Trains.Spawn(sec, Dir.Right, true));
+                m.Items.Add(it);
+            }
+        }
+        m.Items.Add(new ToolStripSeparator());
+        m.Items.Add(new ToolStripMenuItem("Убрать поезда", null, (_, _) => Trains.RemoveAll()) { Enabled = Trains.Trains.Count > 0 });
+        return m;
     }
 
     /// <summary>Колонка «Имитация (обучение)»: поставить / убрать поезда, выдержки.</summary>

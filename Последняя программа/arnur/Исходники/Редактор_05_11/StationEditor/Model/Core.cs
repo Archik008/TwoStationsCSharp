@@ -477,7 +477,24 @@ public static class Core
         foreach (var t in st.Tiles.Values) if (t.Sec == name && t.T == "switch") return "switch";
         if (st.Sections.TryGetValue(name, out var s) && !string.IsNullOrEmpty(s.Type) && s.Type != "auto") return s.Type;
         var g = GuessSecType(name);
-        return g == "switch" ? "plain" : g;    // «…СП» без стрелки — просто участок
+        if (g == "switch") return "plain";    // «…СП» без стрелки — просто участок
+        if (g != "plain") return g;
+        // [ДОБАВЛЕНО 18.11.2026] тип «авто», а название ничего не говорит («3», «уч1»): узнаём по схеме —
+        // выход за край схемы → перегон; на участке выходной светофор → путь приёма-отправления; упор → тупик.
+        // Раньше такой участок считался просто «участком», поездной маршрут проходил его насквозь мимо выходных
+        // и заканчивался не там (или не находился вовсе).
+        bool exitTile = false, exitSig = false, buffer = false;
+        foreach (var t in st.Tiles.Values)
+        {
+            if (t.Sec != name) continue;
+            if (t.T == "exit") exitTile = true;
+            if (t.T == "buffer") buffer = true;
+            if (t.Sigs != null) foreach (var sg in t.Sigs) if (sg.Kind == "exit") exitSig = true;
+        }
+        if (exitTile) return "line";
+        if (exitSig) return "path";
+        if (buffer) return "dead";
+        return "plain";
     }
 
     public static Color SecColor(Station st, string name)
