@@ -1055,6 +1055,17 @@ class RailSchemePanel : Panel
                 IL.Say($"Участок {sec.Label} {(sec.ManualOcc ? "занят (вручную)" : "освобождён (вручную)")}");
                 IL.NotifyChanged();
             });
+        // [ДОБАВЛЕНО 18.11.2026] виртуальный поезд — в любом режиме интерфейса (и в рабочем, и в павлодарском)
+        if (!sec.Occupied)
+        {
+            var put = new ToolStripMenuItem("Поставить виртуальный поезд");
+            put.DropDownItems.Add("← головой влево", null, (_, _) => ModelHost.Model.Trains.Spawn(sec, Dir.Left));
+            put.DropDownItems.Add("головой вправо →", null, (_, _) => ModelHost.Model.Trains.Spawn(sec, Dir.Right));
+            put.DropDownItems.Add(new ToolStripSeparator());
+            put.DropDownItems.Add("маневровый ←", null, (_, _) => ModelHost.Model.Trains.Spawn(sec, Dir.Left, true));
+            put.DropDownItems.Add("маневровый →", null, (_, _) => ModelHost.Model.Trains.Spawn(sec, Dir.Right, true));
+            m.Items.Add(put);
+        }
         RadioUi.AddSectionItems(m, sec, this);   // [ДОБАВЛЕНО 23.10.2026, этап 4] предупреждение / окно, поезд на макете
         AddFaultItem(m, "P:" + sec.Id);
         return m;
@@ -1076,12 +1087,10 @@ class RailSchemePanel : Panel
         var m = new ContextMenuStrip();
         m.Items.Add(new ToolStripMenuItem($"Поезд №{t.Number}: {t.ModeText}, едет {(t.Dir == Dir.Right ? "→" : "←")}") { Enabled = false });
         m.Items.Add(new ToolStripSeparator());
-        bool virt = UiSettings.Show(UiSettings.ManualOcc);   // [ДОБАВЛЕНО 28.10.2026] в рабочем режиме виртуальными поездами не управляем
-        if (virt)
-        {
-            m.Items.Add($"Развернуть (ехать {(t.Dir == Dir.Right ? "←" : "→")})", null, (_, _) => sim.Reverse(t));
-            m.Items.Add(t.Shunting ? "Сделать поездным" : "Сделать маневровым", null, (_, _) => sim.SetShunting(t, !t.Shunting));
-        }
+        // [ИЗМЕНЕНО 18.11.2026] виртуальным поездом управляем в любом режиме; ручная занятость — по-прежнему по «Параметрам»
+        bool virt = UiSettings.Show(UiSettings.ManualOcc);
+        m.Items.Add($"Развернуть (ехать {(t.Dir == Dir.Right ? "←" : "→")})", null, (_, _) => sim.Reverse(t));
+        m.Items.Add(t.Shunting ? "Сделать поездным" : "Сделать маневровым", null, (_, _) => sim.SetShunting(t, !t.Shunting));
         if (sec != null && (virt || sec.ManualOcc))
         {
             m.Items.Add(new ToolStripSeparator());
