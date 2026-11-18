@@ -650,6 +650,33 @@ public partial class Interlocking   // [ИЗМЕНЕНО 21.10.2026] втора�
             // а просто занятость: маршрут можно спокойно отменить.
             if (!r.SignalWasOpen) continue;
 
+            // [ДОБАВЛЕНО 18.11.2026] маршрут без своих участков (светофор стоит прямо на границе пути назначения или
+            // перегона — так бывает в схемах из редактора): раньше «Released.Count == Sections.Count» (0 == 0) размыкал его
+            // сразу, светофор мигал и гас. Теперь он ждёт поезд: занялся путь назначения (перегон) — маршрут выполнен.
+            // Поезд стоит у светофора (участок светофора занят) → переходит на путь назначения (заняты оба) → ушёл с участка
+            // светофора. На пути назначения могут стоять вагоны (маневры на подцепку) — поэтому смотрим на участок светофора.
+            if (r.Sections.Count == 0)
+            {
+                var target = r.ExitSection ?? r.Dest;
+                var from = r.Start.At;
+                if (from != null && from.Occupied) r.WasOccupied.Add(from);
+                bool seen = from == null || r.WasOccupied.Contains(from);
+                if (target != null && target.Occupied && seen && !r.TrainEntered)
+                {
+                    r.TrainEntered = true;
+                    Say($"Поезд вступил в маршрут {r.Name} — светофор {r.Start.Label} перекрыт на красный");
+                    changed = true;
+                }
+                if (r.TrainEntered && (from == null || !from.Occupied))
+                {
+                    if (!r.Shunting) TrainPassed?.Invoke(r);
+                    ReleaseRoute(r, $"Маршрут {r.Name} разомкнулся за поездом");
+                    AfterTrainRelease(r);
+                    changed = true;
+                }
+                continue;
+            }
+
             for (int i = 0; i < r.Sections.Count; i++)
             {
                 var s = r.Sections[i];
