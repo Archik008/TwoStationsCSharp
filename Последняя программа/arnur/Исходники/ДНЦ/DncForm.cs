@@ -60,10 +60,12 @@ public class DncForm : Form
         var wa = Screen.FromPoint(Cursor.Position).WorkingArea;
         MinimumSize = new Size(Math.Min(800, wa.Width), Math.Min(500, wa.Height));
         Size = new Size(Math.Min(1600, wa.Width), Math.Min(900, wa.Height));
-        StartPosition = FormStartPosition.CenterScreen;
-        WindowState = FormWindowState.Maximized;
+        // [ИЗМЕНЕНО 19.11.2026] как у АКЖТ: место окна задаётся здесь, до показа (PlaceOnScreens в конце конструктора),
+        // без «по центру» и «развернуть» — раньше окно ставилось на два монитора уже после Load и выходило не на весь экран
+        StartPosition = FormStartPosition.Manual;
         KeyPreview = true;
-        Load += (_, _) => PlaceOnScreens(true);   // [ДОБАВЛЕНО 19.11.2026] как АКЖТ: два монитора рядом — окно на оба
+        // окно уже показано — если что-то его сдвинуло или обрезало, поставить на мониторы ещё раз
+        Shown += (_, _) => { if (spanning && Bounds != spanBounds) ApplySpan(); };
 
         BuildSide();
         btnSide.FlatAppearance.BorderSize = 0;
@@ -92,6 +94,7 @@ public class DncForm : Form
         timer.Tick += (_, _) => TickTiles();
         timer.Start();
         RefreshAll();
+        PlaceOnScreens(true);   // [ДОБАВЛЕНО 19.11.2026] два монитора рядом — окно на оба, как у АКЖТ
     }
 
     // =================================================================
@@ -564,11 +567,29 @@ public class DncForm : Form
 
     /// <summary>Второй монитор стоит слева или справа от основного (одной полосой) — окно без рамки на рабочие области
     /// обоих (без панели задач), лента схем идёт через оба. Иначе (или по кнопке «Один монитор») — развёрнуто на одном.</summary>
+    /// <summary>Монитор: весь экран, рабочая область (без панели задач), основной ли.</summary>
+    record Mon(Rectangle Bounds, Rectangle Work, bool Primary);
+
+    /// <summary>Мониторы. Для проверки без второго монитора — переменная окружения DNC_FAKE_SCREENS
+    /// ("x,y,w,h;x,y,w,h", первый — основной; панель задач 40 px внизу каждого).</summary>
+    static List<Mon> Monitors()
+    {
+        var fake = Environment.GetEnvironmentVariable("DNC_FAKE_SCREENS");
+        if (!string.IsNullOrWhiteSpace(fake))
+            return fake.Split(';').Select((t, i) =>
+            {
+                var v = t.Split(',').Select(int.Parse).ToArray();
+                var r = new Rectangle(v[0], v[1], v[2], v[3]);
+                return new Mon(r, new Rectangle(r.X, r.Y, r.Width, r.Height - 40), i == 0);
+            }).ToList();
+        return Screen.AllScreens.Select(s => new Mon(s.Bounds, s.WorkingArea, s.Primary)).ToList();
+    }
+
     void PlaceOnScreens(bool twoScreens)
     {
-        var screens = Screen.AllScreens;
-        var primary = Screen.PrimaryScreen ?? screens[0];
-        var second = screens.Where(s => !s.Primary)
+        var screens = Monitors();
+        var primary = screens.FirstOrDefault(s => s.Primary) ?? screens[0];
+        var second = screens.Where(s => s != primary)
                             .OrderBy(s => Math.Abs(s.Bounds.Left - primary.Bounds.Right) + Math.Abs(s.Bounds.Right - primary.Bounds.Left))
                             .FirstOrDefault();
         bool sideBySide = second != null && (second.Bounds.Left == primary.Bounds.Right || second.Bounds.Right == primary.Bounds.Left);
@@ -579,15 +600,18 @@ public class DncForm : Form
             var r = l == primary ? second : primary;
             WindowState = FormWindowState.Normal;
             FormBorderStyle = FormBorderStyle.None;
-            int top = Math.Max(l.WorkingArea.Top, r.WorkingArea.Top);
-            int bottom = Math.Min(l.WorkingArea.Bottom, r.WorkingArea.Bottom);   // чтобы окно не уходило под панель задач
-            Bounds = new Rectangle(l.WorkingArea.Left, top, r.WorkingArea.Right - l.WorkingArea.Left, bottom - top);
+            int top = Math.Max(l.Work.Top, r.Work.Top);
+            int bottom = Math.Min(l.Work.Bottom, r.Work.Bottom);   // чтобы окно не уходило под панель задач
+            spanBounds = new Rectangle(l.Work.Left, top, r.Work.Right - l.Work.Left, bottom - top);
+            Bounds = spanBounds;
+            ApplySpan();
         }
         else
         {
-            if (twoScreens && !sideBySide && screens.Length > 1)
+            if (twoScreens && !sideBySide && screens.Count > 1)
                 AddLog("Второй монитор не стоит рядом с основным (слева или справа) — окно на одном мониторе");
             spanning = false;
+            spanBounds = Rectangle.Empty;
             FormBorderStyle = FormBorderStyle.Sizable;
             WindowState = FormWindowState.Normal;
             WindowState = FormWindowState.Maximized;
@@ -599,6 +623,44 @@ public class DncForm : Form
         }
         LayoutTiles();
     }
+
+    /// <summary>Где окно на двух мониторах (пусто — не растянуто).</summary>
+    Rectangle spanBounds;
+
+    /// <summary>[ДОБАВЛЕНО 19.11.2026] Поставить окно на оба монитора напрямую (SetWindowPos): WinForms сама обрезает размер
+    /// окна по SystemInformation.MaxWindowTrackSize — на мониторах с разным масштабом окно выходило не на весь экран.</summary>
+    void ApplySpan()
+    {
+        if (!spanning || spanBounds.IsEmpty || !IsHandleCreated) return;
+        SetWindowPos(Handle, IntPtr.Zero, spanBounds.X, spanBounds.Y, spanBounds.Width, spanBounds.Height, 0x0004 | 0x0010);   // без Z-порядка и активации
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int w, int hgt, uint flags);
+
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        ApplySpan();
+    }
+
+    /// <summary>[ДОБАВЛЕНО 19.11.2026] Windows ограничивает размер окна своим «максимумом» (на мониторах с разным
+    /// масштабом он бывает меньше двух экранов) — окно на два монитора обрезалось. Пока окно растянуто,
+    /// отвечаем Windows, что максимум — оба монитора целиком.</summary>
+    protected override void WndProc(ref Message m)
+    {
+        base.WndProc(ref m);
+        const int WM_GETMINMAXINFO = 0x24;
+        if (m.Msg != WM_GETMINMAXINFO || !spanning || spanBounds.IsEmpty) return;
+        var mmi = System.Runtime.InteropServices.Marshal.PtrToStructure<MinMaxInfo>(m.LParam);
+        mmi.MaxSize = new Point(spanBounds.Width, spanBounds.Height);
+        mmi.MaxPosition = Point.Empty;
+        mmi.MaxTrackSize = new Point(Math.Max(mmi.MaxTrackSize.X, spanBounds.Width), Math.Max(mmi.MaxTrackSize.Y, spanBounds.Height));
+        System.Runtime.InteropServices.Marshal.StructureToPtr(mmi, m.LParam, false);
+    }
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    struct MinMaxInfo { public Point Reserved, MaxSize, MaxPosition, MinTrackSize, MaxTrackSize; }
 
     protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
     {
