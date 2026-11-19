@@ -8,7 +8,10 @@ namespace DncApp;
 //   • перегоны станций под управлением: направление и «Сменить направление» (t_dir). Общий с соседом перегон —
 //     одной строкой: согласие соседа ДНЦ даёт сам (Net.ExpectConsent);
 //   • [ДОБАВЛЕНО 19.11.2026] виртуальные поезда этой схемы: поезд от соседней станции, поставить поезд на путь
-//     (головой влево / вправо, маневровый), убрать все поезда станции (t_train).
+//     (головой влево / вправо, маневровый), убрать все поезда станции (t_train);
+//     ОТПРАВИТЬ поезд с пути на соседнюю станцию: если надо — смена направления перегона (согласие соседа ДНЦ даёт сам),
+//     поезд на путь (если его там нет), маршрут отправления; «принять у соседа» — маршрут приёма у соседней станции
+//     на первый свободный путь (если она под управлением ДНЦ).
 // =====================================================================
 
 public class RoutesPanel : Panel
@@ -19,12 +22,17 @@ public class RoutesPanel : Panel
     readonly Label lblTitle = new() { Dock = DockStyle.Top, Height = 26, Font = new Font("Segoe UI", 10f, FontStyle.Bold), ForeColor = Color.White, Padding = new Padding(4, 5, 0, 0) };
     readonly FlowLayoutPanel tools = new() { Dock = DockStyle.Top, AutoSize = true, WrapContents = true, Padding = new Padding(2) };
     readonly FlowLayoutPanel routes = new() { Dock = DockStyle.Fill, AutoScroll = true, WrapContents = true, Padding = new Padding(2) };
-    readonly FlowLayoutPanel lines = new() { Dock = DockStyle.Bottom, AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Padding = new Padding(2, 4, 2, 4) };
-    readonly FlowLayoutPanel trains = new() { Dock = DockStyle.Bottom, AutoSize = true, WrapContents = true, Padding = new Padding(2, 4, 2, 4), BackColor = Color.FromArgb(44, 70, 96) };
+    // [ИЗМЕНЕНО 19.11.2026] две колонки: слева маршруты во всю высоту, справа «Поезда» и «Перегоны» (с прокруткой) —
+    // раньше поезда и перегоны стояли под маршрутами и сжимали список маршрутов до нуля
+    const int RightW = 330;
+    readonly Panel right = new() { Dock = DockStyle.Right, Width = RightW, AutoScroll = true };
+    readonly FlowLayoutPanel lines = new() { Dock = DockStyle.Top, AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Padding = new Padding(2, 4, 2, 4) };
+    readonly FlowLayoutPanel trains = new() { Dock = DockStyle.Top, AutoSize = true, WrapContents = true, Padding = new Padding(2, 4, 2, 4), BackColor = Color.FromArgb(44, 70, 96) };
     string trainsShape = "";
     Label lblTrains;
     ComboBox cmbPlace;
-    CheckBox chkShunt;
+    CheckBox chkShunt, chkAccept;
+    ComboBox cmbDepart;
     readonly RadioButton rbTrain, rbShunt, rbAll;
     readonly ToolTip tips = new();
     readonly Dictionary<int, Button> routeBtns = new();
@@ -49,11 +57,12 @@ public class RoutesPanel : Panel
         bUnsel.Click += (_, _) => { foreach (var id in Stations) Net.Unselect(id); Status?.Invoke("Набор маршрута сброшен"); };
         tips.SetToolTip(bUnsel, "Снять выбранный светофор начала маршрута (на всех станциях под управлением)");
         tools.Controls.AddRange(new Control[] { rbTrain, rbShunt, rbAll, bUnsel });
+        right.Controls.Add(lines);
+        right.Controls.Add(trains);    // добавлена последней — встаёт сверху колонки
         Controls.Add(routes);
-        Controls.Add(lines);
-        Controls.Add(trains);
         Controls.Add(tools);
         Controls.Add(lblTitle);
+        Controls.Add(right);           // колонка справа во всю высоту панели
     }
 
     RadioButton Radio(string t, bool on)
@@ -117,13 +126,55 @@ public class RoutesPanel : Panel
         RefreshTrains();
     }
 
+    /// <summary>[ДОБАВЛЕНО 19.11.2026] Отправить поезд с пути на соседнюю станцию: направление перегона (если надо — меняет
+    /// ДНЦ, согласие соседа даёт сам), поезд на путь и маршрут отправления; приём у соседа, если она под управлением ДНЦ.
+    /// Результат — строкой (Btn пишет его в полосу состояния).</summary>
+    async Task<CallResult> Depart(DepartInfo dep, bool accept)
+    {
+        string station = StationId;
+        var st = Net.Get(station);
+        if (st == null) return new CallResult(false, "станция не на связи");
+        if (!dep.DirOk && dep.Wire.Length > 0)
+        {
+            var ln = st.Lines.FirstOrDefault(l => l.Wire == dep.Wire);
+            if (ln == null) return new CallResult(false, "не найден перегон для смены направления");
+            Status?.Invoke($"Отправление: меняю направление «{ln.Title}»…");
+            Net.ExpectConsent(dep.Wire);
+            var d = await Net.Direction(station, ln.Id);
+            if (!d.Ok) return new CallResult(false, $"направление «{ln.Title}» не сменить — {(d.Reason.Length > 0 ? d.Reason : "станция отказала")}");
+            bool turned = false;
+            for (int k = 0; k < 50 && !turned; k++)
+            {
+                await Task.Delay(500);
+                turned = Net.Get(station)?.Vt?.Departures.FirstOrDefault(x => x.R == dep.R)?.DirOk == true;
+            }
+            if (!turned) return new CallResult(false, $"направление «{ln.Title}» не сменилось за 25 с");
+        }
+        var r = await Net.Train(station, "depart", dep.P, dep.I, r: dep.R);
+        if (!r.Ok) return r;
+        string done = $"Отправлен поезд: {r.Name}" + (r.Reason.Length > 0 ? $" ({r.Reason})" : "");
+        if (!accept || dep.Wire.Length == 0) return new CallResult(true, "", Name: done);
+        // приём у соседней станции, у которой тот же перегон
+        var nb = Net.Stations.Values.FirstOrDefault(s => s.Id != station && s.Online && s.Lines.Any(l => l.Wire == dep.Wire));
+        if (nb == null) return new CallResult(true, "", Name: done + "; соседняя станция не на связи — приём задаст её дежурный");
+        if (!Stations.Contains(nb.Id))
+            return new CallResult(true, "", Name: done + $"; приём на «{nb.Title}» — она не под управлением ДНЦ («Управлять участком»)");
+        var a = await Net.Train(nb.Id, "accept", wire: dep.Wire);
+        return new CallResult(true, "", Name: done + (a.Ok ? $"; приём на «{nb.Title}»: {a.Name}" : $"; приём на «{nb.Title}» не задан — {a.Reason}"));
+    }
+
     /// <summary>[ДОБАВЛЕНО 19.11.2026] Виртуальные поезда схемы: от соседей, на путь, убрать все.</summary>
     void RefreshTrains()
     {
-        var vt = Net.Get(StationId)?.Vt;
+        var st = Net.Get(StationId);
+        var vt = st?.Vt;
         var spawns = vt?.Spawns.Where(x => x.P == SchemeName).ToList() ?? new();
         var places = vt?.Places.Where(x => x.P == SchemeName).ToList() ?? new();
-        string shape = StationId + SchemeName + string.Join("|", spawns.Select(x => x.Text)) + "#" + string.Join("|", places.Select(x => x.Name));
+        // [ДОБАВЛЕНО 19.11.2026] маршруты станция прислала, а поезда — нет: программа станции собрана старым кодом
+        // (без команды t_train) — кнопкам поездов не из чего взяться, пишем, что делать
+        string state = vt != null ? "ok" : st?.Routes != null ? "old" : "wait";
+        string shape = state + StationId + SchemeName + string.Join("|", spawns.Select(x => x.Text)) + "#" + string.Join("|", places.Select(x => x.Name)) +
+                       "#" + string.Join("|", vt?.Departures.Where(x => x.P == SchemeName).Select(x => x.R) ?? Enumerable.Empty<int>());
         if (shape != trainsShape)
         {
             trainsShape = shape;
@@ -131,6 +182,23 @@ public class RoutesPanel : Panel
             foreach (Control c in trains.Controls) c.Dispose();
             trains.Controls.Clear();
             lblTrains = new Label { AutoSize = true, Font = new Font("Segoe UI", 10f, FontStyle.Bold), ForeColor = Color.White, Margin = new Padding(2, 4, 8, 2) };
+            if (state != "ok")
+            {
+                trains.Controls.Add(lblTrains);
+                trains.SetFlowBreak(lblTrains, true);
+                trains.Controls.Add(new Label
+                {
+                    AutoSize = true, MaximumSize = new Size(RightW - 30, 0), Margin = new Padding(2, 2, 2, 4),
+                    ForeColor = state == "old" ? Color.FromArgb(255, 200, 120) : Color.Gainsboro,
+                    Text = state == "old"
+                        ? "Программа этой станции собрана старым кодом и не принимает виртуальные поезда от ДНЦ. " +
+                          "Обновите и пересоберите программы станций (собрать_всё.bat) — тогда здесь появятся кнопки поездов."
+                        : "Ожидание ответа станции…"
+                });
+                trains.ResumeLayout();
+                lblTrains.Text = $"Поезда: {SchemeName}";
+                return;
+            }
             trains.Controls.Add(lblTrains);
             trains.SetFlowBreak(lblTrains, true);
             Button Btn(string t, Func<Task<CallResult>> act, string ok)
@@ -140,7 +208,8 @@ public class RoutesPanel : Panel
                 b.Click += async (_, _) =>
                 {
                     var r = await act();
-                    Status?.Invoke(r.Ok ? ok + (r.Name.Length > 0 ? $": {r.Name}" : "") : $"Поезд: {(r.Reason.Length > 0 ? r.Reason : "станция отказала")}");
+                    Status?.Invoke(r.Ok ? (ok.Length > 0 ? ok + (r.Name.Length > 0 ? $": {r.Name}" : "") : r.Name)
+                                        : $"Поезд: {(r.Reason.Length > 0 ? r.Reason : "станция отказала")}");
                 };
                 trains.Controls.Add(b);
                 return b;
@@ -162,6 +231,27 @@ public class RoutesPanel : Panel
                 tips.SetToolTip(cmbPlace, "Путь, на который поставить виртуальный поезд (занятый — с пометкой)");
             }
             else cmbPlace = null;
+            // ---- отправить поезд на соседнюю станцию ----
+            var departs = vt.Departures.Where(x => x.P == SchemeName).ToList();
+            if (departs.Count > 0)
+            {
+                var lbl = new Label { Text = "Отправить:", AutoSize = true, ForeColor = Color.White, Margin = new Padding(2, 7, 2, 2) };
+                trains.Controls.Add(lbl);
+                cmbDepart = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = RightW - 40, DropDownWidth = 420, Margin = new Padding(2, 4, 2, 2) };
+                foreach (var d in departs)
+                    cmbDepart.Items.Add($"{places.FirstOrDefault(x => x.I == d.I).Name}: {d.Name}");
+                cmbDepart.SelectedIndex = 0;
+                trains.Controls.Add(cmbDepart);
+                trains.SetFlowBreak(cmbDepart, true);
+                tips.SetToolTip(cmbDepart, "С какого пути и каким маршрутом отправить поезд на перегон. Поезда на пути нет — он появится головой к выходу");
+                chkAccept = new CheckBox { Text = "принять у соседней станции", AutoSize = true, Checked = true, ForeColor = Color.White, Margin = new Padding(4, 7, 2, 2) };
+                tips.SetToolTip(chkAccept, "Сразу задать на соседней станции маршрут приёма на свободный путь (если она под управлением ДНЦ)");
+                var bGo = Btn("Отправить поезд", () => Depart(departs[Math.Max(0, cmbDepart.SelectedIndex)], chkAccept.Checked), "");
+                bGo.BackColor = Color.FromArgb(120, 220, 140);
+                trains.Controls.Add(chkAccept);
+                trains.SetFlowBreak(chkAccept, true);
+            }
+            else cmbDepart = null;
             var bClear = Btn("Убрать все поезда", () => Net.Train(StationId, "clear"), "Поезда станции убраны");
             bClear.BackColor = Color.FromArgb(255, 210, 200);
             trains.ResumeLayout();
@@ -191,11 +281,11 @@ public class RoutesPanel : Panel
         lines.Controls.Add(new Label { Text = "Перегоны", AutoSize = true, Font = new Font("Segoe UI", 10f, FontStyle.Bold), ForeColor = Color.White });
         foreach (var (station, ln) in items)
         {
-            var row = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 2, 0, 2) };
+            var row = new FlowLayoutPanel { AutoSize = true, WrapContents = true, MaximumSize = new Size(RightW - 24, 0), Margin = new Padding(0, 2, 0, 2) };
             string state = ln.Sync ? "  — согласование…" : ln.Aux ? "  — вспомогательная смена…" : "";
             row.Controls.Add(new Label
             {
-                Text = $"{ln.Title}: {ln.Arrow} {ln.Text}{state}", AutoSize = true, MaximumSize = new Size(Math.Max(200, Width - 190), 0),
+                Text = $"{ln.Title}: {ln.Arrow} {ln.Text}{state}", AutoSize = true, MaximumSize = new Size(RightW - 40, 0),
                 ForeColor = Color.White, Margin = new Padding(2, 6, 6, 2)
             });
             var b = new Button { Text = "Сменить направление", AutoSize = true, FlatStyle = FlatStyle.Flat, BackColor = Color.FromArgb(240, 240, 255), ForeColor = Color.Black, Enabled = !ln.Sync && !ln.Aux };

@@ -29,7 +29,7 @@ public class ControlView : Panel
     readonly Button bBack, bWhole;
     readonly Panel bottom = new() { Dock = DockStyle.Bottom, Height = 260 };
     readonly UiMirror mirror = new() { Dock = DockStyle.Fill };
-    readonly RoutesPanel routes = new() { Dock = DockStyle.Right, Width = 440 };
+    readonly RoutesPanel routes = new() { Dock = DockStyle.Right, Width = 760 };   // маршруты | поезда и перегоны
     // граница между лентой и низом — её можно потянуть мышью (тогда высота низа больше не подбирается сама)
     readonly Splitter split = new() { Dock = DockStyle.Bottom, Height = 6, BackColor = Color.FromArgb(90, 96, 104), MinExtra = 120, MinSize = 120 };
     bool userSized;

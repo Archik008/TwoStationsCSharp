@@ -50,7 +50,11 @@ namespace StationApp.Core;
 //      t_consent {id, ok, reason}      ответ ДНЦ на запрос смены направления (s_consent)
 //      t_train   {op, p, i, dir, shunt, tag}  [ДОБАВЛЕНО 19.11.2026] виртуальный поезд: op = spawn (поезд от соседа — кнопка
 //                                      № i схемы p), put (на путь № i схемы p, dir L / R, маневровый), clear (убрать все) → s_result
-//                                      что можно — в s_info.vt (когда просили routes): {spawns:[{p,i,text}], places:[{p,i,name,busy}], count}
+//                                      что можно — в s_info.vt (когда просили routes): {spawns:[{p,i,text}], places:[{p,i,name,busy}], count,
+//                                      departs:[{p, i (путь), r (маршрут), name, wire, dirOk}]}
+//                                      [ДОБАВЛЕНО 19.11.2026] op = depart {p, i, r}: поезд на путь № i головой к выходу (если его там нет)
+//                                      и маршрут отправления № r на перегон; op = accept {wire}: маршрут приёма с перегона wire
+//                                      на первый свободный путь (у соседней станции)
 //    [ДОБАВЛЕНО 18.11.2026] пока ДНЦ на связи, запрос соседа на смену направления идёт ДНЦ, а не дежурному:
 //      s_consent {id, wire, title, text, seconds, station} / s_consent_end {id} (ответ уже не нужен)
 //      t_mode    {mode}                режим интерфейса станции (Work — «Медеуский», Classic — «Павлодарский»…):

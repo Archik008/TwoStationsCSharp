@@ -40,7 +40,14 @@ public record LineInfo(string Id, string Title, string Dir, string Text, string 
 /// <summary>[ДОБАВЛЕНО 18.11.2026] Маршрут станции: № (индекс у станции), название, маневровый, схема, состояние, почему нельзя.</summary>
 /// <summary>[ДОБАВЛЕНО 19.11.2026] Виртуальные поезда станции: поезда от соседей (кнопки схем), пути, куда можно поставить
 /// поезд, сколько поездов сейчас.</summary>
-public record VtInfo(List<(string P, int I, string Text)> Spawns, List<(string P, int I, string Name, bool Busy)> Places, int Count);
+public record VtInfo(List<(string P, int I, string Text)> Spawns, List<(string P, int I, string Name, bool Busy)> Places, int Count)
+{
+    /// <summary>[ДОБАВЛЕНО 19.11.2026] Отправления: с пути № I схемы P маршрутом № R на перегон (общий с соседом — Wire),
+    /// можно ли сейчас по направлению перегона (DirOk).</summary>
+    public List<DepartInfo> Departures = new();
+}
+
+public record DepartInfo(string P, int I, int R, string Name, string Wire, bool DirOk);
 
 public record RouteInfo(int I, string N, bool Sh, string P, string St, string Why)
 {
@@ -189,8 +196,8 @@ public static class Net
 
     /// <summary>[ДОБАВЛЕНО 19.11.2026] Виртуальный поезд: spawn — поезд от соседа (кнопка № i схемы p), put — на путь № i схемы p
     /// головой влево / вправо (маневровый или поездной), clear — убрать все поезда станции.</summary>
-    public static Task<CallResult> Train(string id, string op, string p = "", int i = -1, bool left = false, bool shunt = false) =>
-        Call(id, "t_train", new() { ["op"] = op, ["p"] = p, ["i"] = i, ["dir"] = left ? "L" : "R", ["shunt"] = shunt });
+    public static Task<CallResult> Train(string id, string op, string p = "", int i = -1, bool left = false, bool shunt = false, int r = -1, string wire = "") =>
+        Call(id, "t_train", new() { ["op"] = op, ["p"] = p, ["i"] = i, ["dir"] = left ? "L" : "R", ["shunt"] = shunt, ["r"] = r, ["wire"] = wire });
 
     // ---- согласие на смену направления: ДНЦ решает за станции ----
     static readonly Dictionary<string, long> expected = new();
@@ -324,7 +331,12 @@ public static class Net
                     ? sp.EnumerateArray().Select(x => (Str(x, "p"), Int(x, "i"), Str(x, "text"))).ToList() : new(),
                 vt.TryGetProperty("places", out var pl) && pl.ValueKind == JsonValueKind.Array
                     ? pl.EnumerateArray().Select(x => (Str(x, "p"), Int(x, "i"), Str(x, "name"), Bool(x, "busy"))).ToList() : new(),
-                Int(vt, "count"));
+                Int(vt, "count"))
+            {
+                Departures = vt.TryGetProperty("departs", out var dp) && dp.ValueKind == JsonValueKind.Array
+                    ? dp.EnumerateArray().Select(x => new DepartInfo(Str(x, "p"), Int(x, "i"), Int(x, "r"), Str(x, "name"), Str(x, "wire"), Bool(x, "dirOk"))).ToList()
+                    : new()
+            };
         if (st.Mode.Length > 0 && st.Mode != Settings.Mode && Environment.TickCount64 - st.ModeSentAt > 3000) SendMode(st);
         st.Control = Bool(d, "control");
         if (d.TryGetProperty("bg", out var bg) && bg.TryGetInt32(out var bgv)) st.Bg = Color.FromArgb(255, Color.FromArgb(bgv));

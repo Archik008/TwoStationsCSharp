@@ -442,9 +442,24 @@ static class TrainingInput
         {
             spawns = panes.SelectMany(p => p.SchemeView.SpawnButtons.Select((b, i) => new { p = p.SchemeView.Title, i, text = b.text })).ToList(),
             places = panes.SelectMany(p => p.SchemeView.TrainPlaces.Select((t, i) => new { p = p.SchemeView.Title, i, name = t.name, busy = t.section.Occupied })).ToList(),
-            count = StationApp.Model.ModelHost.Model.Trains.Trains.Count
+            count = StationApp.Model.ModelHost.Model.Trains.Trains.Count,
+            // [ДОБАВЛЕНО 19.11.2026] отправления: с какого пути (выходной светофор, у которого этот путь — участок приближения)
+            // каким маршрутом на перегон; общий ли перегон с соседом (wire) и можно ли сейчас по направлению (dirOk)
+            departs = panes.SelectMany(p => p.SchemeView.TrainPlaces.Select((t, i) => (p, i, t.section)))
+                .SelectMany(x => IL.Routes.Select((r, ri) => (r, ri))
+                    .Where(y => !y.r.Shunting && y.r.ExitSection != null && y.r.Start?.Approach == x.section)
+                    .Select(y => new
+                    {
+                        p = x.p.SchemeView.Title, i = x.i, r = y.ri, name = y.r.Name, wire = ExitWire(y.r),
+                        dirOk = y.r.Precondition?.Invoke() == null
+                    }))
+                .ToList()
         };
     }
+
+    /// <summary>Общий с соседом перегон, на который выходит маршрут отправления ("" — не общий).</summary>
+    static string ExitWire(RailRoute r) =>
+        StationApp.Model.ModelHost.Dispatch?.SharedLines.FirstOrDefault(l => l.line.Sections.Contains(r.ExitSection)).wire ?? "";
 
     /// <summary>Выбранные светофоры начала маршрута (набор начат): схема и светофор.</summary>
     static List<object> SelInfo() => Panes().Where(p => p.SchemeControl.Selected != null)
@@ -554,6 +569,48 @@ static class TrainingInput
                     case "clear":
                         trains.RemoveAll();
                         return Res(true, "");
+                    case "depart":
+                    {
+                        // [ДОБАВЛЕНО 19.11.2026] отправить поезд: на путь головой к выходному светофору (если поезда там нет)
+                        // и маршрут отправления на перегон — дальше поезд едет сам и переходит к соседней станции
+                        int ri = I("r");
+                        if (pane == null || i < 0 || i >= pane.SchemeView.TrainPlaces.Count || ri < 0 || ri >= IL.Routes.Count)
+                            return Res(false, "нет такого пути или маршрута");
+                        var (name, sec) = pane.SchemeView.TrainPlaces[i];
+                        var route = IL.Routes[ri];
+                        string placed = "";
+                        if (sec.TrainCount == 0)
+                        {
+                            if (sec.Occupied) return Res(false, $"{name} занят", new { i = ri, name = route.Name });
+                            if (trains.Spawn(sec, route.Start.Dir, false) == null) return Res(false, $"на {name} поезд не поставить");
+                            placed = $"поезд поставлен на {name}";
+                        }
+                        if (!route.Active)
+                        {
+                            var (ok, why) = Run(() => IL.SetRoute(route));
+                            if (!ok) return Res(false, (placed.Length > 0 ? placed + "; " : "") + "маршрут не задан" + (why.Length > 0 ? ": " + why : ""),
+                                                new { i = ri, name = route.Name });
+                        }
+                        return Res(true, placed, new { i = ri, name = route.Name });
+                    }
+                    case "accept":
+                    {
+                        // [ДОБАВЛЕНО 19.11.2026] принять поезд с перегона: маршрут приёма на первый свободный путь
+                        var ln = StationApp.Model.ModelHost.Dispatch?.SharedLines.FirstOrDefault(x => x.wire == S("wire")).line;
+                        if (ln == null) return Res(false, "у станции нет такого перегона");
+                        var c = IL.Routes.Select((r, ri) => (r, ri))
+                            .Where(y => !y.r.Shunting && y.r.Start?.Approach != null && ln.Sections.Contains(y.r.Start.Approach) && y.r.Dest != null).ToList();
+                        var already = c.FirstOrDefault(y => y.r.Active);
+                        if (already.r != null) return Res(true, "приём уже задан", new { i = already.ri, name = already.r.Name });
+                        string last = "";
+                        foreach (var (r, ri) in c.Where(y => !y.r.Dest.Occupied))
+                        {
+                            var (ok, why) = Run(() => IL.SetRoute(r));
+                            if (ok) return Res(true, "", new { i = ri, name = r.Name });
+                            last = why;
+                        }
+                        return Res(false, "нет маршрута приёма на свободный путь" + (last.Length > 0 ? ": " + last : ""));
+                    }
                 }
                 return Res(false, "неизвестная команда поезда");
             }
