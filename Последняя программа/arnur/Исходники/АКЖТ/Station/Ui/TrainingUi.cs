@@ -414,7 +414,8 @@ static class TrainingInput
         {
             ["schemes"] = schemes, ["popup"] = HasPopup(), ["bg"] = main.BackColor.ToArgb(), ["ui"] = items,
             ["mode"] = UiSettings.Mode.ToString(),   // режим интерфейса — ДНЦ держит его одинаковым у всех станций
-            ["sel"] = SelInfo(), ["lines"] = LinesInfo(), ["routes"] = wantRoutes ? RoutesInfo() : null
+            ["sel"] = SelInfo(), ["lines"] = LinesInfo(), ["routes"] = wantRoutes ? RoutesInfo() : null,
+            ["trains"] = TrainsOnShared()
         };
     }
 
@@ -422,6 +423,14 @@ static class TrainingInput
     //  [ДОБАВЛЕНО 18.11.2026] МАРШРУТЫ, ПЕРЕГОНЫ, СКВОЗНОЙ МАРШРУТ — ДЛЯ ДНЦ
     // =================================================================
     static Interlocking IL => StationApp.Model.ModelHost.Model.IL;
+
+    /// <summary>[ДОБАВЛЕНО 18.11.2026] Общие с соседом участки (имена в сети), где сейчас поезд ЭТОЙ станции. Перегон нарисован
+    /// у обеих станций, а поезд — только у той, где он едет: ДНЦ показывает перегон со схемы этой станции
+    /// (раньше поезд пропадал на стыке схем в ленте).</summary>
+    static List<string> TrainsOnShared() =>
+        (StationApp.Model.ModelHost.Dispatch?.SharedSectionIds ?? Enumerable.Empty<(string wire, string id)>())
+            .Where(s => IL.Sections.TryGetValue(s.id, out var sec) && (sec.TrainCount > 0 || sec.HwTrainNo > 0))
+            .Select(s => s.wire).Distinct().ToList();
 
     /// <summary>Выбранные светофоры начала маршрута (набор начат): схема и светофор.</summary>
     static List<object> SelInfo() => Panes().Where(p => p.SchemeControl.Selected != null)

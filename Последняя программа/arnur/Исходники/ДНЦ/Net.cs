@@ -73,6 +73,8 @@ public class StationRt
     public List<LineInfo> Lines = new();
     /// <summary>Маршруты (последний ответ с routes), null — не просили.</summary>
     public List<RouteInfo> Routes;
+    /// <summary>[ДОБАВЛЕНО 18.11.2026] Общие с соседом участки (имена в сети), где сейчас поезд этой станции.</summary>
+    public HashSet<string> TrainsOn = new();
     public string Title => Name.Length > 0 ? Name : Id;
     public SchemeInfo Scheme(string name) => Schemes.FirstOrDefault(s => s.Name == name);
 }
@@ -112,8 +114,9 @@ public static class Net
             DispatchLink.PeersChanged += OnPeers;
             DispatchLink.StatusChanged += () => Changed?.Invoke();
             DispatchLink.EventReceived += OnEvent;
-            // станции, которые давно не отвечали на t_info, спрашиваем ещё раз (схем может стать больше / меньше)
-            var t = new System.Windows.Forms.Timer { Interval = 5000 };
+            // станции спрашиваем раз в секунду: схемы, перегоны и где поезда на общих участках (стык ленты следует за поездом)
+            // [ИЗМЕНЕНО 18.11.2026] было раз в 5 с — поезд, переходящий на соседнюю станцию, на стыке пропадал до 5 с
+            var t = new System.Windows.Forms.Timer { Interval = 1000 };
             t.Tick += (_, _) => { foreach (var st in Stations.Values.Where(s => s.Online)) RequestInfo(st.Id, false); };
             t.Start();
         }
@@ -294,6 +297,8 @@ public static class Net
         st.Popup = Bool(d, "popup");
         // режим у станции другой (поменяли на станции или она только подключилась) — ставим режим ДНЦ, не чаще раза в 3 с
         st.Mode = Str(d, "mode");
+        st.TrainsOn = d.TryGetProperty("trains", out var tr) && tr.ValueKind == JsonValueKind.Array
+            ? tr.EnumerateArray().Select(x => x.GetString() ?? "").ToHashSet() : new();
         st.Sel = d.TryGetProperty("sel", out var sl) && sl.ValueKind == JsonValueKind.Array
             ? sl.EnumerateArray().Select(x => (Str(x, "p"), Str(x, "s"))).ToList() : new();
         if (d.TryGetProperty("lines", out var ls) && ls.ValueKind == JsonValueKind.Array)

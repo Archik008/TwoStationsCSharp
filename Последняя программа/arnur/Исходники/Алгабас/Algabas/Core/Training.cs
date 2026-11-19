@@ -53,7 +53,8 @@ namespace StationApp.Core;
 //      t_mode    {mode}                режим интерфейса станции (Work — «Медеуский», Classic — «Павлодарский»…):
 //                                      ДНЦ держит у всех станций один режим  [ДОБАВЛЕНО 18.11.2026]
 //    станция → ДНЦ:
-//      s_info    {schemes:[{name, aspect, dw, dh, shared:[{n, x1,y1,x2,y2}], lvl, lvlpos, x,y,w,h}], popup, control, mode, bg, ui:[{id, g, t, text, w, h, bg, fg, en, chk, nl, f, bold}]}
+//      s_info    {schemes:[{name, aspect, dw, dh, shared:[{n, x1,y1,x2,y2}], lvl, lvlpos, x,y,w,h}], popup, control, mode, bg,
+//                 trains:[общие участки, где поезд этой станции], sel, lines, routes, ui:[{id, g, t, text, w, h, bg, fg, en, chk, nl, f, bold}]}
 //                schemes — схемы станции: название, ширина/высота рисунка, где на экране (доли окна);
 //                  dw, dh — размер чертежа; shared — общие с соседом участки (имя в сети и концы на чертеже) —
 //                  по ним ДНЦ стыкует схемы соседних станций; lvl, lvlpos — схемы одной программы в общей системе

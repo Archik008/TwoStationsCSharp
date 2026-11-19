@@ -8,6 +8,8 @@ namespace DncApp;
 //     имена как в связи диспетчеров) и их концы на чертеже. Перегон нарисован у обеих станций — показываем его
 //     один раз: левую схему режем на четверти первого общего участка, правую — там же на её чертеже,
 //     и ставим встык; по высоте сдвигаем так, чтобы путь перегона лёг в одну линию;
+//     [ИЗМЕНЕНО 18.11.2026] поезд на перегоне рисует только та станция, где он едет, — пока он там, перегон
+//     показывается целиком с её схемы (стык — на дальнем от неё конце перегона), иначе поезд пропадал на стыке;
 //   • стык «край в край»: схемы одной программы в общей системе координат (АКЖТ и путевой пост — как на
 //     двух мониторах) — встык, на одной высоте чертежа;
 //   • соседи без общего пути — с зазором, по высоте — по середине.
@@ -38,6 +40,8 @@ public static class Ribbon
 {
     /// <summary>Где резать общий участок: доля его длины от левого конца (середину занимает подпись участка).</summary>
     public const float SeamAt = 0.25f;
+    /// <summary>Стык «за поездом» — на столько единиц чертежа внутрь перегона от светофора на его конце.</summary>
+    const float EdgeIn = 40;   // шире подписи копии светофора («НА (пост)», «Ч (Алгабас)»)
     /// <summary>Зазор между несостыкованными схемами, пикселей.</summary>
     public const int Gap = 24;
     /// <summary>Ширина плитки станции, о которой ещё ничего не известно (нет связи / нет ответа), пикселей.</summary>
@@ -49,24 +53,31 @@ public static class Ribbon
         // одна программа, общая система координат: A левее B
         if (stA == stB && a.Lvl.Length > 0 && a.Lvl == b.Lvl && a.LvlPos < b.LvlPos)
             return new Join(JoinKind.Level, a.Dw, 0, 0, "");
-        // общий участок: у A он у правого края, у B — у левого; берём самый левый на чертеже A
-        Join best = null;
-        float bestX = float.MaxValue;
+        // общие участки: у A они у правого края, у B — у левого (пары с одним именем)
+        var pairs = new List<(SharedPiece pa, SharedPiece pb)>();
         foreach (var pa in a.Shared)
         {
-            if ((pa.X1 + pa.X2) / 2 < a.Dw / 2) continue;
+            if ((pa.X1 + pa.X2) / 2 < a.Dw / 2 || Math.Abs(pa.X2 - pa.X1) < 1) continue;
             foreach (var pb in b.Shared)
-            {
-                if (pb.N != pa.N || (pb.X1 + pb.X2) / 2 > b.Dw / 2) continue;
-                float aMin = Math.Min(pa.X1, pa.X2), aLen = Math.Abs(pa.X2 - pa.X1);
-                float bMin = Math.Min(pb.X1, pb.X2), bLen = Math.Abs(pb.X2 - pb.X1);
-                if (aLen < 1 || bLen < 1 || aMin >= bestX) continue;
-                bestX = aMin;
-                best = new Join(JoinKind.Shared, aMin + SeamAt * aLen, bMin + SeamAt * bLen,
-                                (pa.Y1 + pa.Y2) / 2 - (pb.Y1 + pb.Y2) / 2, pa.N);
-            }
+                if (pb.N == pa.N && (pb.X1 + pb.X2) / 2 <= b.Dw / 2 && Math.Abs(pb.X2 - pb.X1) >= 1) pairs.Add((pa, pb));
         }
-        return best ?? Join.None;
+        if (pairs.Count == 0) return Join.None;
+        static float Min(SharedPiece p) => Math.Min(p.X1, p.X2);
+        static float Max(SharedPiece p) => Math.Max(p.X1, p.X2);
+        static float Y(SharedPiece p) => (p.Y1 + p.Y2) / 2;
+        // у кого поезд на перегоне (поезд рисует только «своя» станция)
+        bool aTrain = Net.Get(stA)?.TrainsOn is { Count: > 0 } ta && pairs.Any(x => ta.Contains(x.pa.N));
+        bool bTrain = Net.Get(stB)?.TrainsOn is { Count: > 0 } tb && pairs.Any(x => tb.Contains(x.pb.N));
+        var first = pairs.OrderBy(x => Min(x.pa)).First();   // ближний к A конец перегона
+        var last = pairs.OrderBy(x => Max(x.pa)).Last();     // дальний от A конец (у B — к её станции)
+        // стык чуть внутри перегона (EdgeIn): светофор станции на его конце рисует она сама, а не копия у соседа
+        if (aTrain && !bTrain)   // перегон целиком со схемы A: стык — у дальнего конца, у станции B
+            return new Join(JoinKind.Shared, Max(last.pa) - EdgeIn, Max(last.pb) - EdgeIn, Y(last.pa) - Y(last.pb), last.pa.N);
+        if (bTrain && !aTrain)   // перегон целиком со схемы B: стык — у ближнего конца, у станции A
+            return new Join(JoinKind.Shared, Min(first.pa) + EdgeIn, Min(first.pb) + EdgeIn, Y(first.pa) - Y(first.pb), first.pa.N);
+        // поезда на перегоне нет (или у обеих) — стык на четверти первого общего участка (середину занимает его подпись)
+        return new Join(JoinKind.Shared, Min(first.pa) + SeamAt * (Max(first.pa) - Min(first.pa)),
+                        Min(first.pb) + SeamAt * (Max(first.pb) - Min(first.pb)), Y(first.pa) - Y(first.pb), first.pa.N);
     }
 
     public static Join Find(SchemeTile a, SchemeTile b) => Find(a.StationId, a.Info, b.StationId, b.Info);
