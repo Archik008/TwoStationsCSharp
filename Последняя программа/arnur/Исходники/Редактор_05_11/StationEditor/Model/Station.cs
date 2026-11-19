@@ -213,7 +213,7 @@ public sealed class Signal
         var res = new int[parts.Length];
         for (int i = 0; i < parts.Length; i++)
             if (!int.TryParse(parts[i], out res[i]) || res[i] < 1 || res[i] > 3) return null;
-        return res.Length > 1 && res.Sum() == n ? res : null;
+        return res.Sum() == n ? res : null;    // [19.11.2026] и одна головка на все огни ("2", "3")
     }
     [JsonIgnore] public bool IsRedShunt => RedShunt == true && Kind == "shunt";
     [JsonIgnore] public bool HasRouteInd => RouteInd == true && Aspects.CanHaveRouteInd(Kind);

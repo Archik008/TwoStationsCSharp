@@ -595,7 +595,11 @@ public static class Renderer
             float ty = foot.Y + (top.Y - foot.Y) * (0.45f + 0.25f * i);
             g.DrawLine(pen, gm.Ax - cs * 0.07f, ty, gm.Ax + cs * 0.07f, ty);
         }
-        // [ДОБАВЛЕНО 17.11.2026] головки: у каждой группы огней — свой тёмный корпус (в цветном виде; в виде ГОСТ — только промежутки)
+        // [ИЗМЕНЕНО 19.11.2026] головки: у каждой группы огней — свой скруглённый корпус (как на рисунках Инструкции по
+        // сигнализации РК, приложения 1, 3); отдельная головка пригласительного у мачты — маленькая круглая. В виде ГОСТ — промежутки
+        var headCols = fullHead ?? Aspects.Head(sig, t);
+        bool smallInv = !GostLamps && !dia && gm.Groups != null && gm.Groups[0] == 1 && gm.Groups.Length > 1
+                        && Aspects.InvitationAtMast(sig, headCols);
         if (!GostLamps && !dia && gm.Groups != null)
         {
             using var hb = new SolidBrush(A(Color.FromArgb(0x2a, 0x30, 0x2e), alpha));
@@ -603,8 +607,14 @@ public static class Renderer
             foreach (var p in gm.Groups)
             {
                 var l0 = gm.Lamps[i0]; var l1 = gm.Lamps[i0 + p - 1];
-                float hx0 = Math.Min(l0.X, l1.X) - gm.R * 1.25f, hx1 = Math.Max(l0.X, l1.X) + gm.R * 1.25f;
-                g.FillRectangle(hb, hx0, gm.Sy - gm.R * 1.25f, hx1 - hx0, gm.R * 2.5f);
+                float pad = smallInv && i0 == 0 ? gm.R * 1.0f : gm.R * 1.25f;
+                float hx0 = Math.Min(l0.X, l1.X) - pad, hx1 = Math.Max(l0.X, l1.X) + pad, hh = 2 * pad;
+                using var path = new GraphicsPath();
+                float rad = hh / 2;    // концы корпуса — полукруги
+                path.AddArc(hx0, gm.Sy - rad, hh, hh, 90, 180);
+                path.AddArc(hx1 - hh, gm.Sy - rad, hh, hh, 270, 180);
+                path.CloseFigure();
+                g.FillPath(hb, path);
                 i0 += p;
             }
         }
@@ -631,7 +641,8 @@ public static class Renderer
                 g.DrawPolygon(pen, rh);
                 continue;
             }
-            var rc = new RectangleF(l.X - gm.R, l.Y - gm.R, 2 * gm.R, 2 * gm.R);
+            float lr = smallInv && i == 0 ? gm.R * 0.75f : gm.R;    // [19.11.2026] пригласительный в своей головке — меньше
+            var rc = new RectangleF(l.X - lr, l.Y - lr, 2 * lr, 2 * lr);
             g.FillEllipse(fill, rc);
             g.DrawEllipse(pen, rc);
         }

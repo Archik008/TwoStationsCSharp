@@ -104,7 +104,8 @@
           "id": 4,
           "fixed": true,
           "ri": true,
-          "strip": true
+          "strip": true,
+          "heads": "1+2+2"
         }
       ]
     },

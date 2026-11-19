@@ -159,6 +159,43 @@ public static class Aspects
         return found.Count;
     }
 
+    // ---- [ДОБАВЛЕНО 19.11.2026] головки (группы огней) по Инструкции по сигнализации РК: приложение 1 (линзовый светофор —
+    // две головки по 2 огня и ниже отдельная маленькая головка пригласительного), приложение 3 (входной: сверху жёлтый,
+    // зелёный; ниже красный, жёлтый; внизу отдельно лунно-белый), «на неправильный путь» — лунно-белый внизу нижней головки ----
+
+    /// <summary>Лампа у мачты — лунно-белый пригласительный / маневровый у входного, выходного, маршрутного.</summary>
+    public static bool InvitationAtMast(Signal s, Lamp[] head) =>
+        s.Kind is "entry" or "exit" or "route" && head != null && head.Length >= 3 && head[0] == Lamp.White;
+
+    /// <summary>Разбивка по Инструкции: 5 огней с пригласительным — 1+2+2; 4 — 2+2; 2–3 — одна головка; 1 — нет.</summary>
+    public static string RuleHeads(Signal s, Tile t)
+    {
+        var head = FullHead(s, t, false);
+        int n = head.Length;
+        if (n <= 1) return null;
+        if (n <= 3) return n.ToString();
+        if (InvitationAtMast(s, head) && n == 5) return "1+2+2";
+        return n switch { 4 => "2+2", 5 => "3+2", 6 => "2+2+2", _ => null };
+    }
+
+    /// <summary>Допустимые разбивки от мачты: головки по 2–3 огня; отдельная головка из 1 огня — только пригласительный у мачты.</summary>
+    public static List<string> HeadOptions(Signal s, Tile t)
+    {
+        var head = FullHead(s, t, false);
+        int n = head.Length;
+        var res = new List<string>();
+        if (n < 2) return res;
+        bool inv = InvitationAtMast(s, head);
+        void Go(int left, List<int> acc)
+        {
+            if (left == 0) { res.Add(string.Join("+", acc)); return; }
+            for (int p = 2; p <= Math.Min(3, left); p++) { acc.Add(p); Go(left - p, acc); acc.RemoveAt(acc.Count - 1); }
+        }
+        Go(n, new List<int>());
+        if (inv) Go(n - 1, new List<int> { 1 });
+        return res.Distinct().ToList();
+    }
+
     /// <summary>Есть ли у светофора световой указатель «Н» (горочный и его повторитель).</summary>
     public static bool HasIndicator(Signal s) => s.Kind is "hump" or "humprep";
 

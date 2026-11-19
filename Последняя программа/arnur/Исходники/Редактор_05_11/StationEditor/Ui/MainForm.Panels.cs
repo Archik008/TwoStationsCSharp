@@ -859,11 +859,16 @@ public sealed partial class MainForm
                     int nLamps = Aspects.FullHead(s, t, false).Length;
                     if (nLamps >= 2)
                     {
+                        // [ИЗМЕНЕНО 19.11.2026] только разбивки по Инструкции РК (головки по 2–3 огня, отдельно — только пригласительный)
+                        var rule = Aspects.RuleHeads(s, t);
                         var opts = new List<Opt> { new() { V = "", T = "в ряд (как на схемах РУ-30-80)" } };
-                        foreach (var comp in HeadCompositions(nLamps)) { var v = string.Join("+", comp); opts.Add(new Opt { V = v, T = v }); }
+                        foreach (var v in Aspects.HeadOptions(s, t))
+                            opts.Add(new Opt { V = v, T = v == rule ? v + " — как в Инструкции РК" : v.Contains('+') ? v : v + " — одна головка" });
+                        if (s.Heads != null && opts.All(o => o.V != s.Heads)) opts.Add(new Opt { V = s.Heads, T = s.Heads + " (не по Инструкции)" });
                         var hc = Row(f, w, "Головки (от мачты)", Combo(opts, s.Heads ?? ""));
-                        tips.SetToolTip(hc, "Огни группами по 1–3 в отдельных головках, считая от мачты: например 1+2+2 — пригласительный отдельно\n" +
-                                            "и две головки по два огня. В цветном виде у каждой головки свой корпус.");
+                        tips.SetToolTip(hc, "Огни в головках, считая от мачты. По Инструкции по сигнализации РК (приложения 1, 3): головки по 2–3 огня,\n" +
+                                            "пригласительный (лунно-белый у мачты) — отдельной маленькой головкой ниже: входной — 1+2+2.\n" +
+                                            "«На неправильный путь» — лунно-белый внизу нижней головки (2+2).");
                         hc.SelectedIndexChanged += (_, _) => { var v = OptV(hc); Later(() => Edit(() => { if (SigAt(k, ii) is Signal c) c.Heads = v == "" ? null : v; }, false)); };
                     }
                 }
