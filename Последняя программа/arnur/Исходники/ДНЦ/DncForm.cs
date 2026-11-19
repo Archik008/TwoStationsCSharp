@@ -63,6 +63,7 @@ public class DncForm : Form
         StartPosition = FormStartPosition.CenterScreen;
         WindowState = FormWindowState.Maximized;
         KeyPreview = true;
+        Load += (_, _) => PlaceOnScreens(true);   // [ДОБАВЛЕНО 19.11.2026] как АКЖТ: два монитора рядом — окно на оба
 
         BuildSide();
         btnSide.FlatAppearance.BorderSize = 0;
@@ -100,6 +101,21 @@ public class DncForm : Form
     {
         var flow = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, BackColor = SideBg };
         Label Title(string t) => new() { Text = t, AutoSize = true, Font = new Font("Segoe UI", 10f, FontStyle.Bold), Margin = new Padding(3, 8, 3, 3) };
+
+        // [ДОБАВЛЕНО 19.11.2026] окно: на два монитора / на один, свернуть, выход (без рамки у окна их нет)
+        var winRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0) };
+        Button WinBtn(string t, Action a, string tip)
+        {
+            var b = new Button { Text = t, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Margin = new Padding(2, 2, 2, 2), MinimumSize = new Size(30, 26) };
+            b.Click += (_, _) => a();
+            tips.SetToolTip(b, tip);
+            winRow.Controls.Add(b);
+            return b;
+        }
+        btnScreens = WinBtn("Два монитора", () => PlaceOnScreens(!spanning), "Окно на оба монитора (как у АКЖТ) или на один. Клавиша F11 — то же");
+        WinBtn("Свернуть", () => WindowState = FormWindowState.Minimized, "Свернуть окно ДНЦ");
+        WinBtn("Выход", Close, "Закрыть программу ДНЦ (управление станциям вернётся)");
+        flow.Controls.Add(winRow);
 
         flow.Controls.Add(Title("Сервер связи"));
         var srv = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0) };
@@ -540,13 +556,55 @@ public class DncForm : Form
         strip.AutoScrollPosition = new Point(Math.Max(0, abs + t.Width / 2 - strip.ClientSize.Width / 2), 0);
     }
 
+    // =================================================================
+    //  [ДОБАВЛЕНО 19.11.2026] ОКНО НА ДВА МОНИТОРА — как у АКЖТ
+    // =================================================================
+    bool spanning;
+    Button btnScreens;
+
+    /// <summary>Второй монитор стоит слева или справа от основного (одной полосой) — окно без рамки на рабочие области
+    /// обоих (без панели задач), лента схем идёт через оба. Иначе (или по кнопке «Один монитор») — развёрнуто на одном.</summary>
+    void PlaceOnScreens(bool twoScreens)
+    {
+        var screens = Screen.AllScreens;
+        var primary = Screen.PrimaryScreen ?? screens[0];
+        var second = screens.Where(s => !s.Primary)
+                            .OrderBy(s => Math.Abs(s.Bounds.Left - primary.Bounds.Right) + Math.Abs(s.Bounds.Right - primary.Bounds.Left))
+                            .FirstOrDefault();
+        bool sideBySide = second != null && (second.Bounds.Left == primary.Bounds.Right || second.Bounds.Right == primary.Bounds.Left);
+        if (twoScreens && sideBySide)
+        {
+            spanning = true;
+            var l = primary.Bounds.Left < second.Bounds.Left ? primary : second;
+            var r = l == primary ? second : primary;
+            WindowState = FormWindowState.Normal;
+            FormBorderStyle = FormBorderStyle.None;
+            int top = Math.Max(l.WorkingArea.Top, r.WorkingArea.Top);
+            int bottom = Math.Min(l.WorkingArea.Bottom, r.WorkingArea.Bottom);   // чтобы окно не уходило под панель задач
+            Bounds = new Rectangle(l.WorkingArea.Left, top, r.WorkingArea.Right - l.WorkingArea.Left, bottom - top);
+        }
+        else
+        {
+            if (twoScreens && !sideBySide && screens.Length > 1)
+                AddLog("Второй монитор не стоит рядом с основным (слева или справа) — окно на одном мониторе");
+            spanning = false;
+            FormBorderStyle = FormBorderStyle.Sizable;
+            WindowState = FormWindowState.Normal;
+            WindowState = FormWindowState.Maximized;
+        }
+        if (btnScreens != null)
+        {
+            btnScreens.Text = spanning ? "Один монитор" : "Два монитора";
+            btnScreens.Enabled = spanning || sideBySide;
+        }
+        LayoutTiles();
+    }
+
     protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
     {
         if (keyData == Keys.F11)
         {
-            FormBorderStyle = FormBorderStyle == FormBorderStyle.None ? FormBorderStyle.Sizable : FormBorderStyle.None;
-            WindowState = FormWindowState.Normal;   // без рамки развёрнутое окно закрывает и панель задач
-            WindowState = FormWindowState.Maximized;
+            PlaceOnScreens(!spanning);
             return true;
         }
         return base.ProcessCmdKey(ref msg, keyData);

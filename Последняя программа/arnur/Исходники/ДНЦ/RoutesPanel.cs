@@ -6,7 +6,9 @@ namespace DncApp;
 //     (свободен / устанавливается / открыт / поезд в маршруте / разделка); клик — задать или отменить (t_route);
 //     «Сбросить набор» — снять выбранный светофор начала на всех станциях под управлением;
 //   • перегоны станций под управлением: направление и «Сменить направление» (t_dir). Общий с соседом перегон —
-//     одной строкой: согласие соседа ДНЦ даёт сам (Net.ExpectConsent).
+//     одной строкой: согласие соседа ДНЦ даёт сам (Net.ExpectConsent);
+//   • [ДОБАВЛЕНО 19.11.2026] виртуальные поезда этой схемы: поезд от соседней станции, поставить поезд на путь
+//     (головой влево / вправо, маневровый), убрать все поезда станции (t_train).
 // =====================================================================
 
 public class RoutesPanel : Panel
@@ -18,6 +20,11 @@ public class RoutesPanel : Panel
     readonly FlowLayoutPanel tools = new() { Dock = DockStyle.Top, AutoSize = true, WrapContents = true, Padding = new Padding(2) };
     readonly FlowLayoutPanel routes = new() { Dock = DockStyle.Fill, AutoScroll = true, WrapContents = true, Padding = new Padding(2) };
     readonly FlowLayoutPanel lines = new() { Dock = DockStyle.Bottom, AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Padding = new Padding(2, 4, 2, 4) };
+    readonly FlowLayoutPanel trains = new() { Dock = DockStyle.Bottom, AutoSize = true, WrapContents = true, Padding = new Padding(2, 4, 2, 4), BackColor = Color.FromArgb(44, 70, 96) };
+    string trainsShape = "";
+    Label lblTrains;
+    ComboBox cmbPlace;
+    CheckBox chkShunt;
     readonly RadioButton rbTrain, rbShunt, rbAll;
     readonly ToolTip tips = new();
     readonly Dictionary<int, Button> routeBtns = new();
@@ -44,6 +51,7 @@ public class RoutesPanel : Panel
         tools.Controls.AddRange(new Control[] { rbTrain, rbShunt, rbAll, bUnsel });
         Controls.Add(routes);
         Controls.Add(lines);
+        Controls.Add(trains);
         Controls.Add(tools);
         Controls.Add(lblTitle);
     }
@@ -106,6 +114,65 @@ public class RoutesPanel : Panel
             if (tips.GetToolTip(b) != tip) tips.SetToolTip(b, tip);
         }
         RefreshLines();
+        RefreshTrains();
+    }
+
+    /// <summary>[ДОБАВЛЕНО 19.11.2026] Виртуальные поезда схемы: от соседей, на путь, убрать все.</summary>
+    void RefreshTrains()
+    {
+        var vt = Net.Get(StationId)?.Vt;
+        var spawns = vt?.Spawns.Where(x => x.P == SchemeName).ToList() ?? new();
+        var places = vt?.Places.Where(x => x.P == SchemeName).ToList() ?? new();
+        string shape = StationId + SchemeName + string.Join("|", spawns.Select(x => x.Text)) + "#" + string.Join("|", places.Select(x => x.Name));
+        if (shape != trainsShape)
+        {
+            trainsShape = shape;
+            trains.SuspendLayout();
+            foreach (Control c in trains.Controls) c.Dispose();
+            trains.Controls.Clear();
+            lblTrains = new Label { AutoSize = true, Font = new Font("Segoe UI", 10f, FontStyle.Bold), ForeColor = Color.White, Margin = new Padding(2, 4, 8, 2) };
+            trains.Controls.Add(lblTrains);
+            trains.SetFlowBreak(lblTrains, true);
+            Button Btn(string t, Func<Task<CallResult>> act, string ok)
+            {
+                var b = new Button { Text = t, AutoSize = true, FlatStyle = FlatStyle.Flat, BackColor = Color.FromArgb(240, 240, 255), ForeColor = Color.Black, Margin = new Padding(2) };
+                b.FlatAppearance.BorderSize = 0;
+                b.Click += async (_, _) =>
+                {
+                    var r = await act();
+                    Status?.Invoke(r.Ok ? ok + (r.Name.Length > 0 ? $": {r.Name}" : "") : $"Поезд: {(r.Reason.Length > 0 ? r.Reason : "станция отказала")}");
+                };
+                trains.Controls.Add(b);
+                return b;
+            }
+            foreach (var (p, i, text) in spawns) Btn(text, () => Net.Train(StationId, "spawn", p, i), "Поезд отправлен");
+            if (trains.Controls.Count > 1) trains.SetFlowBreak(trains.Controls[^1], true);
+            if (places.Count > 0)
+            {
+                cmbPlace = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 130, Margin = new Padding(2, 4, 2, 2) };
+                foreach (var pl in places) cmbPlace.Items.Add(pl.Name);
+                cmbPlace.SelectedIndex = 0;
+                trains.Controls.Add(cmbPlace);
+                int Sel() => places[Math.Max(0, cmbPlace.SelectedIndex)].I;
+                Btn("← поезд", () => Net.Train(StationId, "put", SchemeName, Sel(), left: true, shunt: chkShunt.Checked), "Поезд поставлен");
+                Btn("поезд →", () => Net.Train(StationId, "put", SchemeName, Sel(), left: false, shunt: chkShunt.Checked), "Поезд поставлен");
+                chkShunt = new CheckBox { Text = "маневровый", AutoSize = true, ForeColor = Color.White, Margin = new Padding(4, 7, 2, 2) };
+                trains.Controls.Add(chkShunt);
+                trains.SetFlowBreak(chkShunt, true);
+                tips.SetToolTip(cmbPlace, "Путь, на который поставить виртуальный поезд (занятый — с пометкой)");
+            }
+            else cmbPlace = null;
+            var bClear = Btn("Убрать все поезда", () => Net.Train(StationId, "clear"), "Поезда станции убраны");
+            bClear.BackColor = Color.FromArgb(255, 210, 200);
+            trains.ResumeLayout();
+        }
+        if (lblTrains != null) lblTrains.Text = $"Поезда: {SchemeName}" + (vt != null ? $"  (сейчас на станции: {vt.Count})" : "");
+        if (cmbPlace != null)
+            for (int k = 0; k < places.Count && k < cmbPlace.Items.Count; k++)
+            {
+                string t = places[k].Name + (places[k].Busy ? " (занят)" : "");
+                if ((string)cmbPlace.Items[k] != t) cmbPlace.Items[k] = t;
+            }
     }
 
     /// <summary>Перегоны станций под управлением; общий перегон двух станций — одной строкой.</summary>

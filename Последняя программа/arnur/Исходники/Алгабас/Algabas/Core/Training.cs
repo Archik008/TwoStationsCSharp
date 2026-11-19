@@ -48,6 +48,9 @@ namespace StationApp.Core;
 //                                      → s_result {i, name, dirOk}
 //      t_arrive  {wire, scheme, dx, dy, tag}  сквозной маршрут: маршрут приёма с перегона wire до точки чертежа → s_result {i, name}
 //      t_consent {id, ok, reason}      ответ ДНЦ на запрос смены направления (s_consent)
+//      t_train   {op, p, i, dir, shunt, tag}  [ДОБАВЛЕНО 19.11.2026] виртуальный поезд: op = spawn (поезд от соседа — кнопка
+//                                      № i схемы p), put (на путь № i схемы p, dir L / R, маневровый), clear (убрать все) → s_result
+//                                      что можно — в s_info.vt (когда просили routes): {spawns:[{p,i,text}], places:[{p,i,name,busy}], count}
 //    [ДОБАВЛЕНО 18.11.2026] пока ДНЦ на связи, запрос соседа на смену направления идёт ДНЦ, а не дежурному:
 //      s_consent {id, wire, title, text, seconds, station} / s_consent_end {id} (ответ уже не нужен)
 //      t_mode    {mode}                режим интерфейса станции (Work — «Медеуский», Classic — «Павлодарский»…):
@@ -510,7 +513,7 @@ public static class Training
                 case "t_click":
                     if (ControlBy == AdminId) ClickUi?.Invoke(Str(d, "id"), Str(d, "btn") == "right");
                     return;
-                case "t_route" or "t_dir" or "t_unselect" or "t_depart" or "t_arrive":
+                case "t_route" or "t_dir" or "t_unselect" or "t_depart" or "t_arrive" or "t_train":
                 {
                     string kind = Str(d, "kind");
                     if (ControlBy != AdminId)

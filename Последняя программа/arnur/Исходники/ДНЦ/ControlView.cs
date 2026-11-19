@@ -174,7 +174,7 @@ public class ControlView : Panel
             // низ — по кнопкам пульта (не ниже 220), но не больше 50 % высоты, остальное — ленте (пока границу не тянули)
             if (!userSized)
             {
-                int want = Math.Clamp(mirror.PreferredHeightFor(Math.Max(200, Width - routes.Width)), 220, Math.Max(220, (int)(Height * 0.5)));
+                int want = Math.Clamp(mirror.PreferredHeightFor(Math.Max(200, Width - routes.Width)), 320, Math.Max(320, (int)(Height * 0.5)));   // не ниже 320: маршруты, поезда, перегоны
                 if (bottom.Height != want) bottom.Height = want;
                 if (!sizedOnce) { sizedOnce = true; MirrorSized?.Invoke(); }
             }

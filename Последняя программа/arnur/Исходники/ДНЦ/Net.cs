@@ -38,6 +38,10 @@ public class UiItem
 public record LineInfo(string Id, string Title, string Dir, string Text, string Arrow, string Wire, bool Sync, bool Aux, string P);
 
 /// <summary>[ДОБАВЛЕНО 18.11.2026] Маршрут станции: № (индекс у станции), название, маневровый, схема, состояние, почему нельзя.</summary>
+/// <summary>[ДОБАВЛЕНО 19.11.2026] Виртуальные поезда станции: поезда от соседей (кнопки схем), пути, куда можно поставить
+/// поезд, сколько поездов сейчас.</summary>
+public record VtInfo(List<(string P, int I, string Text)> Spawns, List<(string P, int I, string Name, bool Busy)> Places, int Count);
+
 public record RouteInfo(int I, string N, bool Sh, string P, string St, string Why)
 {
     public bool Active => St != "free";
@@ -73,6 +77,8 @@ public class StationRt
     public List<LineInfo> Lines = new();
     /// <summary>Маршруты (последний ответ с routes), null — не просили.</summary>
     public List<RouteInfo> Routes;
+    /// <summary>[ДОБАВЛЕНО 19.11.2026] Виртуальные поезда (последний ответ с routes), null — не просили.</summary>
+    public VtInfo Vt;
     /// <summary>[ДОБАВЛЕНО 18.11.2026] Общие с соседом участки (имена в сети), где сейчас поезд этой станции.</summary>
     public HashSet<string> TrainsOn = new();
     public string Title => Name.Length > 0 ? Name : Id;
@@ -180,6 +186,11 @@ public static class Net
     public static Task<CallResult> Route(string id, int i, bool on) => Call(id, "t_route", new() { ["i"] = i, ["on"] = on });
     public static Task<CallResult> Direction(string id, string line, bool aux = false) => Call(id, "t_dir", new() { ["line"] = line, ["aux"] = aux });
     public static void Unselect(string id) => Send(id, new { kind = "t_unselect" });
+
+    /// <summary>[ДОБАВЛЕНО 19.11.2026] Виртуальный поезд: spawn — поезд от соседа (кнопка № i схемы p), put — на путь № i схемы p
+    /// головой влево / вправо (маневровый или поездной), clear — убрать все поезда станции.</summary>
+    public static Task<CallResult> Train(string id, string op, string p = "", int i = -1, bool left = false, bool shunt = false) =>
+        Call(id, "t_train", new() { ["op"] = op, ["p"] = p, ["i"] = i, ["dir"] = left ? "L" : "R", ["shunt"] = shunt });
 
     // ---- согласие на смену направления: ДНЦ решает за станции ----
     static readonly Dictionary<string, long> expected = new();
@@ -307,6 +318,13 @@ public static class Net
         if (d.TryGetProperty("routes", out var rs) && rs.ValueKind == JsonValueKind.Array)
             st.Routes = rs.EnumerateArray().Select(x => new RouteInfo(Int(x, "i"), Str(x, "n"), Bool(x, "sh"), Str(x, "p"),
                 Str(x, "st"), Str(x, "why"))).ToList();
+        if (d.TryGetProperty("vt", out var vt) && vt.ValueKind == JsonValueKind.Object)
+            st.Vt = new VtInfo(
+                vt.TryGetProperty("spawns", out var sp) && sp.ValueKind == JsonValueKind.Array
+                    ? sp.EnumerateArray().Select(x => (Str(x, "p"), Int(x, "i"), Str(x, "text"))).ToList() : new(),
+                vt.TryGetProperty("places", out var pl) && pl.ValueKind == JsonValueKind.Array
+                    ? pl.EnumerateArray().Select(x => (Str(x, "p"), Int(x, "i"), Str(x, "name"), Bool(x, "busy"))).ToList() : new(),
+                Int(vt, "count"));
         if (st.Mode.Length > 0 && st.Mode != Settings.Mode && Environment.TickCount64 - st.ModeSentAt > 3000) SendMode(st);
         st.Control = Bool(d, "control");
         if (d.TryGetProperty("bg", out var bg) && bg.TryGetInt32(out var bgv)) st.Bg = Color.FromArgb(255, Color.FromArgb(bgv));

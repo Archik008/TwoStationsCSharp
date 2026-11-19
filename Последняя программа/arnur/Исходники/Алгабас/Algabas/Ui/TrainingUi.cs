@@ -415,7 +415,8 @@ static class TrainingInput
             ["schemes"] = schemes, ["popup"] = HasPopup(), ["bg"] = main.BackColor.ToArgb(), ["ui"] = items,
             ["mode"] = UiSettings.Mode.ToString(),   // режим интерфейса — ДНЦ держит его одинаковым у всех станций
             ["sel"] = SelInfo(), ["lines"] = LinesInfo(), ["routes"] = wantRoutes ? RoutesInfo() : null,
-            ["trains"] = TrainsOnShared()
+            ["trains"] = TrainsOnShared(),
+            ["vt"] = wantRoutes ? VirtualTrainsInfo() : null   // [ДОБАВЛЕНО 19.11.2026] виртуальные поезда — для ДНЦ
         };
     }
 
@@ -431,6 +432,19 @@ static class TrainingInput
         (StationApp.Model.ModelHost.Dispatch?.SharedSectionIds ?? Enumerable.Empty<(string wire, string id)>())
             .Where(s => IL.Sections.TryGetValue(s.id, out var sec) && (sec.TrainCount > 0 || sec.HwTrainNo > 0))
             .Select(s => s.wire).Distinct().ToList();
+
+    /// <summary>[ДОБАВЛЕНО 19.11.2026] Что ДНЦ может сделать с виртуальными поездами: поезда от соседей (кнопки схем),
+    /// пути, куда можно поставить поезд (и занят ли путь), сколько поездов сейчас.</summary>
+    static object VirtualTrainsInfo()
+    {
+        var panes = Panes();
+        return new
+        {
+            spawns = panes.SelectMany(p => p.SchemeView.SpawnButtons.Select((b, i) => new { p = p.SchemeView.Title, i, text = b.text })).ToList(),
+            places = panes.SelectMany(p => p.SchemeView.TrainPlaces.Select((t, i) => new { p = p.SchemeView.Title, i, name = t.name, busy = t.section.Occupied })).ToList(),
+            count = StationApp.Model.ModelHost.Model.Trains.Trains.Count
+        };
+    }
 
     /// <summary>Выбранные светофоры начала маршрута (набор начат): схема и светофор.</summary>
     static List<object> SelInfo() => Panes().Where(p => p.SchemeControl.Selected != null)
@@ -513,6 +527,35 @@ static class TrainingInput
                 if (ln == null) return Res(false, "нет такого перегона");
                 var (ok, why) = Run(() => IL.ChangeDirection(ln, B("aux")));
                 return Res(ok, why);
+            }
+            case "t_train":
+            {
+                // [ДОБАВЛЕНО 19.11.2026] виртуальный поезд от ДНЦ — как кнопки «Имитация» / «Поезд ▾» станции
+                var trains = StationApp.Model.ModelHost.Model.Trains;
+                var pane = Panes().FirstOrDefault(p => p.SchemeView.Title == S("p"));
+                int i = I("i");
+                switch (S("op"))
+                {
+                    case "spawn":
+                    {
+                        if (pane == null || i < 0 || i >= pane.SchemeView.SpawnButtons.Count) return Res(false, "нет такой кнопки поезда");
+                        var (text, action) = pane.SchemeView.SpawnButtons[i];
+                        var (ok, why) = Run(() => { int n = trains.Trains.Count; action(); return trains.Trains.Count > n; });
+                        return Res(ok, ok ? text : (why.Length > 0 ? why : "поезд не появился (участок занят?)"), new { i, name = text });
+                    }
+                    case "put":
+                    {
+                        if (pane == null || i < 0 || i >= pane.SchemeView.TrainPlaces.Count) return Res(false, "нет такого пути");
+                        var (name, sec) = pane.SchemeView.TrainPlaces[i];
+                        if (sec.Occupied) return Res(false, $"{name} занят", new { i, name });
+                        var (ok, why) = Run(() => trains.Spawn(sec, S("dir") == "L" ? Dir.Left : Dir.Right, B("shunt")) != null);
+                        return Res(ok, why, new { i, name });
+                    }
+                    case "clear":
+                        trains.RemoveAll();
+                        return Res(true, "");
+                }
+                return Res(false, "неизвестная команда поезда");
             }
             case "t_unselect":
                 foreach (var p in Panes().Where(p => p.SchemeControl.Selected != null)) p.SchemeControl.ClearSelection();
