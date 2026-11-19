@@ -69,7 +69,7 @@ public class DncForm : Form
 
         BuildSide();
         btnSide.FlatAppearance.BorderSize = 0;
-        btnSide.Click += (_, _) => { side.Visible = !side.Visible; btnSide.Text = side.Visible ? "◀" : "▶"; };
+        btnSide.Click += (_, _) => { side.Visible = !side.Visible; SideArrow(); };
         tips.SetToolTip(btnSide, "Спрятать / показать список станций (больше места схемам)");
         main.Controls.Add(strip);
         main.Controls.Add(lblEmpty);
@@ -116,6 +116,7 @@ public class DncForm : Form
             return b;
         }
         btnScreens = WinBtn("Два монитора", () => PlaceOnScreens(!spanning), "Окно на оба монитора (как у АКЖТ) или на один. Клавиша F11 — то же");
+        WinBtn("⇄", SwapSides, "Поменять части окна местами: панель управления — на другой монитор (запоминается)");
         WinBtn("Свернуть", () => WindowState = FormWindowState.Minimized, "Свернуть окно ДНЦ");
         WinBtn("Выход", Close, "Закрыть программу ДНЦ (управление станциям вернётся)");
         flow.Controls.Add(winRow);
@@ -602,13 +603,13 @@ public class DncForm : Form
             FormBorderStyle = FormBorderStyle.None;
             // [ИЗМЕНЕНО 19.11.2026] мониторы в Windows могут стоять не вровень (второй чуть ниже / выше) или быть разной
             // высоты. Окно — от самого верхнего края рабочих областей до самого нижнего: закрывает оба монитора целиком
-            // (раньше — только общую полосу, и на каждом мониторе были видны обои сверху или снизу). Содержимое окна —
-            // в полосе, которая видна на обоих (поля Padding сверху и снизу — фоном ДНЦ).
+            // (раньше — только общую полосу, и на каждом мониторе были видны обои сверху или снизу). Содержимое — с самого
+            // верха окна, без тёмных полей (на «низком» мониторе его верх на величину сдвига уходит за край).
             int top = Math.Min(l.Work.Top, r.Work.Top), bottom = Math.Max(l.Work.Bottom, r.Work.Bottom);
-            int bandTop = Math.Max(l.Work.Top, r.Work.Top), bandBottom = Math.Min(l.Work.Bottom, r.Work.Bottom);
             spanBounds = new Rectangle(l.Work.Left, top, r.Work.Right - l.Work.Left, bottom - top);
             BackColor = Color.FromArgb(40, 44, 52);
-            Padding = new Padding(0, bandTop - top, 0, bottom - bandBottom);
+            Padding = Padding.Empty;
+            primaryRight = primary == r;
             Bounds = spanBounds;
             ApplySpan();
         }
@@ -619,6 +620,7 @@ public class DncForm : Form
             spanning = false;
             spanBounds = Rectangle.Empty;
             Padding = Padding.Empty;
+            primaryRight = false;
             FormBorderStyle = FormBorderStyle.Sizable;
             WindowState = FormWindowState.Normal;
             WindowState = FormWindowState.Maximized;
@@ -628,7 +630,40 @@ public class DncForm : Form
             btnScreens.Text = spanning ? "Один монитор" : "Два монитора";
             btnScreens.Enabled = spanning || sideBySide;
         }
+        ApplySide();
         LayoutTiles();
+    }
+
+    // =================================================================
+    //  [ДОБАВЛЕНО 19.11.2026] ЧАСТИ ОКНА ПО МОНИТОРАМ: панель управления — на основном мониторе (как «АКЖТ — на
+    //  основном» у программы АКЖТ) или где выбрал диспетчер кнопкой «⇄». Лента схем непрерывная, поэтому поменять
+    //  части местами — значит перенести панель к другому краю окна; схемы по-прежнему идут слева направо.
+    // =================================================================
+    bool primaryRight;
+
+    bool PanelRight => Settings.PanelSide switch { "right" => true, "left" => false, _ => spanning && primaryRight };
+
+    void ApplySide()
+    {
+        var dock = PanelRight ? DockStyle.Right : DockStyle.Left;
+        if (side.Dock != dock) { side.Dock = dock; btnSide.Dock = dock; }
+        SideArrow();
+    }
+
+    /// <summary>Стрелка кнопки «спрятать / показать панель» — в сторону, куда панель уедет / откуда появится.</summary>
+    void SideArrow()
+    {
+        bool right = side.Dock == DockStyle.Right;
+        btnSide.Text = side.Visible == right ? "▶" : "◀";
+    }
+
+    void SwapSides()
+    {
+        Settings.PanelSide = PanelRight ? "left" : "right";
+        Settings.Save();
+        ApplySide();
+        LayoutTiles();
+        AddLog($"Панель управления — {(PanelRight ? "справа" : "слева")}");
     }
 
     /// <summary>Где окно на двух мониторах (пусто — не растянуто).</summary>

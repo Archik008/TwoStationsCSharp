@@ -28,6 +28,9 @@ public static class Settings
     public static string Mode = "Work";
     /// <summary>[ДОБАВЛЕНО 18.11.2026] Порядок схем задал диспетчер (перетаскивание, ◀ ▶); иначе — по стыкам путей.</summary>
     public static bool ManualOrder;
+    /// <summary>[ДОБАВЛЕНО 19.11.2026] Где панель управления на двух мониторах: auto — на основном мониторе (как у АКЖТ
+    /// «АКЖТ — на основном»), left / right — у левого / правого края окна (кнопка «⇄»).</summary>
+    public static string PanelSide = "auto";
 
     public static string Key(string station, string scheme) => station + "|" + scheme;
 
@@ -56,6 +59,7 @@ public static class Settings
                     case "hide": if (v.IndexOf('|') > 0) Hidden.Add(v); break;
                     case "mode": if (v is "Work" or "Classic") Mode = v; break;
                     case "order": ManualOrder = v == "manual"; break;
+                    case "panel": if (v is "auto" or "left" or "right") PanelSide = v; break;
                 }
             }
         }
@@ -67,7 +71,7 @@ public static class Settings
         try
         {
             Directory.CreateDirectory(Dir);
-            var lines = new List<string> { $"server={Server}", $"max={Max}", "zoom=" + Zoom.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture), $"mode={Mode}", $"order={(ManualOrder ? "manual" : "auto")}" };
+            var lines = new List<string> { $"server={Server}", $"max={Max}", "zoom=" + Zoom.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture), $"mode={Mode}", $"order={(ManualOrder ? "manual" : "auto")}", $"panel={PanelSide}" };
             lines.AddRange(Tiles.Select(t => $"tile={t.station}|{t.scheme}"));
             lines.AddRange(Hidden.Select(h => $"hide={h}"));
             File.WriteAllLines(FilePath, lines);
