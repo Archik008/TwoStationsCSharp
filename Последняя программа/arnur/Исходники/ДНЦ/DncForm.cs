@@ -600,9 +600,15 @@ public class DncForm : Form
             var r = l == primary ? second : primary;
             WindowState = FormWindowState.Normal;
             FormBorderStyle = FormBorderStyle.None;
-            int top = Math.Max(l.Work.Top, r.Work.Top);
-            int bottom = Math.Min(l.Work.Bottom, r.Work.Bottom);   // чтобы окно не уходило под панель задач
+            // [ИЗМЕНЕНО 19.11.2026] мониторы в Windows могут стоять не вровень (второй чуть ниже / выше) или быть разной
+            // высоты. Окно — от самого верхнего края рабочих областей до самого нижнего: закрывает оба монитора целиком
+            // (раньше — только общую полосу, и на каждом мониторе были видны обои сверху или снизу). Содержимое окна —
+            // в полосе, которая видна на обоих (поля Padding сверху и снизу — фоном ДНЦ).
+            int top = Math.Min(l.Work.Top, r.Work.Top), bottom = Math.Max(l.Work.Bottom, r.Work.Bottom);
+            int bandTop = Math.Max(l.Work.Top, r.Work.Top), bandBottom = Math.Min(l.Work.Bottom, r.Work.Bottom);
             spanBounds = new Rectangle(l.Work.Left, top, r.Work.Right - l.Work.Left, bottom - top);
+            BackColor = Color.FromArgb(40, 44, 52);
+            Padding = new Padding(0, bandTop - top, 0, bottom - bandBottom);
             Bounds = spanBounds;
             ApplySpan();
         }
@@ -612,6 +618,7 @@ public class DncForm : Form
                 AddLog("Второй монитор не стоит рядом с основным (слева или справа) — окно на одном мониторе");
             spanning = false;
             spanBounds = Rectangle.Empty;
+            Padding = Padding.Empty;
             FormBorderStyle = FormBorderStyle.Sizable;
             WindowState = FormWindowState.Normal;
             WindowState = FormWindowState.Maximized;
