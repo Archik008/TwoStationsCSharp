@@ -802,8 +802,24 @@ public sealed partial class MainForm
                     tips.SetToolTip(sp, "Полоса под огнями для приёма и отправления по стрелкам пологих марок (1/18, 1/22):\n" +
                                         "«зелёный мигающий и жёлтый + одна (две) зелёные полосы» и т. п. — Инструкция по сигнализации РК п. 15, 19.\n" +
                                         "В редакторе только рисуется; показания с полосой — во второй программе.");
-                    sp.CheckedChanged += (_, _) => { bool v = sp.Checked; Edit(() => { if (SigAt(k, ii) is Signal c) c.Strip = v ? true : null; }, false); };
+                    sp.CheckedChanged += (_, _) => { bool v = sp.Checked; Edit(() => { if (SigAt(k, ii) is Signal c) c.Strip = v ? true : null; }); };
                     f.Controls.Add(sp);
+                    // [ДОБАВЛЕНО 20.11.2026] сколько полос: одна (1/18, до 80 км/ч) или две (1/22, до 120 км/ч) — Инструкция РК п. 15
+                    if (s.Strip == true)
+                    {
+                        var rowS = new Panel { Width = w, Height = S(26), Margin = new Padding(0, 0, 0, S(4)), BackColor = row.BackColor };
+                        var ls = new Label { Text = "Зелёных полос:", AutoSize = true, Location = new Point(S(22), S(5)) };
+                        var cbStr = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = S(170), Location = new Point(S(126), S(1)) };
+                        cbStr.Items.AddRange(new object[] { "1 — одна (1/18, до 80 км/ч)", "2 — две (1/22, до 120 км/ч)" });
+                        cbStr.SelectedIndex = s.Strips == 2 ? 1 : 0;
+                        tips.SetToolTip(cbStr, "Инструкция по сигнализации РК п. 15: «…и одна зелёная светящаяся полоса» — по стрелкам 1/18 (до 80 км/ч);\n" +
+                                            "«один зелёный мигающий и один жёлтый огни и две зелёные светящиеся полосы» — до 120 км/ч (стрелки 1/22).\n" +
+                                            "Полосы рисуются рядом в окне на мачте, под основными огнями.");
+                        cbStr.SelectedIndexChanged += (_, _) => { int v = cbStr.SelectedIndex; Edit(() => { if (SigAt(k, ii) is Signal c) c.Strips = v == 1 ? 2 : null; }, false); };
+                        cbStr.Enter += (_, _) => { ui.SelSig = new SigRef(k, ii); Draw(); };
+                        rowS.Controls.AddRange(new Control[] { ls, cbStr });
+                        f.Controls.Add(rowS);
+                    }
                 }
                 if (s.Kind == "shunt")
                 {

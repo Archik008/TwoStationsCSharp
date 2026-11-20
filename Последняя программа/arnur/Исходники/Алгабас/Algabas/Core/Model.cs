@@ -302,6 +302,8 @@ public class RailSignal
     public int[] Heads;
     /// <summary>Зелёная светящаяся полоса (Инструкция по сигнализации РК п. 15, 19) — пока только рисуется.</summary>
     public bool Strip;
+    /// <summary>[ДОБАВЛЕНО 20.11.2026] Сколько зелёных полос (1 или 2 — Инструкция РК п. 15 подп. 3); 0 — как одна.</summary>
+    public int StripCount;
     /// <summary>Маршрутный указатель (Инструкция РК п. 70–71, ПТЭ РК п. 134): есть, на отдельной мачте, зелёный (иначе белый).</summary>
     public bool RouteInd, RouteIndOwnMast, RouteIndGreen;
     /// <summary>Что горит на маршрутном указателе (номер пути) — null, указатель тёмный.</summary>

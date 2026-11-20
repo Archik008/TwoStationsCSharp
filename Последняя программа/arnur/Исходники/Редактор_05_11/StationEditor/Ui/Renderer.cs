@@ -58,6 +58,12 @@ public sealed class SigGeom
     public float IndX = float.NaN, StripX0 = float.NaN, StripX1 = float.NaN, Half;
     /// <summary>Высота (Y) центра указателя и полосы: у мачтового — ряд огней, у карликового блока ГОСТ — свой ряд сбоку.</summary>
     public float IndY = float.NaN, StripY = float.NaN;
+    /// <summary>[ДОБАВЛЕНО 20.11.2026] Зелёные полосы: сколько, ширина одной и промежуток (от StripX0 в сторону Fwd).</summary>
+    public int Strips;
+    public float StripW, StripGap;
+    /// <summary>[ДОБАВЛЕНО 20.11.2026] Центр (X) светового указателя «Н» горочного / ПГ — у мачты, под огнями
+    /// (РУ-30-80 листы 45–46: «Г ⊢□◎○●⊘», «П1Г1 ⊢□◎○●⊘»); NaN — нет.</summary>
+    public float HumpX = float.NaN;
     /// <summary>[ДОБАВЛЕНО 09.11.2026] Поворот светофора вокруг точки (Ax, Ay), градусы: светофор лежит параллельно пути
     /// у края клетки (на наклонном пути и на изгибе — тоже, как Ч22 на стр. 89 РУ-30-80). Box и всё остальное — до поворота.</summary>
     public float Angle;
@@ -397,6 +403,10 @@ public static class Renderer
     public static readonly HashSet<Signal> LampTestSigs = new();
     public static bool IsLampTest(Signal s) => LampTestAll || LampTestSigs.Contains(s);
 
+    /// <summary>[ДОБАВЛЕНО 20.11.2026] Маневровый и в цветном виде рисуется обоими огнями в своей головке (горит один):
+    /// иначе одна лампа — и не видно, как огни сгруппированы.</summary>
+    public static bool FullInColor(Signal s) => s.Kind == "shunt";
+
     public static SigGeom GetSigGeom(Tile t, Signal sig, float x, float y, float cs, bool diamond = false)
     {
         var gm = GetSigGeomFlat(t, sig, x, y, cs, diamond);
@@ -414,22 +424,28 @@ public static class Renderer
         // мачтовый — «⊢» и ножка, огни в ряд вдоль пути («1 ⊢●○⊘», «Н1 ⊢◎⊘●○⊘», «◆—⊣З», стр. 9, 49);
         // у входного пригласительный отделён чёрточкой («Н ⊢◎-⊘●○⊘», стр. 9, 49); карликовый — см. ниже
         // [ИЗМЕНЕНО 17.11.2026] при проверке огней — все лампы полной головки и в цветном виде
-        int n = GostLamps || IsLampTest(sig) ? Aspects.FullHead(sig, t, diamond).Length : Aspects.LampCount(sig, t);
+        // [20.11.2026] и маневровый в цветном виде — оба огня (FullInColor)
+        int n = GostLamps || IsLampTest(sig) || FullInColor(sig) ? Aspects.FullHead(sig, t, diamond).Length : Aspects.LampCount(sig, t);
         float gap = GostLamps && Aspects.InvitationApart(sig) && n > 1 ? r * 0.8f : 0;
         // [ДОБАВЛЕНО 17.11.2026] головки (группы огней, свойство «Головки») и «окно» на мачте: маршрутный указатель и зелёная
         // полоса — между пригласительным и основными огнями, а если пригласительного нет — у мачты (не над светофором)
-        var groups = sig.HeadGroups(n);
+        var groups = sig.HeadGroups(n);    // [20.11.2026] «в ряд» — без корпуса, и у маневрового
         float grpGap = groups != null ? r * 0.7f : 0;
+        // [20.11.2026] маневровый «в ряд» (без головок) в цветном виде — огни отдельно на мачте, с промежутком:
+        // иначе две лампы впритык не отличить от одной головки «2»
+        float rowGap = !GostLamps && FullInColor(sig) && groups == null && n > 1 ? r * 0.6f : 0;
         float half = r * 0.95f, g0 = r * 0.35f, stripW = r * 0.7f;
-        bool slotInd = sig.RouteIndOnMast, slotStrip = sig.HasStrip;
-        float slotContent = (slotInd ? g0 + 2 * half : 0) + (slotStrip ? g0 + stripW : 0);
+        // [20.11.2026] «Н» горочного и ПГ — тоже в окне у мачты, первым (под огнями); полос может быть две
+        bool slotHump = Aspects.HasIndicator(sig), slotInd = sig.RouteIndOnMast;
+        int nStrips = sig.StripCount;
+        float slotContent = (slotHump ? g0 + 2 * half : 0) + (slotInd ? g0 + 2 * half : 0) + nStrips * (g0 + stripW);
         float slotW = slotContent > 0 ? slotContent + g0 : 0;
         int slotAt = -1;
         if (slotW > 0)
         {
             var headArr = GostLamps ? Aspects.FullHead(sig, t, diamond) : Aspects.Head(sig, t);
             bool inv = sig.Kind is "entry" or "exit" or "route" && headArr != null && headArr.Length > 1 && headArr[0] == Lamp.White;
-            slotAt = inv ? 1 : 0;
+            slotAt = inv && !slotHump ? 1 : 0;
             if (groups != null && slotAt > 0)
             {
                 // на границе головок: первая граница не ближе к мачте, чем нужно (но не над последней лампой)
@@ -446,7 +462,7 @@ public static class Renderer
         }
         float Off(int i)    // от конца ножки до центра i-й лампы
         {
-            float o = (diamond ? r * 1.3f : r) + i * 2 * r + (i >= 1 ? gap : 0);
+            float o = (diamond ? r * 1.3f : r) + i * (2 * r + rowGap) + (i >= 1 ? gap : 0);
             for (int j = 1; j <= i; j++) if (Boundary(j)) o += grpGap;
             if (slotAt >= 0 && i >= slotAt) o += slotW;
             return o;
@@ -475,12 +491,12 @@ public static class Renderer
             // [ДОБАВЛЕНО 17.11.2026] указатель и полоса у карликового — отдельным рядом у основания, за огнями (дальше от пути)
             float dIndX = float.NaN, dStripX0 = float.NaN, dStripX1 = float.NaN, rowY = float.NaN;
             float dh = r * 0.95f, dg = r * 0.35f;
-            if (sig.RouteIndOnMast || sig.HasStrip)
+            if (sig.RouteIndOnMast || nStrips > 0)
             {
                 rowY = end + side * (dg + dh);
                 float cur = 0;
                 if (sig.RouteIndOnMast) { cur += dg; dIndX = a.X + fwd * (cur + dh); cur += 2 * dh; }
-                if (sig.HasStrip) { cur += dg; dStripX0 = a.X + fwd * cur; dStripX1 = a.X + fwd * (cur + r * 0.7f); }
+                if (nStrips > 0) { cur += dg; dStripX0 = a.X + fwd * cur; cur += nStrips * stripW + (nStrips - 1) * dg; dStripX1 = a.X + fwd * cur; }
                 end = rowY + side * dh;
             }
             var lab = new PointF(a.X + fwd * cols * r, end + side * cs * 0.2f);
@@ -490,6 +506,7 @@ public static class Renderer
                 Ax = a.X, Ay = a.Y, Sy = start, Side = side, Fwd = fwd, R = r, Lamps = lamps, Label = lab,
                 DwarfBlock = true, Bar0 = start, Bar1 = end,
                 IndX = dIndX, IndY = rowY, StripX0 = dStripX0, StripX1 = dStripX1, StripY = rowY, Half = dh,
+                Strips = nStrips, StripW = stripW, StripGap = dg,
                 Box = RectangleF.FromLTRB(bx0 - 3, Math.Min(a.Y, lab.Y) - cs * 0.15f, bx1 + 3, Math.Max(a.Y, lab.Y) + cs * 0.15f),
             };
         }
@@ -503,18 +520,20 @@ public static class Renderer
             minX = Math.Min(minX, lx); maxX = Math.Max(maxX, lx);
         }
         var label = new PointF(a.X + fwd * (leg + (Off(0) + Off(n - 1)) / 2), sy + side * (r + cs * 0.22f));
-        float indX = float.NaN, stripX0 = float.NaN, stripX1 = float.NaN;
+        float indX = float.NaN, stripX0 = float.NaN, stripX1 = float.NaN, humpX = float.NaN;
         if (slotAt >= 0)
         {
             float cur = slotAt == 0 ? leg : leg + Off(slotAt - 1) + r;    // вдоль ряда от точки привязки
+            if (slotHump) { cur += g0; humpX = a.X + fwd * (cur + half); cur += 2 * half; }
             if (slotInd) { cur += g0; indX = a.X + fwd * (cur + half); cur += 2 * half; }
-            if (slotStrip) { cur += g0; stripX0 = a.X + fwd * cur; stripX1 = a.X + fwd * (cur + stripW); }
+            if (nStrips > 0) { cur += g0; stripX0 = a.X + fwd * cur; cur += nStrips * stripW + (nStrips - 1) * g0; stripX1 = a.X + fwd * cur; }
         }
         return new SigGeom
         {
             Ax = a.X, Ay = a.Y, Sy = sy, Side = side, Fwd = fwd, R = r, Lamps = lamps, Label = label,
             MastRow = GostLamps && !dwarf, Gap = gap,
             Groups = groups, IndX = indX, StripX0 = stripX0, StripX1 = stripX1, Half = half, IndY = sy, StripY = sy,
+            Strips = nStrips, StripW = stripW, StripGap = g0, HumpX = humpX,
             Box = RectangleF.FromLTRB(minX - 3, Math.Min(a.Y, label.Y) - cs * 0.15f, maxX + 3, Math.Max(a.Y, label.Y) + cs * 0.15f),
         };
     }
@@ -546,8 +565,9 @@ public static class Renderer
         aspect ??= Aspects.Static(sig, t);
         // в виде «Огни по ГОСТ» — полная головка: горящие огни раскладываются по её лампам
         bool lampTest = IsLampTest(sig);
-        var fullHead = GostLamps || lampTest ? Aspects.FullHead(sig, t, dia) : null;
-        var shown = GostLamps ? Aspects.OnFullHead(fullHead, aspect.Lamps) : aspect.Lamps;
+        bool fullColor = FullInColor(sig);    // [20.11.2026] маневровый — оба огня и в цветном виде
+        var fullHead = GostLamps || lampTest || fullColor ? Aspects.FullHead(sig, t, dia) : null;
+        var shown = GostLamps || fullColor ? Aspects.OnFullHead(fullHead, aspect.Lamps) : aspect.Lamps;
         if (lampTest)
         {
             // [ДОБАВЛЕНО 17.11.2026] проверка огней: горят все лампы своими цветами, «Н», указатель (8) и полоса
@@ -599,7 +619,8 @@ public static class Renderer
         // сигнализации РК, приложения 1, 3); отдельная головка пригласительного у мачты — маленькая круглая. В виде ГОСТ — промежутки
         // [ДОБАВЛЕНО 20.11.2026] мачта между головками: когда огни разбиты на головки или на мачте есть «окно» (указатель, полоса),
         // линия мачты идёт от ножки до последней головки — головки не «висят» в воздухе
-        if (!gm.DwarfBlock && gm.Lamps.Length > 0 && (gm.Groups is { Length: > 1 } || !float.IsNaN(gm.IndX) || !float.IsNaN(gm.StripX0)))
+        if (!gm.DwarfBlock && gm.Lamps.Length > 0 && (gm.Groups is { Length: > 1 } || !float.IsNaN(gm.IndX) || !float.IsNaN(gm.StripX0) || !float.IsNaN(gm.HumpX)
+                                                      || (!GostLamps && FullInColor(sig) && gm.Groups == null && gm.Lamps.Length > 1)))
             g.DrawLine(pen, gm.Ax + gm.Fwd * cs * 0.12f, gm.Sy, gm.Lamps[^1].X, gm.Sy);
         var headCols = fullHead ?? Aspects.Head(sig, t);
         bool smallInv = !GostLamps && !dia && gm.Groups != null && gm.Groups[0] == 1 && gm.Groups.Length > 1
@@ -650,13 +671,14 @@ public static class Renderer
             g.FillEllipse(fill, rc);
             g.DrawEllipse(pen, rc);
         }
-        // [ДОБАВЛЕНО 13.11.2026] горочный и его повторитель — световой указатель за огнями (РУ-30-80 листы 45–47: «Г ⊢⊡◎○●⊘»);
-        // тёмный квадрат, при осаживании горит белая «Н»
+        // [ДОБАВЛЕНО 13.11.2026] горочный и его повторитель — световой указатель (РУ-30-80 листы 45–46, стр. 53–54: «Г ⊢□◎○●⊘»);
+        // тёмный квадрат, при осаживании горит белая «Н».
+        // [ИЗМЕНЕНО 20.11.2026] указатель у мачты, под огнями (на листах 45–46 квадрат сразу за знаком мачты «⊢»), а не над ними
         if (Aspects.HasIndicator(sig) && gm.Lamps.Length > 0)
         {
             var last = gm.Lamps[^1];
             float half = gm.R * 0.95f;
-            var c = new PointF(last.X + gm.Fwd * (gm.R + half + gm.R * 0.35f), last.Y);
+            var c = !float.IsNaN(gm.HumpX) ? new PointF(gm.HumpX, gm.Sy) : new PointF(last.X + gm.Fwd * (gm.R + half + gm.R * 0.35f), last.Y);
             var box = new RectangleF(c.X - half, c.Y - half, 2 * half, 2 * half);
             using (var bb = new SolidBrush(A(Pal.Dark, alpha))) g.FillRectangle(bb, box);
             g.DrawRectangle(pen, box.X, box.Y, box.Width, box.Height);
@@ -691,19 +713,21 @@ public static class Renderer
         }
         // [ИЗМЕНЕНО 17.11.2026] зелёная светящаяся полоса (Инструкция РК п. 15, 19) — под основными огнями (над пригласительным),
         // поперёк ряда огней, как горизонтальная полоса на мачте; в редакторе не горит (сигналы с полосой — во второй программе)
+        // [ИЗМЕНЕНО 20.11.2026] полос может быть две (свойство «Зелёные полосы», Инструкция РК п. 15 подп. 3) — рядом, через промежуток
         if (sig.HasStrip && gm.Lamps.Length > 0)
         {
-            RectangleF bar;
-            if (!float.IsNaN(gm.StripX0))
-                bar = RectangleF.FromLTRB(Math.Min(gm.StripX0, gm.StripX1), gm.StripY - gm.R * 1.2f, Math.Max(gm.StripX0, gm.StripX1), gm.StripY + gm.R * 1.2f);
-            else
+            float x0, y0, w = gm.StripW > 0 ? gm.StripW : gm.R * 0.7f, sg = gm.StripGap > 0 ? gm.StripGap : gm.R * 0.35f;
+            if (!float.IsNaN(gm.StripX0)) { x0 = gm.StripX0; y0 = gm.StripY; }
+            else { var last = gm.Lamps[^1]; x0 = last.X + gm.Fwd * gm.R * 1.4f; y0 = last.Y; }
+            using var bb = new SolidBrush(A(lampTest ? Pal.LampGreen : Color.FromArgb(0x1d, 0x4a, 0x2c), alpha));
+            using var bp = new Pen(A(Pal.LampGreen, alpha), Math.Max(1f, lw * 0.8f));
+            for (int j = 0; j < Math.Max(1, gm.Strips); j++)
             {
-                var last = gm.Lamps[^1];
-                float x0 = last.X + gm.Fwd * gm.R * 1.4f, x1 = x0 + gm.Fwd * gm.R * 0.7f;
-                bar = RectangleF.FromLTRB(Math.Min(x0, x1), last.Y - gm.R * 1.2f, Math.Max(x0, x1), last.Y + gm.R * 1.2f);
+                float a0 = x0 + gm.Fwd * j * (w + sg), a1 = a0 + gm.Fwd * w;
+                var bar = RectangleF.FromLTRB(Math.Min(a0, a1), y0 - gm.R * 1.2f, Math.Max(a0, a1), y0 + gm.R * 1.2f);
+                g.FillRectangle(bb, bar);
+                g.DrawRectangle(bp, bar.X, bar.Y, bar.Width, bar.Height);
             }
-            using (var bb = new SolidBrush(A(lampTest ? Pal.LampGreen : Color.FromArgb(0x1d, 0x4a, 0x2c), alpha))) g.FillRectangle(bb, bar);
-            using (var bp = new Pen(A(Pal.LampGreen, alpha), Math.Max(1f, lw * 0.8f))) g.DrawRectangle(bp, bar.X, bar.Y, bar.Width, bar.Height);
         }
         if (label && cs >= 14)
         {

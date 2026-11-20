@@ -319,6 +319,7 @@ public class JsonLayout
             // [ДОБАВЛЕНО 20.11.2026] элементы из конструктора: головки, зелёная полоса, маршрутный указатель
             s.Heads = e.Sig.HeadGroups(lamps.Length);
             s.Strip = e.Sig.HasStrip;
+            s.StripCount = e.Sig.StripCount;             // [20.11.2026] одна или две полосы
             if (e.Sig.HasRouteInd)
             {
                 s.RouteInd = true;

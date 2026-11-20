@@ -198,6 +198,10 @@ public sealed class Signal
     /// <summary>[ДОБАВЛЕНО 17.11.2026] Маневровый: красный огонь вместо синего — Инструкция РК п. 98.</summary>
     [JsonPropertyName("red")] public bool? RedShunt { get; set; }
     [JsonIgnore] public bool HasStrip => Strip == true && Kind is "entry" or "exit" or "route";
+    /// <summary>[ДОБАВЛЕНО 20.11.2026] Сколько зелёных полос: 2 — «один зелёный мигающий и один жёлтый огни и две зелёные
+    /// светящиеся полосы» (Инструкция РК п. 15, подп. 3 — до 120 км/ч, стрелки 1/22); null — одна.</summary>
+    [JsonPropertyName("strips")] public int? Strips { get; set; }
+    [JsonIgnore] public int StripCount => HasStrip ? (Strips == 2 ? 2 : 1) : 0;
     /// <summary>[ДОБАВЛЕНО 17.11.2026] Головки — огни группами от мачты: "2+2", "1+2+2", "2+3"… (null — в ряд, как на схемах РУ-30-80).</summary>
     [JsonPropertyName("heads")] public string Heads { get; set; }
     /// <summary>[ДОБАВЛЕНО 17.11.2026] Маршрутный указатель на отдельной мачте рядом со светофором (Инструкция РК п. 70:

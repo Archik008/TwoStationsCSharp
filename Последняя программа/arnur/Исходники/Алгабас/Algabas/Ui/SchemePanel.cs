@@ -627,16 +627,22 @@ class RailSchemePanel : Panel
     // окно между пригласительным (лунно-белый у кронштейна) и основными огнями, без пригласительного — у кронштейна ----
     const float HeadGap = 6f, IndBox = 16f, StripW = 6f;
 
-    static float SlotW(RailSignal s)
+    // [ИЗМЕНЕНО 20.11.2026] в окне первым (у кронштейна, под огнями) — световой указатель «Н» горочного и ПГ
+    // (РУ-30-80 листы 45–46: «Г ⊢□◎○●⊘»), и в упрощённом режиме; полос — одна или две. У Алгабаса и АКЖТ этого нет — без изменений.
+    static int Strips(RailSignal s) => s.Strip ? Math.Max(1, s.StripCount) : 0;
+
+    float SlotW(RailSignal s)
     {
-        float w = (s.RouteInd && !s.RouteIndOwnMast ? 2 + IndBox : 0) + (s.Strip ? 2 + StripW : 0);
+        float w = s.Indicator ? 2 + IndBox : 0;
+        if (!Simple) w += (s.RouteInd && !s.RouteIndOwnMast ? 2 + IndBox : 0) + Strips(s) * (2 + StripW);
         return w > 0 ? w + 4 : 0;
     }
 
     /// <summary>Перед какой лампой (от кронштейна) окно на мачте; -1 — окна нет.</summary>
     int SlotAt(RailSignal s)
     {
-        if (Simple || SlotW(s) == 0) return -1;
+        if (SlotW(s) == 0) return -1;
+        if (Simple || s.Indicator) return 0;
         int n = s.Lamps.Length;
         bool inv = s.Kind == SignalKind.Controlled && !s.IsShuntOnly && n >= 3 && s.Lamps[n - 1] == "white";
         int at = inv ? 1 : 0;
@@ -651,7 +657,7 @@ class RailSchemePanel : Panel
     /// <summary>Смещение i-й лампы (от кронштейна) от первой вдоль ряда: шаг, промежутки между головками, окно.</summary>
     float LampAlong(RailSignal s, int i)
     {
-        if (Simple) return i * SimpleLampStep;
+        if (Simple) return i * SimpleLampStep + (SlotAt(s) == 0 ? SlotW(s) : 0);    // [20.11.2026] окно с «Н» у кронштейна
         float o = i * LampStep;
         if (s.Heads != null)
         {
@@ -698,6 +704,8 @@ class RailSchemePanel : Panel
             g.DrawLine(sp, sg.Foot.X, y, l0.X - dir * LampR, y);
         }
 
+        // [20.11.2026] в упрощённом режиме маневровый — по-прежнему одна лампа (головки видны в обычном режиме)
+        int slot = SlotAt(s);
         if (Simple)
         {
             Color c = LampOffSimple;
@@ -711,7 +719,10 @@ class RailSchemePanel : Panel
                 case Aspect.Blue: c = LampColor("blue"); break;
             }
             if (IL.TestMode) c = Color.White;
-            Lamp(g, l0, c, SimpleLampR);
+            // [20.11.2026] окно с «Н» у кронштейна — лампы сдвинуты на LampAlong; мачта через окно
+            if (slot >= 0)
+                using (var mp = new Pen(Color.White, 2f)) g.DrawLine(mp, l0.X - dir * LampR, y, l0.X + dir * LampAlong(s, 0), y);
+            Lamp(g, new PointF(l0.X + dir * LampAlong(s, 0), y), c, SimpleLampR);
 
             if (DrawnLamps(s) == 2)
             {
@@ -724,15 +735,15 @@ class RailSchemePanel : Panel
                     _ => LampOffSimple
                 };
                 if (IL.TestMode) c2 = Color.White;
-                Lamp(g, new PointF(l0.X + dir * SimpleLampStep, y), c2, SimpleLampR);
+                Lamp(g, new PointF(l0.X + dir * LampAlong(s, 1), y), c2, SimpleLampR);
             }
             else if (s.Aspect == Aspect.Invite && Blink)
-                Lamp(g, new PointF(l0.X + dir * SimpleLampStep, y), LampColor("white"), 5f);
+                Lamp(g, new PointF(l0.X + dir * LampAlong(s, 1), y), LampColor("white"), 5f);
         }
         else
         {
             int nL = s.Lamps.Length;
-            int slot = SlotAt(s);
+            float lr = LampR;
             // [ДОБАВЛЕНО 20.11.2026] мачта через промежутки между головками и окно — головки не «висят» в воздухе
             if (s.Heads != null || slot >= 0)
                 using (var mp = new Pen(Color.White, 2f)) g.DrawLine(mp, l0.X - dir * LampR, y, l0.X + dir * LampAlong(s, nL - 1), y);
@@ -745,7 +756,7 @@ class RailSchemePanel : Panel
                 foreach (var p in s.Heads)
                 {
                     float a0 = l0.X + dir * LampAlong(s, i0), a1 = l0.X + dir * LampAlong(s, i0 + p - 1);
-                    float pad = smallInv && i0 == 0 ? LampR * 0.95f : LampR + 2.5f;
+                    float pad = smallInv && i0 == 0 ? lr * 0.95f : lr + 2.5f;
                     float hx0 = Math.Min(a0, a1) - pad, hx1 = Math.Max(a0, a1) + pad, hh = 2 * pad;
                     using var path = new GraphicsPath();
                     path.AddArc(hx0, y - pad, hh, hh, 90, 180);
@@ -760,23 +771,36 @@ class RailSchemePanel : Panel
             {
                 var name = s.Lamps[nL - 1 - i];
                 bool on = IL.TestMode || s.IsLampOn(name, Blink);
-                Lamp(g, new PointF(l0.X + dir * LampAlong(s, i), y), on ? LampColor(name) : LampOff, smallInv && i == 0 ? LampR * 0.75f : LampR);
+                Lamp(g, new PointF(l0.X + dir * LampAlong(s, i), y), on ? LampColor(name) : LampOff, smallInv && i == 0 ? lr * 0.75f : lr);
             }
-            // [ДОБАВЛЕНО 20.11.2026] окно на мачте: маршрутный указатель, затем зелёная полоса (поперёк ряда огней)
-            if (slot >= 0)
+        }
+        // [ДОБАВЛЕНО 20.11.2026] окно на мачте у кронштейна или над пригласительным: указатель «Н» горочного / ПГ, маршрутный
+        // указатель, затем зелёные полосы (поперёк ряда огней); в упрощённом режиме — только «Н»
+        if (slot >= 0)
+        {
+            float start = slot == 0 ? l0.X - dir * LampR : l0.X + dir * (LampAlong(s, slot - 1) + LampR);
+            float cur = 0;
+            if (s.Indicator)
             {
-                float start = slot == 0 ? l0.X - dir * LampR : l0.X + dir * (LampAlong(s, slot - 1) + LampR);
-                float cur = 0;
-                if (s.RouteInd && !s.RouteIndOwnMast) { cur += 2; DrawRouteInd(g, s, new PointF(start + dir * (cur + IndBox / 2), y)); cur += IndBox; }
-                if (s.Strip)
+                cur += 2;
+                var ic = new PointF(start + dir * (cur + IndBox / 2), y);
+                var box = new RectangleF(ic.X - IndBox / 2, ic.Y - IndBox / 2, IndBox, IndBox);
+                using (var bb = new SolidBrush(Color.FromArgb(25, 25, 25))) g.FillRectangle(bb, box);
+                using (var bp = new Pen(Color.FromArgb(20, 20, 20), 1.2f)) g.DrawRectangle(bp, box.X, box.Y, box.Width, box.Height);
+                if (s.Aspect == Aspect.RedBack || IL.TestMode) g.DrawString("Н", fSigSmall, Brushes.White, ic, center);
+                cur += IndBox;
+            }
+            if (!Simple && s.RouteInd && !s.RouteIndOwnMast) { cur += 2; DrawRouteInd(g, s, new PointF(start + dir * (cur + IndBox / 2), y)); cur += IndBox; }
+            if (!Simple)
+                for (int j = 0; j < Strips(s); j++)
                 {
                     cur += 2;
                     float sx0 = start + dir * cur, sx1 = start + dir * (cur + StripW);
                     var bar = RectangleF.FromLTRB(Math.Min(sx0, sx1), y - LampR * 1.2f, Math.Max(sx0, sx1), y + LampR * 1.2f);
                     using (var sb = new SolidBrush(IL.TestMode ? LampColor("green") : Color.FromArgb(20, 70, 40))) g.FillRectangle(sb, bar);
                     using (var spn = new Pen(Color.FromArgb(20, 20, 20), 1f)) g.DrawRectangle(spn, bar.X, bar.Y, bar.Width, bar.Height);
+                    cur += StripW;
                 }
-            }
         }
         // [ДОБАВЛЕНО 20.11.2026] маршрутный указатель на отдельной мачте — позади светофора (Инструкция РК п. 70)
         if (s.RouteInd && s.RouteIndOwnMast)
@@ -788,18 +812,6 @@ class RailSchemePanel : Panel
         }
         else if (s.RouteInd && Simple)
             DrawRouteInd(g, s, new PointF(l0.X + dir * (LampAlong(s, DrawnLamps(s) - 1) + SimpleLampR + 2 + IndBox / 2), y));
-        // [ДОБАВЛЕНО 13.11.2026] горочный и его повторитель: световой указатель за огнями, при осаживании горит «Н»
-        if (s.Indicator)
-        {
-            int nl = Simple ? DrawnLamps(s) : s.Lamps.Length;
-            float step = Simple ? SimpleLampStep : LampStep, rr = Simple ? SimpleLampR : LampR;
-            var ic = new PointF(l0.X + dir * (LampAlong(s, nl - 1) + rr + 11), y);    // [20.11.2026] с головками и окном
-            var box = new RectangleF(ic.X - 8, ic.Y - 8, 16, 16);
-            using (var bb = new SolidBrush(Color.FromArgb(25, 25, 25))) g.FillRectangle(bb, box);
-            using (var bp = new Pen(Color.FromArgb(20, 20, 20), 1.2f)) g.DrawRectangle(bp, box.X, box.Y, box.Width, box.Height);
-            if (s.Aspect == Aspect.RedBack || IL.TestMode) g.DrawString("Н", fSigSmall, Brushes.White, ic, center);
-        }
-
         var rect = SignalRect(sg);
         if (DraftSignals != null && DraftSignals.Contains(s))     // [ДОБАВЛЕНО 13.11.2026] светофор в черновике маршрута
         {
