@@ -258,6 +258,7 @@ class RailSchemePanel : Panel
         RadioUi.DrawRestrictions(g, G.Pieces.Select(p => (p.SectionId, p.Pts)), IL);   // [ДОБАВЛЕНО 23.10.2026, этап 4] предупреждения, «окна»
         ShuntUi.DrawPnp(g, G.Pieces.Select(p => (p.SectionId, p.Pts)), fSmallBold);   // [ДОБАВЛЕНО 23.10.2026, этап 7] ПНП и его лампы
         DrawBrakes(g);              // [ДОБАВЛЕНО 12.11.2026] тормозные позиции горки (только «Станция по схеме»)
+        DrawSignsAndSwitchInds(g);  // [ДОБАВЛЕНО 20.11.2026] знаки у пути и стрелочные указатели (только «Станция по схеме»)
         DrawJointsAndBuffers(g);
         DrawTunnelsFront(g);
         DrawSwitchLabels(g);
@@ -622,13 +623,53 @@ class RailSchemePanel : Panel
 
     float Step => Simple ? SimpleLampStep : LampStep;
 
+    // ---- [ДОБАВЛЕНО 20.11.2026] головки и «окно» на мачте (маршрутный указатель, зелёная полоса) — как в конструкторе станций:
+    // окно между пригласительным (лунно-белый у кронштейна) и основными огнями, без пригласительного — у кронштейна ----
+    const float HeadGap = 6f, IndBox = 16f, StripW = 6f;
+
+    static float SlotW(RailSignal s)
+    {
+        float w = (s.RouteInd && !s.RouteIndOwnMast ? 2 + IndBox : 0) + (s.Strip ? 2 + StripW : 0);
+        return w > 0 ? w + 4 : 0;
+    }
+
+    /// <summary>Перед какой лампой (от кронштейна) окно на мачте; -1 — окна нет.</summary>
+    int SlotAt(RailSignal s)
+    {
+        if (Simple || SlotW(s) == 0) return -1;
+        int n = s.Lamps.Length;
+        bool inv = s.Kind == SignalKind.Controlled && !s.IsShuntOnly && n >= 3 && s.Lamps[n - 1] == "white";
+        int at = inv ? 1 : 0;
+        if (s.Heads != null && at > 0)
+        {
+            int acc = 0;
+            foreach (var p in s.Heads) { acc += p; if (acc >= at && acc < n) { at = acc; break; } }
+        }
+        return at;
+    }
+
+    /// <summary>Смещение i-й лампы (от кронштейна) от первой вдоль ряда: шаг, промежутки между головками, окно.</summary>
+    float LampAlong(RailSignal s, int i)
+    {
+        if (Simple) return i * SimpleLampStep;
+        float o = i * LampStep;
+        if (s.Heads != null)
+        {
+            int acc = 0;
+            foreach (var p in s.Heads) { acc += p; if (acc <= i && acc < s.Lamps.Length) o += HeadGap; }
+        }
+        int slot = SlotAt(s);
+        if (slot >= 0 && i >= slot) o += SlotW(s);
+        return o;
+    }
+
     RectangleF SignalRect(SignalGeom sg)
     {
         var s = IL.Signals[sg.SignalId];
         var (l0, dir, y) = LampBase(sg);
         int n = DrawnLamps(s);
         float r = Simple ? SimpleLampR : LampR;
-        float x1 = l0.X - dir * r, x2 = l0.X + dir * ((n - 1) * Step + r);
+        float x1 = l0.X - dir * r, x2 = l0.X + dir * (LampAlong(s, n - 1) + r);
         float left = Math.Min(x1, x2) - 4, right = Math.Max(x1, x2) + 4;
         float top = sg.Above ? y - 36 : y - LampR - 4;
         float bottom = sg.Above ? y + LampR + 4 : y + 36;
@@ -690,20 +731,69 @@ class RailSchemePanel : Panel
         }
         else
         {
-            // Lamps перечислены сверху вниз по мачте; на схеме нижняя лампа ближе всего к кронштейну
-            for (int i = 0; i < s.Lamps.Length; i++)
+            int nL = s.Lamps.Length;
+            int slot = SlotAt(s);
+            // [ДОБАВЛЕНО 20.11.2026] мачта через промежутки между головками и окно — головки не «висят» в воздухе
+            if (s.Heads != null || slot >= 0)
+                using (var mp = new Pen(Color.White, 2f)) g.DrawLine(mp, l0.X - dir * LampR, y, l0.X + dir * LampAlong(s, nL - 1), y);
+            // [ДОБАВЛЕНО 20.11.2026] головки: скруглённый корпус у каждой группы; пригласительный отдельно — маленький
+            bool smallInv = s.Heads is { Length: > 1 } && s.Heads[0] == 1 && nL >= 3 && s.Lamps[nL - 1] == "white" && s.Kind == SignalKind.Controlled;
+            if (s.Heads != null)
             {
-                var name = s.Lamps[s.Lamps.Length - 1 - i];
+                using var hb = new SolidBrush(Color.FromArgb(30, 34, 33));
+                int i0 = 0;
+                foreach (var p in s.Heads)
+                {
+                    float a0 = l0.X + dir * LampAlong(s, i0), a1 = l0.X + dir * LampAlong(s, i0 + p - 1);
+                    float pad = smallInv && i0 == 0 ? LampR * 0.95f : LampR + 2.5f;
+                    float hx0 = Math.Min(a0, a1) - pad, hx1 = Math.Max(a0, a1) + pad, hh = 2 * pad;
+                    using var path = new GraphicsPath();
+                    path.AddArc(hx0, y - pad, hh, hh, 90, 180);
+                    path.AddArc(hx1 - hh, y - pad, hh, hh, 270, 180);
+                    path.CloseFigure();
+                    g.FillPath(hb, path);
+                    i0 += p;
+                }
+            }
+            // Lamps перечислены сверху вниз по мачте; на схеме нижняя лампа ближе всего к кронштейну
+            for (int i = 0; i < nL; i++)
+            {
+                var name = s.Lamps[nL - 1 - i];
                 bool on = IL.TestMode || s.IsLampOn(name, Blink);
-                Lamp(g, new PointF(l0.X + dir * i * LampStep, y), on ? LampColor(name) : LampOff, LampR);
+                Lamp(g, new PointF(l0.X + dir * LampAlong(s, i), y), on ? LampColor(name) : LampOff, smallInv && i == 0 ? LampR * 0.75f : LampR);
+            }
+            // [ДОБАВЛЕНО 20.11.2026] окно на мачте: маршрутный указатель, затем зелёная полоса (поперёк ряда огней)
+            if (slot >= 0)
+            {
+                float start = slot == 0 ? l0.X - dir * LampR : l0.X + dir * (LampAlong(s, slot - 1) + LampR);
+                float cur = 0;
+                if (s.RouteInd && !s.RouteIndOwnMast) { cur += 2; DrawRouteInd(g, s, new PointF(start + dir * (cur + IndBox / 2), y)); cur += IndBox; }
+                if (s.Strip)
+                {
+                    cur += 2;
+                    float sx0 = start + dir * cur, sx1 = start + dir * (cur + StripW);
+                    var bar = RectangleF.FromLTRB(Math.Min(sx0, sx1), y - LampR * 1.2f, Math.Max(sx0, sx1), y + LampR * 1.2f);
+                    using (var sb = new SolidBrush(IL.TestMode ? LampColor("green") : Color.FromArgb(20, 70, 40))) g.FillRectangle(sb, bar);
+                    using (var spn = new Pen(Color.FromArgb(20, 20, 20), 1f)) g.DrawRectangle(spn, bar.X, bar.Y, bar.Width, bar.Height);
+                }
             }
         }
+        // [ДОБАВЛЕНО 20.11.2026] маршрутный указатель на отдельной мачте — позади светофора (Инструкция РК п. 70)
+        if (s.RouteInd && s.RouteIndOwnMast)
+        {
+            float mx = sg.Foot.X - dir * 26;
+            float ty = sg.Foot.Y + (sg.Above ? -6 : 6);
+            using (var mp = new Pen(Color.White, 2f)) { g.DrawLine(mp, mx, ty, mx, y); g.DrawLine(mp, mx, y, mx + dir * 4, y); }
+            DrawRouteInd(g, s, new PointF(mx + dir * (4 + IndBox / 2), y));
+        }
+        else if (s.RouteInd && Simple)
+            DrawRouteInd(g, s, new PointF(l0.X + dir * (LampAlong(s, DrawnLamps(s) - 1) + SimpleLampR + 2 + IndBox / 2), y));
         // [ДОБАВЛЕНО 13.11.2026] горочный и его повторитель: световой указатель за огнями, при осаживании горит «Н»
         if (s.Indicator)
         {
             int nl = Simple ? DrawnLamps(s) : s.Lamps.Length;
             float step = Simple ? SimpleLampStep : LampStep, rr = Simple ? SimpleLampR : LampR;
-            var ic = new PointF(l0.X + dir * ((nl - 1) * step + rr + 11), y);
+            var ic = new PointF(l0.X + dir * (LampAlong(s, nl - 1) + rr + 11), y);    // [20.11.2026] с головками и окном
             var box = new RectangleF(ic.X - 8, ic.Y - 8, 16, 16);
             using (var bb = new SolidBrush(Color.FromArgb(25, 25, 25))) g.FillRectangle(bb, box);
             using (var bp = new Pen(Color.FromArgb(20, 20, 20), 1.2f)) g.DrawRectangle(bp, box.X, box.Y, box.Width, box.Height);
@@ -723,7 +813,7 @@ class RailSchemePanel : Panel
         }
 
         int n = DrawnLamps(s);
-        float cx = l0.X + dir * (n - 1) * Step / 2f;
+        float cx = l0.X + dir * (LampAlong(s, 0) + LampAlong(s, n - 1)) / 2f;    // [20.11.2026] с головками и окном
         float ly = sg.Above ? y - 22 : y + 22;
         Color tc = Color.White;
         if (selected != null && selected != s)
@@ -733,6 +823,55 @@ class RailSchemePanel : Panel
         using var tb = new SolidBrush(tc);
         var font = s.Kind == SignalKind.Automatic || s.IsShuntOnly ? fSigSmall : fSig;
         g.DrawString(s.Label + sg.Suffix, font, tb, cx, ly, center);
+    }
+
+    /// <summary>[ДОБАВЛЕНО 20.11.2026] Маршрутный указатель: тёмный квадрат, при открытом маршруте — номер пути
+    /// (зелёный у выходного и маршрутного, белый у входного и маневрового); при проверке ламп — «8».</summary>
+    void DrawRouteInd(Graphics g, RailSignal s, PointF c)
+    {
+        var box = new RectangleF(c.X - IndBox / 2, c.Y - IndBox / 2, IndBox, IndBox);
+        var col = s.RouteIndGreen ? LampColor("green") : LampColor("white");
+        using (var bb = new SolidBrush(Color.FromArgb(25, 25, 25))) g.FillRectangle(bb, box);
+        using (var bp = new Pen(col, 1.4f)) g.DrawRectangle(bp, box.X, box.Y, box.Width, box.Height);
+        string txt = IL.TestMode ? "8" : s.RouteIndText?.Invoke();
+        if (!string.IsNullOrEmpty(txt))
+            using (var tb = new SolidBrush(col)) g.DrawString(txt, txt.Length > 2 ? fTiny : fSigSmall, tb, c, center);
+    }
+
+    /// <summary>[ДОБАВЛЕНО 20.11.2026] Знаки у пути (предельный столбик, ГС, ГБ) и стрелочные указатели нецентрализованных стрелок.</summary>
+    void DrawSignsAndSwitchInds(Graphics g)
+    {
+        if (G.Signs.Count == 0 && G.SwitchInds.Count == 0) return;
+        using var dark = new Pen(Color.FromArgb(20, 20, 20), 1.4f);
+        using var db = new SolidBrush(Color.FromArgb(20, 20, 20));
+        foreach (var sg in G.Signs)
+        {
+            var p = sg.Pos;
+            if (sg.Type == "limit")
+            {
+                // предельный столбик: белый с чёрной верхушкой, у пути
+                var post = new RectangleF(p.X - 2.5f, p.Y + 6, 5, 14);
+                g.FillRectangle(Brushes.White, post);
+                g.FillRectangle(db, post.X, post.Y, post.Width, 5);
+                g.DrawRectangle(dark, post.X, post.Y, post.Width, post.Height);
+                continue;
+            }
+            // табличка на стойке справа по ходу: «→» — под путём, «←» — над путём
+            var plate = new RectangleF(p.X - 15, sg.Below ? p.Y + 14 : p.Y - 28, 30, 14);
+            using (var wp = new Pen(Color.White, 1.6f)) g.DrawLine(wp, p.X, sg.Below ? p.Y + 4 : p.Y - 4, p.X, sg.Below ? plate.Top : plate.Bottom);
+            g.FillRectangle(Brushes.White, plate);
+            g.DrawRectangle(dark, plate.X, plate.Y, plate.Width, plate.Height);
+            g.DrawString(sg.Text, fTiny, db, new PointF(p.X, plate.Y + plate.Height / 2), center);
+        }
+        foreach (var si in G.SwitchInds)
+        {
+            if (!IL.Switches.TryGetValue(si.SwitchId, out var sw)) continue;
+            bool plus = sw.ShownPlus;
+            float w = plus ? 5 : 13, h = 12;
+            var r = new RectangleF(si.Pos.X - w / 2, si.Pos.Y - h / 2, w, h);
+            using (var b = new SolidBrush(plus ? Color.White : LampColor("yellow"))) g.FillRectangle(b, r);
+            g.DrawRectangle(dark, r.X, r.Y, r.Width, r.Height);
+        }
     }
 
     static void Lamp(Graphics g, PointF c, Color color, float r)

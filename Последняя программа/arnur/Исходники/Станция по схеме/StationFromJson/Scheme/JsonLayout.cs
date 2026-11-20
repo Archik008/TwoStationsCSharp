@@ -44,6 +44,10 @@ public class JsonLayout
     static readonly string[] L_ENTRY = { "yellow", "green", "red", "yellow1", "white" };
     static readonly string[] L_EXIT = { "yellow", "green", "red", "white" };
     static readonly string[] L_SHUNT = { "white", "blue" };
+    // [ДОБАВЛЕНО 20.11.2026] как в конструкторе: выходной / маршрутный с главного пути — 5 огней (второй жёлтый для «двух жёлтых»,
+    // РУ-30-80 стр. 9, 14; Инструкция РК п. 18); маневровый с красным вместо синего — Инструкция РК п. 98
+    static readonly string[] L_EXIT_MAIN = { "yellow", "green", "red", "yellow1", "white" };
+    static readonly string[] L_SHUNT_RED = { "white", "red" };
     static readonly string[] L_BLOCK = { "yellow", "green", "red" };
     static readonly string[] L_NEIGHBOR = { "yellow", "red", "yellow1", "white" };
     // [ДОБАВЛЕНО 13.11.2026] горочный Г и повторитель ПГ: от мачты лунно-белый, зелёный, красный, жёлтый (РУ-30-80 листы 46, 47;
@@ -303,12 +307,27 @@ public class JsonLayout
                     Notes.Add($"{kindName} светофор {name}: таких светофоров в программах станций пока нет — на схеме не показан.");
                     continue;
             }
+            // [ДОБАВЛЕНО 20.11.2026] огни — как в конструкторе
+            if (e.Sig.Kind is "exit" or "route" && Ed.Aspects.IsMainTrack(e.Tile.Sec)) lamps = L_EXIT_MAIN;
+            if (e.Sig.Kind == "shunt" && e.Sig.IsRedShunt) lamps = L_SHUNT_RED;
             var s = IL.AddSignal(new RailSignal
             {
                 Id = Unique(name), Label = name, Title = $"{kindName} {name}", Kind = kind, Dir = dir, Lamps = lamps
             });
             if (kind == SignalKind.Controlled) s.Approach = SecOfTile(e.Key);
             s.At = SecOfTile(e.Key);    // [ДОБАВЛЕНО 16.11.2026] для клика вторым светофором (RouteFinder.Find)
+            // [ДОБАВЛЕНО 20.11.2026] элементы из конструктора: головки, зелёная полоса, маршрутный указатель
+            s.Heads = e.Sig.HeadGroups(lamps.Length);
+            s.Strip = e.Sig.HasStrip;
+            if (e.Sig.HasRouteInd)
+            {
+                s.RouteInd = true;
+                s.RouteIndOwnMast = e.Sig.RouteIndOwnMast == true;
+                s.RouteIndGreen = Ed.Aspects.RouteIndColor(e.Sig.Kind) == Ed.Lamp.Green;
+                var entry = e;
+                var sig = s;
+                s.RouteIndText = () => RouteIndTextFor(entry, sig);
+            }
             if (e.Sig.Kind == "hump") { s.Hump = HumpMode.Stop; s.Indicator = true; }       // [ДОБАВЛЕНО 13.11.2026]
             if (e.Sig.Kind == "humprep") s.Indicator = true;
             if (e.Sig.Kind == "entry") View.InviteSignals.Add(s);
@@ -318,6 +337,26 @@ public class JsonLayout
             tileOfSig[s] = e.Key;
             sigs.Add((e, s));
         }
+    }
+
+    /// <summary>[ДОБАВЛЕНО 20.11.2026] Номер пути на маршрутном указателе, пока маршрут от светофора открыт: у входного —
+    /// путь приёма (путь назначения), у остальных — путь, с которого отправление (позади светофора, по стрелкам как стоят
+    /// сейчас); у маневрового без пути позади — путь назначения. Как в конструкторе (Aspects.RouteIndText).</summary>
+    string RouteIndTextFor(Ed.SignalEntry e, RailSignal s)
+    {
+        var r = IL.ActiveRoutes.FirstOrDefault(x => x.Start == s);
+        if (r == null || !(AspectInfo.IsPermissive(s.Aspect) || s.Aspect == Aspect.White)) return null;
+        string sec;
+        if (e.Sig.Kind == "entry") sec = r.ExitSection != null ? null : NameOf(r.Dest);
+        else
+        {
+            // положения стрелок — живые (из зависимостей), а не из файла
+            foreach (var (k, t) in St.Tiles)
+                if (t.T == "switch" && swByGroup.TryGetValue(TC.SwitchGroup(k, t), out var sw)) t.Plus = sw.ShownPlus ? null : false;
+            sec = Ed.Aspects.TrackBehind(St, e);
+            if (sec == null && e.Sig.Kind == "shunt" && r.ExitSection == null) sec = NameOf(r.Dest);
+        }
+        return string.IsNullOrEmpty(sec) ? null : TC.TrackNo(sec) ?? sec;
     }
 
     /// <summary>[ДОБАВЛЕНО 13.11.2026] Повторитель горочного — какой горочный он повторяет: первый горочный впереди по ходу
@@ -801,6 +840,25 @@ public class JsonLayout
             var ends = TC.EndsOf(e.Tile).Where(x => (e.Sig.Dir == "R") == TC.IsRight(x)).ToList();
             var p = Pt(e.Key, ends.Contains(want) ? want : ends.Count > 0 ? ends[0] : want);
             g.Sig(s, p.X, p.Y, e.Sig.Dir == "L", s.Kind == SignalKind.Neighbor ? " (сосед)" : "");
+        }
+
+        // [ДОБАВЛЕНО 20.11.2026] знаки у пути и стрелочные указатели нецентрализованных стрелок — из конструктора
+        foreach (var (sk, st) in St.Tiles)
+        {
+            var (tx, ty) = TC.Parse(sk);
+            if (st.Signs != null)
+                foreach (var sgn in st.Signs)
+                    g.Signs.Add(new TrackSignGeom
+                    {
+                        Type = sgn.Type, Pos = new PointF(X(tx) + CX / 2, Y(ty) + CY / 2), Below = sgn.Dir != "L",
+                        Text = sgn.Type == "station" ? "ГС" : sgn.Type == "block" ? "ГБ" : "",
+                    });
+            if (st.T == "switch" && st.IsManual && swByGroup.TryGetValue(TC.SwitchGroup(sk, st), out var msw))
+            {
+                var mv = TC.VariantOf(st);
+                float fx = mv.Trunk is "W" or "NW" or "SW" ? 0.8f : 0.2f, fy = mv.Minus.Contains('N') ? 0.84f : 0.16f;
+                g.SwitchInds.Add(new SwitchIndGeom { SwitchId = msw.Id, Pos = new PointF(X(tx) + CX * fx, Y(ty) + CY * fy) });
+            }
         }
 
         // номера стрелок

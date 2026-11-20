@@ -86,6 +86,25 @@ public class BrakeGeom
     public PointF LabelPos;
 }
 
+/// <summary>[ДОБАВЛЕНО 20.11.2026] Знак у пути из конструктора: limit — предельный столбик (ПТЭ РК п. 114, 116),
+/// station — «Граница станции» (ГС, ПТЭ п. 133), block — «Граница блок-участка» (ГБ, Инструкция РК п. 81).
+/// Below — табличка под путём (знак для «→»), иначе над. Заполняет только «Станция по схеме».</summary>
+public class TrackSignGeom
+{
+    public string Type = "limit";
+    public PointF Pos;                 // середина клетки на пути
+    public bool Below = true;
+    public string Text = "";
+}
+
+/// <summary>[ДОБАВЛЕНО 20.11.2026] Стрелочный указатель нецентрализованной стрелки (ПТЭ РК п. 107; Инструкция РК п. 72):
+/// плюс — узкий белый, минус — широкий жёлтый. Заполняет только «Станция по схеме».</summary>
+public class SwitchIndGeom
+{
+    public string SwitchId = "";
+    public PointF Pos;
+}
+
 public class SchemeGeometry
 {
     public float DesignW = 2400, DesignH = 640;
@@ -108,6 +127,8 @@ public class SchemeGeometry
     public readonly List<DirectionGeom> Directions = new();
     public readonly List<TrackNameGap> TrackNameGaps = new();    // [ДОБАВЛЕНО 11.11.2026] пусто — как раньше
     public readonly List<BrakeGeom> Brakes = new();              // [ДОБАВЛЕНО 12.11.2026] пусто — как раньше
+    public readonly List<TrackSignGeom> Signs = new();           // [ДОБАВЛЕНО 20.11.2026] пусто — как раньше
+    public readonly List<SwitchIndGeom> SwitchInds = new();      // [ДОБАВЛЕНО 20.11.2026] пусто — как раньше
 
     // ---------- помощники для описания схемы ----------
     public static PointF[] P(params (float x, float y)[] pts) => pts.Select(p => new PointF(p.x, p.y)).ToArray();

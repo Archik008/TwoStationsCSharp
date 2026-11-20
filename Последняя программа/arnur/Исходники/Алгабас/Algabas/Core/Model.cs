@@ -297,6 +297,16 @@ public class RailSignal
     /// задаёт маршрут, у которого этот участок — путь назначения (RouteFinder.Find). null — не известно (Алгабас, АКЖТ).</summary>
     public TrackSection At;
 
+    // ---- [ДОБАВЛЕНО 20.11.2026] элементы из конструктора станций («Станция по схеме»); у Алгабаса и АКЖТ — пусто ----
+    /// <summary>Головки — размеры групп огней от кронштейна (null — огни в ряд).</summary>
+    public int[] Heads;
+    /// <summary>Зелёная светящаяся полоса (Инструкция по сигнализации РК п. 15, 19) — пока только рисуется.</summary>
+    public bool Strip;
+    /// <summary>Маршрутный указатель (Инструкция РК п. 70–71, ПТЭ РК п. 134): есть, на отдельной мачте, зелёный (иначе белый).</summary>
+    public bool RouteInd, RouteIndOwnMast, RouteIndGreen;
+    /// <summary>Что горит на маршрутном указателе (номер пути) — null, указатель тёмный.</summary>
+    public Func<string> RouteIndText;
+
     /// <summary>Чисто маневровый светофор (нет ни зелёного, ни жёлтого).</summary>
     public bool IsShuntOnly => !Has("green") && !Has("yellow");
 
