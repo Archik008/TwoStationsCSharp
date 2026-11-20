@@ -597,6 +597,10 @@ public static class Renderer
         }
         // [ИЗМЕНЕНО 19.11.2026] головки: у каждой группы огней — свой скруглённый корпус (как на рисунках Инструкции по
         // сигнализации РК, приложения 1, 3); отдельная головка пригласительного у мачты — маленькая круглая. В виде ГОСТ — промежутки
+        // [ДОБАВЛЕНО 20.11.2026] мачта между головками: когда огни разбиты на головки или на мачте есть «окно» (указатель, полоса),
+        // линия мачты идёт от ножки до последней головки — головки не «висят» в воздухе
+        if (!gm.DwarfBlock && gm.Lamps.Length > 0 && (gm.Groups is { Length: > 1 } || !float.IsNaN(gm.IndX) || !float.IsNaN(gm.StripX0)))
+            g.DrawLine(pen, gm.Ax + gm.Fwd * cs * 0.12f, gm.Sy, gm.Lamps[^1].X, gm.Sy);
         var headCols = fullHead ?? Aspects.Head(sig, t);
         bool smallInv = !GostLamps && !dia && gm.Groups != null && gm.Groups[0] == 1 && gm.Groups.Length > 1
                         && Aspects.InvitationAtMast(sig, headCols);
