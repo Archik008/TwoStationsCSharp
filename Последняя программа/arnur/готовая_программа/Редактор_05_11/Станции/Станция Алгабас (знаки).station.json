@@ -104,8 +104,7 @@
           "id": 4,
           "fixed": true,
           "ri": true,
-          "strip": true,
-          "heads": "1+2+2"
+          "strip": true
         }
       ]
     },
@@ -929,7 +928,8 @@
           "kind": "humprep",
           "name": "ПГ2",
           "id": 35,
-          "ltr": "Н"
+          "ltr": "Н",
+          "heads": "2+2"
         }
       ]
     },
