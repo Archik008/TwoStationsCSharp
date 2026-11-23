@@ -250,6 +250,7 @@ class RailSchemePanel : Panel
         var st = g.Save();
         g.TranslateTransform(off.X, off.Y);
         g.ScaleTransform(scale, scale);
+        if (G.AutoLabels) PlaceLabels(g);   // [ДОБАВЛЕНО 23.11.2026]
 
         DrawTexts(g);
         foreach (var c in G.Crossings) DrawCrossing(g, c);
@@ -536,7 +537,7 @@ class RailSchemePanel : Panel
                 g.DrawLine(shoe, p1.X + s * nx, p1.Y + s * ny, p2.X + s * nx, p2.Y + s * ny);
         }
         foreach (var b in G.Brakes)
-            if (!string.IsNullOrEmpty(b.Label)) g.DrawString(L.T(b.Label), fSw, lb, b.LabelPos, center);
+            if (!string.IsNullOrEmpty(b.Label)) g.DrawString(L.T(b.Label), fSw, lb, brakeAt.TryGetValue(b, out var bp) ? bp : b.LabelPos, center);
     }
 
     void DrawJointsAndBuffers(Graphics g)
@@ -549,12 +550,14 @@ class RailSchemePanel : Panel
 
     void DrawSwitchLabels(Graphics g)
     {
-        foreach (var (label, (pt, swId)) in G.SwitchLabels)
+        foreach (var (label, (pt0, swId)) in G.SwitchLabels)
         {
+            var pt = pt0;
             var sw = IL.Switches[swId];
             // [ИЗМЕНЕНО 21.10.2026, этап 6] пометки пульта: К — колпачок, З — заслонка, Л — замок/скоба, В — выключена, М — макет
             string marks = PanelUi.Marks(sw);
             string txt = label + sw.PosText + (marks.Length > 0 ? " " + marks : "");
+            if (swAt.TryGetValue(label, out var placed)) pt = placed;   // [23.11.2026] место, свободное от путей и огней
             var size = g.MeasureString(txt, fSw);
             var rect = new RectangleF(pt.X - size.Width / 2 - 2, pt.Y - size.Height / 2, size.Width + 4, size.Height);
             if (PanelUi.ShowSwitchPositions)           // Е13: контроль положения всех стрелок
@@ -580,7 +583,7 @@ class RailSchemePanel : Panel
         float need = fSection.Size * 96f / 72f / 2f + 2.5f + SchemeStyle.SectionLabelGap;
         foreach (var (id, pt) in G.SectionLabels)
             if (!gapLabeled.Contains(id) && IL.Sections.TryGetValue(id, out var s))    // [11.11.2026] уже подписан в разрыве
-                g.DrawString(s.Label, fSection, b, AwayFromTrack(pt, need), center);
+                g.DrawString(s.Label, fSection, b, secAt.TryGetValue(id, out var sp) ? sp : AwayFromTrack(pt, need), center);
     }
 
     /// <summary>Точки подписей заданы под старый мелкий шрифт (в 14–16 от пути). Крупную надпись
@@ -603,10 +606,224 @@ class RailSchemePanel : Panel
         return new PointF(pt.X, trackY + (bestDy < 0 ? -need : need));
     }
 
+    // =================================================================
+    //  [ДОБАВЛЕНО 23.11.2026] РАССТАНОВКА ПОДПИСЕЙ (G.AutoLabels — «Станция по схеме»)
+    //  Схема из редактора строится по клеткам, и подписи, поставленные «по клетке», налезали на огни соседнего
+    //  светофора («14+» под огнями М14), на пути (ТП1 на линии) и друг на друга. Как на ручной схеме Алгабаса:
+    //  имя светофора — над огнями (у «→» — под огнями), номер стрелки — у остряка по сторону ответвления,
+    //  название участка — у середины прямого куска. Каждая подпись пробует места по очереди, от лучшего
+    //  (как на образце) к запасным — с другой стороны пути, сдвиг вдоль пути, сбоку от огней, —
+    //  и берёт первое, где ничего нет; если свободного нет — где перекрытие меньше всего.
+    //  Порядок: светофоры → стрелки → ТП → участки; поставленная подпись — сама препятствие для следующих.
+    // =================================================================
+    readonly Dictionary<string, PointF> sigAt = new(), swAt = new(), secAt = new();
+    readonly Dictionary<string, RectangleF> sigBox = new();
+    readonly Dictionary<BrakeGeom, PointF> brakeAt = new();
+    readonly List<RectangleF> lblBoxes = new();
+    readonly List<(PointF A, PointF B)> lblSegs = new();
+    readonly HashSet<string> sigFlip = new();
+    string placedKey;
+
+    Font SigFont(RailSignal s) => s.Kind == SignalKind.Automatic || s.IsShuntOnly ? fSigSmall : fSig;
+
+    /// <summary>Размер подписи без полей MeasureString (по высоте — буквы, без межстрочного запаса).</summary>
+    static SizeF TextBox(Graphics g, string text, Font f)
+    {
+        var sz = g.MeasureString(text, f, PointF.Empty, StringFormat.GenericTypographic);
+        return new SizeF(sz.Width + 4, f.Size * 96f / 72f * 0.82f + 2);
+    }
+
+    static RectangleF Around(PointF c, SizeF sz) => new(c.X - sz.Width / 2, c.Y - sz.Height / 2, sz.Width, sz.Height);
+
+    void PlaceLabels(Graphics g)
+    {
+        // меняются: режим (простые огни), тексты стрелок (+/−, пометки), язык
+        var key = new System.Text.StringBuilder(Simple ? "s" : "f").Append(L.Current).Append(G.GetHashCode());
+        foreach (var (label, (_, swId)) in G.SwitchLabels)
+            if (IL.Switches.TryGetValue(swId, out var sw)) key.Append('|').Append(label).Append(sw.PosText).Append(PanelUi.Marks(sw));
+        if (key.ToString() == placedKey) return;
+        placedKey = key.ToString();
+        sigAt.Clear(); swAt.Clear(); secAt.Clear(); sigBox.Clear(); brakeAt.Clear(); sigFlip.Clear();
+        lblBoxes.Clear(); lblSegs.Clear();
+
+        // ---- препятствия: пути, огни, упоры, надписи схемы ----
+        foreach (var p in G.Pieces) for (int i = 0; i + 1 < p.Pts.Length; i++) lblSegs.Add((p.Pts[i], p.Pts[i + 1]));
+        foreach (var d in G.Decor) for (int i = 0; i + 1 < d.Length; i++) lblSegs.Add((d[i], d[i + 1]));
+        foreach (var (d, _) in G.LineDecor) for (int i = 0; i + 1 < d.Length; i++) lblSegs.Add((d[i], d[i + 1]));
+        foreach (var b in G.Buffers) lblBoxes.Add(new RectangleF(b.X - 4, b.Y - 17, 8, 34));
+        foreach (var b in G.Boundaries) lblBoxes.Add(new RectangleF(b.X - 36, b.Y, 72, 25));
+        foreach (var c in G.Crossings) lblBoxes.Add(RectangleF.FromLTRB(c.X - 32, c.Y1 - 50, c.X + 32, c.Y2 + 36));
+        foreach (var t in G.Texts)
+        {
+            var sz = TextBox(g, L.T(t.Text), TextFont(t.Size, t.Bold));
+            float x = t.Align switch { StringAlignment.Center => t.Pos.X - sz.Width / 2, StringAlignment.Far => t.Pos.X - sz.Width, _ => t.Pos.X };
+            lblBoxes.Add(new RectangleF(x, t.Pos.Y - sz.Height / 2, sz.Width, sz.Height));
+        }
+        foreach (var d in G.Directions)
+        {
+            lblSegs.Add((new PointF(d.ArrowX1, d.ArrowY), new PointF(d.ArrowX2, d.ArrowY)));
+            lblBoxes.Add(Around(d.Pos, TextBox(g, L.T(d.Line.Title + ", " + d.RightText), fSmallBold)));
+        }
+        var lamps = new Dictionary<string, (RectangleF Body, float Cx, float Y, float End, float Dir)>();
+        var tracks = lblSegs.ToList();
+        int TrackHits(RectangleF body) => tracks.Count(t => SegHitsRect(t.A, t.B, RectangleF.Inflate(body, 2.5f, 2.5f)));
+        foreach (var sg in G.Signals)
+        {
+            if (!IL.Signals.TryGetValue(sg.SignalId, out var s)) continue;
+            int n = DrawnLamps(s);
+            float r = Simple ? SimpleLampR : LampR;
+            RectangleF Body(out PointF l0, out float dir, out float y, out float far)
+            {
+                (l0, dir, y) = LampBase(sg);
+                far = l0.X + dir * ((n - 1) * Step + r + (s.Indicator ? 22 : 0));
+                return RectangleF.FromLTRB(Math.Min(l0.X - dir * r, far), y - r - 1, Math.Max(l0.X - dir * r, far), y + r + 1);
+            }
+            var body = Body(out var l0, out var dir, out var y, out var far);
+            int hits = TrackHits(body);
+            if (hits > 0)
+            {
+                // огни на соседнем пути (стрелка, съезд рядом с мачтой) — пробуем по другую сторону мачты
+                sigFlip.Add(sg.SignalId);
+                var body2 = Body(out var l02, out var dir2, out var y2, out var far2);
+                if (TrackHits(body2) < hits) (body, l0, dir, y, far) = (body2, l02, dir2, y2, far2);
+                else sigFlip.Remove(sg.SignalId);
+            }
+            lamps[sg.SignalId] = (body, l0.X + dir * (n - 1) * Step / 2f, y, far, dir);
+            lblBoxes.Add(body);
+            lblSegs.Add((new PointF(sg.Foot.X, sg.Foot.Y + (sg.Above ? -6 : 6)), new PointF(sg.Foot.X, y)));   // мачта
+        }
+
+        // ---- светофоры: над огнями (у «→» — под), дальше, сбоку от огней, сдвиг ----
+        foreach (var sg in G.Signals)
+        {
+            if (!lamps.TryGetValue(sg.SignalId, out var lm)) continue;
+            var s = IL.Signals[sg.SignalId];
+            var sz = TextBox(g, s.Label + sg.Suffix, SigFont(s));
+            float o = sg.Above ? -1 : 1, near = lm.Body.Height / 2 + sz.Height / 2 + 1;
+            var c = new List<PointF> { new(lm.Cx, lm.Y + o * 22) };
+            foreach (var dx in new[] { 8f, -8f, 16f, -16f }) c.Add(new(lm.Cx + dx, lm.Y + o * 22));
+            c.Add(new(lm.End + lm.Dir * (sz.Width / 2 + 3), lm.Y));                       // за последним огнём
+            c.Add(new(lm.Body.X + (lm.Dir < 0 ? lm.Body.Width + sz.Width / 2 + 3 : -sz.Width / 2 - 3), lm.Y));   // у мачты
+            foreach (var dy in new[] { 30f, 38f, 46f })
+                foreach (var dx in new[] { 0f, 12f, -12f, 24f, -24f }) c.Add(new(lm.Cx + dx, lm.Y + o * dy));
+            c.Add(new(lm.Cx, lm.Y - o * near));                                             // с другой стороны огней
+            var at = Pick(sz, c);
+            sigAt[sg.SignalId] = at;
+            sigBox[sg.SignalId] = Around(at, sz);
+        }
+
+        // ---- стрелки: у остряка по сторону ответвления, сдвиг вдоль пути, по другую сторону, дальше ----
+        foreach (var (label, (pt, swId)) in G.SwitchLabels)
+        {
+            if (!IL.Switches.TryGetValue(swId, out var sw)) continue;
+            string marks = PanelUi.Marks(sw);
+            var sz = TextBox(g, L.T(label + sw.PosText + (marks.Length > 0 ? " " + marks : "")), fSw);
+            var tip = SwitchPoint(swId, pt);
+            float side = pt.Y < tip.Y ? -1 : 1, dy0 = Math.Max(Math.Abs(pt.Y - tip.Y), sz.Height / 2 + 5);
+            var c = new List<PointF>();
+            foreach (var (sgn, dy) in new[] { (side, dy0), (-side, dy0), (side, dy0 + 10), (-side, dy0 + 10), (side, dy0 + 20) })
+                foreach (var dx in new[] { 0f, -10f, 10f, -20f, 20f, -32f, 32f, -46f, 46f })
+                    c.Add(new(pt.X + dx, tip.Y + sgn * dy));
+            swAt[label] = Pick(sz, c);
+        }
+
+        // ---- тормозные позиции: сбоку от полосы, с любой стороны ----
+        foreach (var b in G.Brakes)
+        {
+            if (string.IsNullOrEmpty(b.Label)) continue;
+            var sz = TextBox(g, L.T(b.Label), fSw);
+            float dx = b.B.X - b.A.X, dy = b.B.Y - b.A.Y, len = MathF.Sqrt(dx * dx + dy * dy);
+            if (len < 1) continue;
+            float nx = -dy / len, ny = dx / len;
+            if (ny < 0 || (ny == 0 && nx < 0)) { nx = -nx; ny = -ny; }
+            var mid = new PointF((b.A.X + b.B.X) / 2, (b.A.Y + b.B.Y) / 2);
+            var c = new List<PointF>();
+            foreach (var k in new[] { 1f, -1f })
+                foreach (var dist in new[] { 18f, 26f, 34f })
+                {
+                    float need = dist + Math.Abs(nx) * sz.Width / 2 + Math.Abs(ny) * sz.Height / 2 - 8;   // не на полосе замедлителя
+                    c.Add(new(mid.X + k * nx * need, mid.Y + k * ny * need));
+                }
+            brakeAt[b] = Pick(sz, c);
+        }
+
+        // ---- участки (галочка «Подписи участков и путей»): у середины куска, с другой стороны, сдвиг вдоль ----
+        float needSec = fSection.Size * 96f / 72f / 2f + 2.5f + SchemeStyle.SectionLabelGap;
+        foreach (var (id, pt0) in G.SectionLabels)
+        {
+            if (!IL.Sections.TryGetValue(id, out var s)) continue;
+            if (G.TrackNameGaps.Any(x => x.SectionId == id)) continue;   // подписан в разрыве пути — его место на линии
+            var sz = TextBox(g, s.Label, fSection);
+            var pt = AwayFromTrack(pt0, needSec);
+            var c = new List<PointF>();
+            float trackY = pt0.Y - 16;   // AutoSectionLabels: на 16 ниже середины куска
+            foreach (var y in new[] { pt.Y, 2 * trackY - pt.Y })
+                foreach (var dx in new[] { 0f, -15f, 15f, -30f, 30f, -50f, 50f }) c.Add(new(pt.X + dx, y));
+            secAt[id] = Pick(sz, c);
+        }
+    }
+
+    /// <summary>Остряк стрелки: начало ветки, ближайшее к подписи (у съезда веток несколько).</summary>
+    PointF SwitchPoint(string swId, PointF near)
+    {
+        PointF best = near; float bd = float.MaxValue;
+        foreach (var p in G.Pieces)
+        {
+            if (p.SwitchId != swId || p.Pts.Length == 0) continue;
+            var q = p.PointAtStart ? p.Pts[0] : p.Pts[^1];
+            float d = (q.X - near.X) * (q.X - near.X) + (q.Y - near.Y) * (q.Y - near.Y);
+            if (d < bd) { bd = d; best = q; }
+        }
+        return best;
+    }
+
+    /// <summary>Первое место без перекрытий; нет такого — с самым малым. Выбранное место становится препятствием.</summary>
+    PointF Pick(SizeF sz, List<PointF> cands)
+    {
+        PointF best = cands[0];
+        float bestCost = float.MaxValue;
+        foreach (var c in cands)
+        {
+            float k = LabelCost(Around(c, sz));
+            if (k < bestCost) { bestCost = k; best = c; }
+            if (k <= 0) break;
+        }
+        lblBoxes.Add(Around(best, sz));
+        return best;
+    }
+
+    float LabelCost(RectangleF r)
+    {
+        float cost = 0;
+        foreach (var b in lblBoxes)
+            if (r.IntersectsWith(b)) { var i = RectangleF.Intersect(r, b); cost += 20 + i.Width * i.Height; }
+        var thick = RectangleF.Inflate(r, 3.5f, 3.5f);   // пол-толщины пути и зазор
+        foreach (var (a, b) in lblSegs)
+            if (SegHitsRect(a, b, thick)) cost += 400;
+        if (r.Left < 0 || r.Top < 0 || r.Right > G.DesignW || r.Bottom > G.DesignH) cost += 100;
+        return cost;
+    }
+
+    /// <summary>Отрезок задевает прямоугольник (отсечение Лианга — Барски).</summary>
+    static bool SegHitsRect(PointF a, PointF b, RectangleF r)
+    {
+        float t0 = 0, t1 = 1, dx = b.X - a.X, dy = b.Y - a.Y;
+        bool Clip(float p, float q)
+        {
+            if (p == 0) return q >= 0;
+            float t = q / p;
+            if (p < 0) { if (t > t1) return false; if (t > t0) t0 = t; }
+            else { if (t < t0) return false; if (t < t1) t1 = t; }
+            return true;
+        }
+        return Clip(-dx, a.X - r.Left) && Clip(dx, r.Right - a.X) && Clip(-dy, a.Y - r.Top) && Clip(dy, r.Bottom - a.Y);
+    }
+
     // ---------------------- светофоры ----------------------
     (PointF lamp0, float dir, float lampY) LampBase(SignalGeom sg)
     {
         float dir = sg.LampsToLeft ? -1 : 1;
+        if (sigFlip.Contains(sg.SignalId)) dir = -dir;   // [23.11.2026] огни легли бы на соседний путь — по другую сторону мачты
         float y = sg.Foot.Y + (sg.Above ? -StandH : StandH);
         return (new PointF(sg.Foot.X + dir * 14, y), dir, y);
     }
@@ -731,7 +948,8 @@ class RailSchemePanel : Panel
                 ? Color.FromArgb(255, 255, 160) : Dimmed;
         if (s.Kind == SignalKind.Automatic && s.Aspect == Aspect.Dark) tc = Dimmed;
         using var tb = new SolidBrush(tc);
-        var font = s.Kind == SignalKind.Automatic || s.IsShuntOnly ? fSigSmall : fSig;
+        var font = SigFont(s);
+        if (sigAt.TryGetValue(sg.SignalId, out var lp)) (cx, ly) = (lp.X, lp.Y);   // [23.11.2026] место, свободное от путей
         g.DrawString(s.Label + sg.Suffix, font, tb, cx, ly, center);
     }
 
@@ -806,15 +1024,18 @@ class RailSchemePanel : Panel
     RailSignal SignalAt(PointF p)
     {
         foreach (var sg in G.Signals)
-            if (SignalRect(sg).Contains(p)) return IL.Signals[sg.SignalId];
+            if (SignalRect(sg).Contains(p) || (sigBox.TryGetValue(sg.SignalId, out var lb) && lb.Contains(p))) return IL.Signals[sg.SignalId];
         return null;
     }
 
     RailSwitch SwitchAt(PointF p)
     {
-        foreach (var (_, (pt, swId)) in G.SwitchLabels)
+        foreach (var (label, (pt0, swId)) in G.SwitchLabels)
+        {
+            var pt = swAt.TryGetValue(label, out var q) ? q : pt0;   // [23.11.2026] подпись могла переехать
             if (Math.Abs(p.X - pt.X) < 18 && Math.Abs(p.Y - pt.Y) < 13)
                 return IL.Switches[swId];
+        }
         return null;
     }
 

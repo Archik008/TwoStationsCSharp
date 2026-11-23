@@ -529,7 +529,8 @@ public static class Renderer
     /// [ИЗМЕНЕНО 05.11.2026] огни по показанию (мигающие мигают), мачта заградительного — в чёрно-белые полосы,
     /// у повторительного одна, у предупредительного две поперечные черты на мачте.</summary>
     public static void DrawSignal(Graphics g, Tile t, Signal sig, float x, float y, float cs,
-        Aspect aspect = null, bool label = true, bool ring = false, Color? ringColor = null, int alpha = 255, bool? diamond = null)
+        Aspect aspect = null, bool label = true, bool ring = false, Color? ringColor = null, int alpha = 255, bool? diamond = null,
+        PointF? labelAt = null)
     {
         // огонь ромбом: по умолчанию — заградительный и повторительный; предупредительный к заградительному
         // зависит от схемы (что впереди), поэтому его передаёт Render (Aspects.IsDiamond)
@@ -707,7 +708,8 @@ public static class Renderer
             using var tb = new SolidBrush(A(named ? Pal.Text : Pal.Bad, alpha));
             // [ДОБАВЛЕНО 09.11.2026] «только чтение» (показание с другой станции) — значок ↔ у имени
             var text = (named ? sig.Name : "?") + (sig.IsReadOnly ? " ↔" : "");
-            g.DrawString(text, GetFont(cs * 0.27f, true), tb, gm.Label, Center);
+            // [ИЗМЕНЕНО 23.11.2026] labelAt — место, свободное от путей и огней (PlaceLabels); у повёрнутого — как было
+            g.DrawString(text, GetFont(cs * 0.27f, true), tb, labelAt != null && gm.Angle == 0 ? labelAt.Value : gm.Label, Center);
         }
         if (ring)
         {
@@ -775,6 +777,212 @@ public static class Renderer
                 g.DrawLine(rp, p.X + dx * r1 * k, p.Y + dy * r1 * k, p.X + dx * r2 * k, p.Y + dy * r2 * k);
             }
         }
+    }
+
+    // =================================================================
+    //  [ДОБАВЛЕНО 23.11.2026] РАССТАНОВКА ПОДПИСЕЙ — как на ручной схеме Алгабаса и в «Станции по схеме»
+    //  (SchemePanel.PlaceLabels): подпись по клетке налезала на огни светофора соседней клетки, на путь и на другую
+    //  подпись. Каждая подпись пробует места от лучшего (обычное место) к запасным — сдвиг вдоль пути, по другую
+    //  сторону пути, дальше от огней, сбоку от огней — и берёт первое свободное (нет — где перекрытие меньше).
+    //  Порядок: светофоры → стрелки → ТП → участки; поставленная подпись — препятствие для следующих.
+    //  Ничего в схеме не меняется — только где рисуется текст. Повёрнутые светофоры (вдоль наклонного пути) — как были.
+    // =================================================================
+    public sealed class LabelLayout
+    {
+        public readonly Dictionary<string, PointF> Sw = new(), Brk = new(), Sec = new(), Sig = new();
+        internal readonly List<RectangleF> Boxes = new();
+        internal readonly List<(PointF A, PointF B)> Segs = new();
+    }
+
+    static SizeF TextBox(string text, Font f)
+    {
+        var sz = measure.MeasureString(text, f, PointF.Empty, StringFormat.GenericTypographic);
+        return new SizeF(sz.Width + 4, f.Size * 0.82f + 2);    // шрифт в пикселях; высота — буквы, без межстрочного
+    }
+
+    static RectangleF Around(PointF c, SizeF sz) => new(c.X - sz.Width / 2, c.Y - sz.Height / 2, sz.Width, sz.Height);
+
+    static LabelLayout PlaceLabels(Station st, List<(string K, int X, int Y, Tile T)> entries, float ox, float oy, float cs, float zoom,
+                                   HashSet<string> gapSecs)
+    {
+        var L = new LabelLayout();
+        float SX(float gx) => ox + gx * cs;
+        float SY(float gy) => oy + gy * cs;
+
+        // ---- препятствия: пути, огни, объекты, надписи ----
+        foreach (var e in entries)
+        {
+            float x = SX(e.X), y = SY(e.Y);
+            var c = new PointF(x + cs / 2, y + cs / 2);
+            foreach (var ed in Core.EdgesOf(e.T))
+            {
+                var pa = Pnt(x, y, cs, ed.A);
+                if (ed.B == null)
+                {
+                    L.Segs.Add((pa, c));
+                    if (e.T.T == "exit") L.Segs.Add((c, Pnt(x, y, cs, Core.Opp[ed.A])));
+                    else L.Boxes.Add(new RectangleF(c.X - cs * 0.08f, c.Y - cs * 0.3f, cs * 0.16f, cs * 0.6f));   // упор
+                    continue;
+                }
+                var pb = Pnt(x, y, cs, ed.B);
+                if (Core.Opp[ed.A] == ed.B) L.Segs.Add((pa, pb));
+                else { L.Segs.Add((pa, c)); L.Segs.Add((c, pb)); }
+            }
+        }
+        foreach (var (k, o) in st.Objects)
+        {
+            var (bx, by) = Core.Parse(k);
+            L.Boxes.Add(new RectangleF(SX(bx), SY(by), o.W * cs, o.H * cs));
+        }
+        foreach (var (k, tx) in st.Texts)
+        {
+            var (x, y) = Core.Parse(k);
+            var sz = TextBox(tx.Text ?? "", GetFont(Math.Max(6, (float)Math.Round((tx.Size > 0 ? tx.Size : 14) * zoom)), true));
+            L.Boxes.Add(new RectangleF(SX(x) + 3, SY(y) + cs / 2 - sz.Height / 2, sz.Width, sz.Height));
+        }
+        foreach (var l in st.Labels) L.Boxes.Add(LabelRect(l, ox, oy, cs, zoom));
+
+        var sigs = new List<(string Key, SigGeom Gm, string Text)>();
+        foreach (var e in entries)
+        {
+            if (!e.T.HasSigs) continue;
+            for (int i = 0; i < e.T.Sigs.Count; i++)
+            {
+                var sig = e.T.Sigs[i];
+                var gm = GetSigGeom(e.T, sig, SX(e.X), SY(e.Y), cs,
+                    Aspects.IsDiamond(st, new SignalEntry { Key = e.K, Idx = i, Sig = sig, Tile = e.T }));
+                if (gm.Angle != 0)
+                {
+                    // повёрнутый — весь (с подписью) препятствие: углы прямоугольника после поворота
+                    double a = gm.Angle * Math.PI / 180, ca = Math.Cos(a), sa = Math.Sin(a);
+                    var pts = new[] { new PointF(gm.Box.Left, gm.Box.Top), new PointF(gm.Box.Right, gm.Box.Top), new PointF(gm.Box.Left, gm.Box.Bottom), new PointF(gm.Box.Right, gm.Box.Bottom) }
+                        .Select(p => new PointF((float)(gm.Ax + (p.X - gm.Ax) * ca - (p.Y - gm.Ay) * sa), (float)(gm.Ay + (p.X - gm.Ax) * sa + (p.Y - gm.Ay) * ca))).ToList();
+                    L.Boxes.Add(RectangleF.FromLTRB(pts.Min(p => p.X), pts.Min(p => p.Y), pts.Max(p => p.X), pts.Max(p => p.Y)));
+                    continue;
+                }
+                float r = gm.R * 1.3f;
+                foreach (var lp in gm.Lamps) L.Boxes.Add(new RectangleF(lp.X - r, lp.Y - r, 2 * r, 2 * r));
+                L.Segs.Add((new PointF(gm.Ax, gm.Ay), new PointF(gm.Ax, gm.Sy)));   // мачта / основание
+                sigs.Add((e.K + "#" + i, gm, (string.IsNullOrEmpty(sig.Name) ? "?" : sig.Name) + (sig.IsReadOnly ? " ↔" : "")));
+            }
+        }
+
+        // ---- светофоры: обычное место (за огнями), сдвиг, дальше, сбоку от огней ----
+        var fSig = GetFont(cs * 0.27f, true);
+        foreach (var (key, gm, text) in sigs)
+        {
+            var sz = TextBox(text, fSig);
+            var c = new List<PointF> { gm.Label };
+            float step = cs * 0.15f;
+            foreach (var dx in new[] { step, -step, 2 * step, -2 * step }) c.Add(new(gm.Label.X + dx, gm.Label.Y));
+            if (gm.Lamps.Length > 0)
+            {
+                var last = gm.Lamps[^1];
+                float far = gm.Fwd > 0 ? gm.Lamps.Max(p => p.X) + gm.R : gm.Lamps.Min(p => p.X) - gm.R;
+                c.Add(new(far + gm.Fwd * (sz.Width / 2 + 3), last.Y));                                            // за последним огнём
+                c.Add(new(gm.Ax - gm.Fwd * (sz.Width / 2 + 4), gm.Lamps[0].Y));                                   // у мачты
+            }
+            foreach (var k in new[] { 1f, 2f, 3f })
+                foreach (var dx in new[] { 0f, step, -step, 2 * step, -2 * step })
+                    c.Add(new(gm.Label.X + dx, gm.Label.Y + gm.Side * k * cs * 0.13f));
+            L.Sig[key] = Pick(L, sz, c);
+        }
+
+        // ---- стрелки: у остряка по сторону, где нет отклонения; сдвиг вдоль пути; по другую сторону; дальше ----
+        var fSw = GetFont(cs * 0.3f, true);
+        foreach (var e in entries)
+        {
+            if (e.T.T != "switch") continue;
+            var lp = SwitchLabelPos(e.T, SX(e.X), SY(e.Y), cs);
+            var sz = TextBox(string.IsNullOrEmpty(e.T.Name) ? "?" : e.T.Name, fSw);
+            float cy = SY(e.Y) + cs / 2, side = lp.Y < cy ? -1 : 1, dy0 = Math.Max(Math.Abs(lp.Y - cy), sz.Height / 2 + 4);
+            var c = new List<PointF>();
+            foreach (var (sgn, dy) in new[] { (side, dy0), (-side, dy0), (side, dy0 + cs * 0.2f), (-side, dy0 + cs * 0.2f), (side, dy0 + cs * 0.4f) })
+                foreach (var dx in new[] { 0f, -0.15f, 0.15f, -0.3f, 0.3f, -0.45f, 0.45f, -0.65f, 0.65f })
+                    c.Add(new(lp.X + dx * cs, cy + sgn * dy));
+            L.Sw[e.K] = Pick(L, sz, c);
+        }
+
+        // ---- тормозные позиции: сбоку от полосы, с любой стороны ----
+        var fBrk = GetFont(cs * 0.24f, true);
+        var brk = new HashSet<string>(Core.BrakeLabelTiles(st));
+        foreach (var e in entries)
+        {
+            if (!brk.Contains(e.K)) continue;
+            var bp = BrakeLabelPos(e.T, SX(e.X), SY(e.Y), cs);
+            var ctr = new PointF(SX(e.X) + cs / 2, SY(e.Y) + cs / 2);
+            float vx = bp.X - ctr.X, vy = bp.Y - ctr.Y;
+            var c = new List<PointF>();
+            foreach (var k in new[] { 1f, -1f, 1.35f, -1.35f, 1.7f, -1.7f }) c.Add(new(ctr.X + vx * k, ctr.Y + vy * k));
+            L.Brk[e.K] = Pick(L, TextBox(e.T.Brk.Label ?? "", fBrk), c);
+        }
+
+        // ---- участки (галочка «Подписи участков и путей»): у средней клетки, под / над путём, соседние клетки ----
+        if (st.SecLabels == true)
+        {
+            var fSec = GetFont(cs * 0.26f, false);
+            var visible = new HashSet<string>(entries.Select(e => e.K));
+            foreach (var (sec, keys) in Core.TilesBySection(st))
+            {
+                if (gapSecs.Contains(sec)) continue;
+                var flat = keys.Where(k => { var t = st.Tiles[k]; return (t.T == "straight" && t.V == 0) || t.T == "crossing"; }).ToList();
+                var pool = (flat.Count > 0 ? flat : keys).Select(Core.Parse).OrderBy(p => p.X).ThenBy(p => p.Y).ToList();
+                int mid = (pool.Count - 1) / 2;
+                if (!visible.Contains(Core.Key(pool[mid].X, pool[mid].Y))) continue;
+                var c = new List<PointF>();
+                foreach (var d in new[] { 0, -1, 1, -2, 2, -3, 3 })
+                {
+                    int i = mid + d;
+                    if (i < 0 || i >= pool.Count) continue;
+                    var (x, y) = pool[i];
+                    c.Add(new(SX(x) + cs / 2, SY(y) + cs * 0.88f));
+                    c.Add(new(SX(x) + cs / 2, SY(y) + cs * 0.12f));
+                }
+                // как раньше: первое — под средней клеткой; если занято — над ней, потом соседние клетки
+                L.Sec[sec] = Pick(L, TextBox(sec, fSec), c);
+            }
+        }
+        return L;
+    }
+
+    static PointF Pick(LabelLayout L, SizeF sz, List<PointF> cands)
+    {
+        PointF best = cands[0];
+        float bestCost = float.MaxValue;
+        foreach (var c in cands)
+        {
+            float k = LabelCost(L, Around(c, sz));
+            if (k < bestCost) { bestCost = k; best = c; }
+            if (k <= 0) break;
+        }
+        L.Boxes.Add(Around(best, sz));
+        return best;
+    }
+
+    static float LabelCost(LabelLayout L, RectangleF r)
+    {
+        float cost = 0;
+        foreach (var b in L.Boxes)
+            if (r.IntersectsWith(b)) { var i = RectangleF.Intersect(r, b); cost += 20 + i.Width * i.Height; }
+        var thick = RectangleF.Inflate(r, 3f, 3f);   // пол-толщины пути и зазор
+        foreach (var (a, b) in L.Segs)
+            if (SegHitsRect(a, b, thick)) cost += 400;
+        return cost;
+    }
+
+    /// <summary>Отрезок задевает прямоугольник (отсечение Лианга — Барски).</summary>
+    static bool SegHitsRect(PointF a, PointF b, RectangleF r)
+    {
+        float t0 = 0, t1 = 1, dx = b.X - a.X, dy = b.Y - a.Y;
+        bool Clip(float p, float q)
+        {
+            if (p == 0) return q >= 0;
+            float t = q / p;
+            if (p < 0) { if (t > t1) return false; if (t > t0) t0 = t; }
+            else { if (t < t0) return false; if (t < t1) t1 = t; }
+            return true;
+        }
+        return Clip(-dx, a.X - r.Left) && Clip(dx, r.Right - a.X) && Clip(-dy, a.Y - r.Top) && Clip(dy, r.Bottom - a.Y);
     }
 
     /// <summary>Где написать номер стрелки: с той стороны, куда НЕ уходит отклонение.</summary>
@@ -1097,6 +1305,10 @@ public static class Renderer
             }
         }
 
+        // ---- [ДОБАВЛЕНО 23.11.2026] где писать подписи, чтобы не налезали на пути, огни и друг на друга ----
+        var lay = cs >= 14 ? PlaceLabels(st, entries.Where(e => !IsHidden(e.K)).ToList(), ox, oy, cs, ui.Cam.Z,
+                                           new HashSet<string>(gaps.Select(gp => gp.Sec))) : null;
+
         // ---- номера стрелок ----
         if (cs >= 14)
         {
@@ -1106,7 +1318,7 @@ public static class Renderer
             foreach (var e in entries)
             {
                 if (e.T.T != "switch" || IsHidden(e.K)) continue;
-                var lp = SwitchLabelPos(e.T, SX(e.X), SY(e.Y), cs);
+                var lp = lay != null && lay.Sw.TryGetValue(e.K, out var q) ? q : SwitchLabelPos(e.T, SX(e.X), SY(e.Y), cs);
                 bool named = !string.IsNullOrEmpty(e.T.Name);
                 g.DrawString(named ? e.T.Name : "?", f, named ? bt : bb, lp, Center);
             }
@@ -1123,7 +1335,7 @@ public static class Renderer
                 if (IsHidden(k) || !st.Tiles.TryGetValue(k, out var t)) continue;
                 var (x, y) = Core.Parse(k);
                 if (!Visible(x, y)) continue;
-                g.DrawString(t.Brk.Label, f, bt, BrakeLabelPos(t, SX(x), SY(y), cs), Center);
+                g.DrawString(t.Brk.Label, f, bt, lay != null && lay.Brk.TryGetValue(k, out var q) ? q : BrakeLabelPos(t, SX(x), SY(y), cs), Center);
             }
         }
 
@@ -1149,7 +1361,7 @@ public static class Renderer
                 var pool = (flat.Count > 0 ? flat : keys).Select(Core.Parse).OrderBy(p => p.X).ThenBy(p => p.Y).ToList();
                 var (x, y) = pool[(pool.Count - 1) / 2];
                 if (!Visible(x, y)) continue;
-                g.DrawString(sec, f, b, new PointF(SX(x) + cs / 2, SY(y) + cs * 0.88f), Center);
+                g.DrawString(sec, f, b, lay != null && lay.Sec.TryGetValue(sec, out var q) ? q : new PointF(SX(x) + cs / 2, SY(y) + cs * 0.88f), Center);
             }
         }
 
@@ -1178,7 +1390,8 @@ public static class Renderer
                     aspect: test && T.Aspects.TryGetValue(e.K + "#" + i, out var asp) ? asp : null,
                     ring: selected || pending,
                     ringColor: pending ? Color.White : Pal.Sel,
-                    diamond: Aspects.IsDiamond(st, new SignalEntry { Key = e.K, Idx = i, Sig = e.T.Sigs[i], Tile = e.T }));
+                    diamond: Aspects.IsDiamond(st, new SignalEntry { Key = e.K, Idx = i, Sig = e.T.Sigs[i], Tile = e.T }),
+                    labelAt: lay != null && lay.Sig.TryGetValue(e.K + "#" + i, out var lp) ? lp : null);
             }
         }
 

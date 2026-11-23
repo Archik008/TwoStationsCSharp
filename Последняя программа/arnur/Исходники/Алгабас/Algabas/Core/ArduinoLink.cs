@@ -117,7 +117,7 @@ public static class ArduinoLink
             // не принимают команды — тогда "Датчики: данных нет" и зависшие записи в порт.
             port = new SerialPort(name, BaudRate)
             {
-                NewLine = "\n", WriteTimeout = 1000, ReadTimeout = 500, Encoding = Encoding.ASCII,
+                NewLine = "\n", WriteTimeout = 1000, ReadTimeout = 500, Encoding = Encoding.UTF8,   // [ИЗМЕНЕНО 23.11.2026] русские сообщения прошивки — не «????» (команды и так байтами)
                 DtrEnable = true, RtsEnable = true, Handshake = Handshake.None
             };
             port.DataReceived += OnData;
@@ -128,11 +128,13 @@ public static class ArduinoLink
             rxRepeat = 0;
             lastRxAt = DateTime.MinValue;
             StartWriter(port);
+            ArduinoLog.Event($"ПОДКЛЮЧЕНО {name}, {BaudRate} бод, кадр ламп {FrameBytes} байт");   // [ДОБАВЛЕНО 23.11.2026] журнал в «Логи Arduino»
             Say($"Arduino: подключено к {name}. Плата перезагружается ~2 с, команды подождут.");
         }
         catch (Exception ex)
         {
             port = null;
+            ArduinoLog.Event($"ОШИБКА открытия {name}: {ex.Message}");
             Say("Arduino: ошибка порта — " + ex.Message);
         }
         StatusChanged?.Invoke();
@@ -154,6 +156,8 @@ public static class ArduinoLink
         pending.Clear();
         LastDataLine = null;
         LastOccLine = null;
+        ArduinoLog.Event("ОТКЛЮЧЕНО");
+        ArduinoLog.Close();
         Say("Arduino: отключено");
         StatusChanged?.Invoke();
     }
@@ -170,6 +174,7 @@ public static class ArduinoLink
     static void Write(string cmd)
     {
         Enqueue(Encoding.ASCII.GetBytes(cmd));
+        ArduinoLog.Tx(cmd.Trim());
         Say("TX: " + cmd.Trim());
     }
 
@@ -202,6 +207,7 @@ public static class ArduinoLink
                                 ? " От платы не пришло ни одной строки — скорее всего выбран НЕ ТОТ COM-порт " +
                                   "(например, Bluetooth). Посмотрите подпись порта в списке или Диспетчер устройств → «Порты (COM и LPT)»."
                                 : " Проверьте кабель и прошивку.";
+                            ArduinoLog.Event("ОШИБКА записи в порт: " + ex.Message);
                             Post(() => Say("Arduino: плата не принимает данные (" + ex.Message + ")." + hint));
                         }
                     }
@@ -233,6 +239,7 @@ public static class ArduinoLink
         Array.Copy(frame, 0, packet, 1, frame.Length);
         if (Enqueue(packet))
         {
+            if (!same) ArduinoLog.Tx("L " + BitConverter.ToString(frame).Replace("-", " "));   // кадр ламп — только когда поменялся
             lastFrame = frame;
             lastSent = DateTime.Now;
         }
@@ -275,6 +282,7 @@ public static class ArduinoLink
     static void HandleLine(string line)
     {
         if (line.Length == 0) return;
+        ArduinoLog.Rx(line);   // [ДОБАВЛЕНО 23.11.2026] всё, что прислала плата, — в «Логи Arduino»
         if (line.StartsWith("Occ:"))
         {
             var occ = ParseOcc(line);

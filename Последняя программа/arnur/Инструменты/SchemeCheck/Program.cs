@@ -21,9 +21,9 @@ static class Program
     {
         Console.OutputEncoding = System.Text.Encoding.UTF8;
         bool verbose = args.Contains("-v");
-        // снимок окна: --shot файл.station.json снимок.png "маршрут1;маршрут2"
+        // снимок окна: --shot файл.station.json снимок.png "маршрут1;маршрут2" [ширина высота]
         int si = Array.IndexOf(args, "--shot");
-        if (si >= 0) { Shot(args[si + 1], args[si + 2], args.Length > si + 3 ? args[si + 3] : ""); return; }
+        if (si >= 0) { Shot(args[si + 1], args[si + 2], args.Length > si + 3 ? args[si + 3] : "", args.Length > si + 5 ? new Size(int.Parse(args[si + 4]), int.Parse(args[si + 5])) : new Size(1600, 950)); return; }
         var files = args.Where(File.Exists).ToList();
         if (files.Count == 0)
         {
@@ -128,7 +128,7 @@ static class Program
         }
     }
 
-    static void Shot(string file, string png, string routes)
+    static void Shot(string file, string png, string routes, Size size)   // [23.11.2026] + размер окна
     {
         Application.EnableVisualStyles();
         ModelHost.Start(file);
@@ -141,7 +141,7 @@ static class Program
             il.SetRoute(r);
         }
         for (int i = 0; i < 60; i++) il.Tick(0.1);
-        var f = new Ui.SchemeStationForm { StartPosition = FormStartPosition.Manual, Bounds = new Rectangle(-5000, 0, 1600, 950), ShowInTaskbar = false, WindowState = FormWindowState.Normal };
+        var f = new Ui.SchemeStationForm { StartPosition = FormStartPosition.Manual, Bounds = new Rectangle(-5000, 0, size.Width, size.Height), ShowInTaskbar = false, WindowState = FormWindowState.Normal };
         f.Show();
         for (int i = 0; i < 20; i++) { Application.DoEvents(); Thread.Sleep(30); }
         using var bmp = new Bitmap(f.Width, f.Height);
