@@ -181,6 +181,7 @@ class RailSchemePanel : Panel
         g.SmoothingMode = SmoothingMode.AntiAlias;
         g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
         UpdateTransform();
+        UpdateTargets();
 
         var st = g.Save();
         g.TranslateTransform(off.X, off.Y);
@@ -290,6 +291,29 @@ class RailSchemePanel : Panel
         }
     }
 
+    // [ДОБАВЛЕНО 23.11.2026] Набор маршрута: нажат светофор начала — всё, куда можно кликнуть вторым (светофоры конца
+    // и пути назначения маршрутов от него, поездных и маневровых), мигает зелёным, чтобы было заметно (просьба Мади)
+    static readonly Color TargetColor = Color.FromArgb(40, 230, 90);
+    RailSignal targetsOf;
+    readonly HashSet<string> targetSecs = new();
+    readonly HashSet<RailSignal> targetSigs = new();
+    bool TargetBlink => selected != null && Blink;
+
+    void UpdateTargets()
+    {
+        if (targetsOf == selected) return;
+        targetsOf = selected;
+        targetSecs.Clear();
+        targetSigs.Clear();
+        if (selected == null) return;
+        foreach (var r in IL.Routes)
+        {
+            if (r.Start != selected) continue;
+            if (r.End != null) targetSigs.Add(r.End);
+            if (r.Dest != null) targetSecs.Add(r.Dest.Id);
+        }
+    }
+
     // ---------------------- пути ----------------------
     // [ИЗМЕНЕНО 20.10.2026] setting — маршрут устанавливается, светофор ещё не открылся: мигает (как в Python TrainSt)
     Color PieceColor(TrackPiece p, out bool releasing, out bool setting)
@@ -297,6 +321,7 @@ class RailSchemePanel : Panel
         releasing = false;
         setting = false;
         var sec = IL.Sections[p.SectionId];
+        if (TargetBlink && targetSecs.Contains(p.SectionId)) return TargetColor;   // [23.11.2026] путь назначения — можно кликнуть
         if (sec.Occupied) return OccColor;
         foreach (var r in IL.ActiveRoutes)
         {
@@ -531,6 +556,11 @@ class RailSchemePanel : Panel
         }
 
         var rect = SignalRect(sg);
+        if (TargetBlink && targetSigs.Contains(s))   // [23.11.2026] светофор конца — можно кликнуть
+        {
+            using var tp = new Pen(TargetColor, 2.5f);
+            g.DrawRectangle(tp, rect.X, rect.Y, rect.Width, rect.Height);
+        }
         if (selected == s && Blink)
         {
             using var hp = new Pen(Color.White, 2f) { DashStyle = DashStyle.Dash };
@@ -542,7 +572,7 @@ class RailSchemePanel : Panel
         float ly = sg.Above ? y - 22 : y + 22;
         Color tc = Color.White;
         if (selected != null && selected != s)
-            tc = IL.Routes.Any(r => r.Start == selected && r.End == s) ? Color.FromArgb(255, 255, 160) : Dimmed;
+            tc = targetSigs.Contains(s) ? (Blink ? TargetColor : Color.White) : Dimmed;   // [23.11.2026] мигает зелёным (было светло-жёлтым)
         if (s.Kind == SignalKind.Automatic && s.Aspect == Aspect.Dark) tc = Dimmed;
         using var tb = new SolidBrush(tc);
         var font = s.Kind == SignalKind.Automatic || s.IsShuntOnly ? fSigSmall : fSig;
