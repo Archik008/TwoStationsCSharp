@@ -3,8 +3,6 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
-	"log"
 	"maps"
 	"regexp"
 	"slices"
@@ -100,8 +98,8 @@ func (h *Hub) Register(c *Client, name string) {
 		h.stations[c.station] = st
 	}
 	if old := st.client; old != nil && old != c {
-		log.Printf("[%s] новое подключение с %s — старое (%s) закрыто", c.station, c.addr, old.addr)
-		old.Kick("станция подключилась заново с " + c.addr)
+		logf("[%s] новое подключение с %s — старое (%s) закрыто", c.station, c.addr, old.addr)
+		old.Kick(Tf("станция подключилась заново с %s", c.addr))
 	}
 	st.client = c
 	st.Name = name
@@ -118,7 +116,7 @@ func (h *Hub) Register(c *Client, name string) {
 		}
 	}
 	h.broadcastLocked(st)
-	log.Printf("[%s] подключена: %q с %s", c.station, name, c.addr)
+	logf("[%s] подключена: %q с %s", c.station, name, c.addr)
 }
 
 // Unregister — подключение закрылось. Если станция уже переподключилась новым соединением — ничего не делаем.
@@ -135,7 +133,7 @@ func (h *Hub) Unregister(c *Client, reason string) {
 	st.Since = time.Now()
 	st.clearLocked() // состояние отключившейся станции больше не действительно
 	h.broadcastLocked(st)
-	log.Printf("[%s] отключена (%s)", c.station, reason)
+	logf("[%s] отключена (%s)", c.station, reason)
 }
 
 // UpdateState — новый полный снимок состояния станции (показания и направления перегонов).
@@ -155,14 +153,14 @@ func (h *Hub) UpdateState(c *Client, signals map[string]string, lines map[string
 	if *verbose {
 		for id, l := range lines {
 			if old, ok := st.Lines[id]; !ok || old != l {
-				log.Printf("[%s] перегон %s: направление %s (версия %d)", c.station, id, l.Dir, l.Ver)
+				logf("[%s] перегон %s: направление %s (версия %d)", c.station, id, l.Dir, l.Ver)
 			}
 		}
 		if !maps.Equal(st.Signals, signals) {
-			log.Printf("[%s] показания: %s", c.station, formatSignals(signals))
+			logf("[%s] показания: %s", c.station, formatSignals(signals))
 		}
 		if !maps.Equal(st.Sections, sections) {
-			log.Printf("[%s] занятость: %s", c.station, formatSections(sections))
+			logf("[%s] занятость: %s", c.station, formatSections(sections))
 		}
 	}
 	st.Signals = maps.Clone(signals)
@@ -180,11 +178,11 @@ func (h *Hub) Forward(c *Client, to string, data json.RawMessage) error {
 
 	st := h.stations[to]
 	if st == nil || st.client == nil {
-		return fmt.Errorf("станции %q нет на связи — сообщение не доставлено", to)
+		return errf("станции %q нет на связи — сообщение не доставлено", to)
 	}
 	st.client.SendJSON(EventMessage{Type: TypeEvent, From: c.station, Data: data})
 	if *verbose {
-		log.Printf("[%s] → [%s]: %s", c.station, to, data)
+		logf("[%s] → [%s]: %s", c.station, to, data)
 	}
 	return nil
 }
@@ -194,7 +192,7 @@ func (h *Hub) broadcastLocked(st *stationState) {
 	msg := st.message()
 	data, err := json.Marshal(msg)
 	if err != nil {
-		log.Printf("ошибка JSON: %v", err)
+		logf("ошибка JSON: %v", err)
 		return
 	}
 	for id, other := range h.stations {
@@ -270,7 +268,7 @@ func formatLines(lines map[string]LineState) string {
 		if lines[k].Dir == "Left" {
 			arrow = "←"
 		}
-		s += fmt.Sprintf("%s %s (в.%d)", k, arrow, lines[k].Ver)
+		s += Tf("%s %s (в.%d)", k, arrow, lines[k].Ver)
 	}
 	return s
 }
@@ -285,9 +283,9 @@ func formatSections(sec map[string]bool) string {
 			s += "   "
 		}
 		if sec[k] {
-			s += k + ": ЗАНЯТ"
+			s += k + T(": ЗАНЯТ")
 		} else {
-			s += k + ": свободен"
+			s += k + T(": свободен")
 		}
 	}
 	return s

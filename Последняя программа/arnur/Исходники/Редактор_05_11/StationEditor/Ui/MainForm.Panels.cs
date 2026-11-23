@@ -128,8 +128,8 @@ public sealed partial class MainForm
         return f;
     }
 
-    Label H3(Control f, int w, string text) => AddTo(f, new Label
-    { Text = text, AutoSize = true, MaximumSize = new Size(w, 0), Font = FH3, ForeColor = CText, Margin = new Padding(0, S(2), 0, S(6)) });
+    Label H3(Control f, int w, string text, object tag = null) => AddTo(f, new Label
+    { Tag = tag, Text = text, AutoSize = true, MaximumSize = new Size(w, 0), Font = FH3, ForeColor = CText, Margin = new Padding(0, S(2), 0, S(6)) });
 
     Label H4(Control f, int w, string text) => AddTo(f, new Label
     { Text = text, AutoSize = true, MaximumSize = new Size(w, 0), Font = FH4, ForeColor = CText, Margin = new Padding(0, S(10), 0, S(4)) });
@@ -425,10 +425,11 @@ public sealed partial class MainForm
                 bp.Width = w;
                 bp.SelectedIndexChanged += (_, _) => { if (int.TryParse(OptV(bp), out var p)) ui.BrakePos = p; };
             }
-            Hint(optsPanel, w, $"{T.Hint}. Щелчок или протягивание — поставить, R / Shift+R — повернуть." +
-                (ui.PlaceType is "straight" or "brake" ? " Путь сам ложится по направлению протягивания: ─ ╱ ╲." : "") +
-                (ui.PlaceType == "brake" ? " Каждый кубик — один замедлитель; подряд стоящие с одной подписью подписываются один раз. " +
-                    "Изостыки между замедлителями — разными участками (кисть)." : "")).Margin = new Padding(0, S(6), 0, 0);
+            // [ИЗМЕНЕНО 23.11.2026] куски склеиваются уже переведёнными — склейку целиком словарь не узнаёт
+            Hint(optsPanel, w, StationApp.Core.L.F("{0}. Щелчок или протягивание — поставить, R / Shift+R — повернуть.", StationApp.Core.L.T(T.Hint)) +
+                (ui.PlaceType is "straight" or "brake" ? StationApp.Core.L.T(" Путь сам ложится по направлению протягивания: ─ ╱ ╲.") : "") +
+                (ui.PlaceType == "brake" ? StationApp.Core.L.T(" Каждый кубик — один замедлитель; подряд стоящие с одной подписью подписываются один раз. " +
+                    "Изостыки между замедлителями — разными участками (кисть).") : "")).Margin = new Padding(0, S(6), 0, 0);
         }
         else if (ui.Tool == "brush")
         {
@@ -523,7 +524,8 @@ public sealed partial class MainForm
             "sign" => $"Знак «{Core.SignTypeName(ui.SignType)}»: щелчок по пути — поставить / убрать",
             _ => "",
         };
-        sHint.Text = hint + " · колесо — масштаб, средняя кнопка или пробел+мышь — сдвинуть схему";
+        // [ИЗМЕНЕНО 23.11.2026] куски — переведёнными (склейку целиком словарь не узнаёт)
+        sHint.Text = StationApp.Core.L.T(hint) + StationApp.Core.L.T(" · колесо — масштаб, средняя кнопка или пробел+мышь — сдвинуть схему");
         Draw();
     }
 
@@ -550,7 +552,7 @@ public sealed partial class MainForm
         }
         if (ui.Sel.Count == 0)
         {
-            H3(f, w, st.Name);
+            H3(f, w, st.Name, "nolang");   // [ИЗМЕНЕНО 23.11.2026] название станции — данные, не переводится
             Hint(f, w, "Ничего не выбрано. Инструментом «Выбор» (V) щёлкните по клетке или светофору.");
             // [ДОБАВЛЕНО 11.11.2026] авто-текст: подписи участков и путей (1П, 3П, 1СП…) — по умолчанию выключены
             var secLbl = new CheckBox { Text = "Подписи участков и путей (авто-текст)", Checked = st.SecLabels == true, AutoSize = true,

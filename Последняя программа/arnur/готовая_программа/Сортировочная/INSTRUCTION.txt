@@ -1,0 +1,390 @@
+«СОРТИРОВОЧНАЯ» (HUMP YARD) PROGRAM — USER GUIDE
+A training classification yard with a hump. You work as the hump yard operator (ДСПГ) and the retarder operator.
+Version 1.1 of 17.11.2026. Russian — ИНСТРУКЦИЯ.txt, Kazakh — НҰСҚАУЛЫҚ.txt (the «Guide» button opens the file
+in the language of the program). Button names below are given as they appear in the English interface.
+=====================================================================================================
+
+CONTENTS
+   0. Quick start — your first humping in 2 minutes
+   1. Starting the program
+   2. What a classification yard and a hump are (in brief)
+   3. How the training yard is built
+   4. The program window
+   5. The right panel: what each part does
+   6. Step 1 — pushing the train up
+   7. Step 2 — hump signal Г and humping speed
+   8. Step 3 — braking the cuts (retarders and ARS)
+   9. Step 4 — routes of the cuts (GAC or manual)
+  10. Hump switches
+  11. Wagons that must not be humped («Л», «Е»)
+  12. The cut list
+  13. Wagons and locomotives
+  14. Work variants: «Hump only» and «Hump + shunting»
+  15. Extra commands: fixing mistakes
+  16. Violations and score
+  17. Time, language, AI assistant
+  18. Keys and mouse
+  19. Frequently asked questions
+  20. For the teacher
+
+
+0. QUICK START — YOUR FIRST HUMPING IN 2 MINUTES
+-------------------------------------------------
+  At the top right there is a yellow block «WHAT TO DO NOW». It always says what has to be done,
+  and it has one big button that does it. The first time, simply keep pressing it:
+
+    1) «▶ Push up from track П1» — the hump locomotive pushes the train towards the hump;
+    2) «▶ Open: normal speed» — the hump signal lights yellow and green,
+       the wagons go over the crest;
+    3) then everything goes by itself: cuts (one wagon or a group of wagons) roll down the hump, the retarders
+       brake them (tick «Brake automatically (ARS)»), the switches are set by GAC from the cut list.
+       Watch the diagram: every cut comes to its own track 1–8;
+    4) if the block turns RED and flashes, something is urgent (for example, a wagon ahead that must not be
+       humped). Read the text and press the button in the block;
+    5) humping is over — the signal turns red by itself. Wait for the next train (time can be sped up with «×4»).
+
+  Once you are used to it, clear the ARS tick and brake yourself (section 8), then switch step 4 to «Manual»
+  and set the routes yourself (section 9).
+
+
+1. STARTING THE PROGRAM
+-----------------------
+  Run: готовая_программа\Сортировочная\Sortirovka.exe (no need to install .NET).
+  The window opens full screen. Next to the program:
+    ИНСТРУКЦИЯ.txt, НҰСҚАУЛЫҚ.txt, INSTRUCTION.txt — this guide in Russian, Kazakh and English
+      (opened with the «Guide» button or the F1 key);
+    the Knowledge folder — the knowledge base of the AI assistant (created by itself at the first question).
+  The interface language is remembered (folder %LOCALAPPDATA%\Sortirovka).
+  Every start is a new shift: time 08:00, 100 points, a train ready for humping is already on track П1.
+
+
+2. WHAT A CLASSIFICATION YARD AND A HUMP ARE (IN BRIEF)
+-------------------------------------------------------
+  A classification yard breaks up trains and makes up new ones: the wagons for each destination are collected
+  on their own track. A train goes through the yard like this:
+    1) it arrives in the RECEPTION YARD; the train locomotive is uncoupled and goes to the depot;
+    2) the inspectors (ПТО) inspect the wagons and release the brakes; a CUT LIST is made — which cut goes
+       to which track;
+    3) the HUMP LOCOMOTIVE comes to the rear of the train and pushes it onto the hump (PUSH-UP);
+    4) on the incline before the top (the CREST) the uncoupler uncouples the wagons according to the list;
+    5) a CUT (one wagon or a group of wagons for one track), having passed the crest, rolls down by itself;
+       the hump switches send it to the right track of the CLASSIFICATION YARD, and the RETARDERS control its speed;
+    6) wagons for one destination accumulate on the track; when a train is complete it is moved to the
+       DEPARTURE YARD, a train locomotive is coupled, the brakes are tested and the train departs.
+  The main things for the hump yard operator:
+    — a cut must come to ITS OWN track;
+    — it must approach the wagons standing on the track NOT FASTER THAN 5 km/h (otherwise there is an impact —
+      damage to wagons and freight), but it must not stop far from them either («short roll», a «gap» is left);
+    — there must be an INTERVAL between cuts so that the switches have time to move.
+
+
+3. HOW THE TRAINING YARD IS BUILT
+---------------------------------
+  The yard is one-directional, the yards follow each other from left to right:
+
+    line → RECEPTION YARD П1–П4 → push-up track → signal Г → CREST → 1ТП → switch 1 → 2ТП-А / 2ТП-Б →
+    switches 2, 3 → switches 4–7 → CLASSIFICATION YARD, tracks 1–8 → DEPARTURE YARD О1–О4 → line
+
+  Below the reception yard there is a bypass track, the depot (ТЧ) and the stand of the hump locomotive ТЭМ18.
+  The trains are training ones, short: 6–10 wagons (so the wagons on the diagram are large and easy to see).
+
+  Classification tracks (destinations) and train norms (how many wagons to collect before moving a train out):
+      1 — North               norm 8 wagons
+      2 — East                8
+      3 — South               8
+      4 — West                8
+      5 — Factory             8
+      6 — Port                8
+      7 — Pick-up (local)     5
+      8 — Repair (VChD)       5
+
+  Hump profile (as in the design norms for a low-capacity hump, simplified):
+      incline to the crest 10‰ — the wagons are uncoupled on it;
+      high-speed section 45‰ (the steepest descent);
+      1st braking position 1ТП — on 14‰, for all tracks;
+      switch 1 — divides the tracks into two fans: 1–4 and 5–8;
+      2nd braking position: 2ТП-А (tracks 1–4) and 2ТП-Б (tracks 5–8) — on 9‰;
+      switch zone 1.5‰: switches 2 (tracks 1–4), 3 (5–8), 4 (1–2), 5 (3–4), 6 (5–6), 7 (7–8);
+      classification tracks — 0.6‰, with a counter-slope of 2.5‰ at the end.
+  Hump height ≈ 2.6 m, classification track length 314 m, reception yard tracks — 300 m.
+
+
+4. THE PROGRAM WINDOW
+---------------------
+  TOP STRIP: name, clock, «Variant…» (section 14), time (⏸ ×1 ×2 ×4), «New shift»,
+  «Guide», language, the «AI» button.
+
+  DIAGRAM (top left) — a view from above, as on the panel:
+    • hump track circuits: grey — free, RED — occupied;
+    • at a switch the direction it lies in is drawn brightly; a flashing yellow circle with a number — the switch
+      is moving;
+    • braking positions — thick bars: grey — released, orange — braking;
+    • signal Г at the crest, its repeater ПГ above the reception yard, shunting signals М1–М4 at the end of the
+      reception yard tracks (lunar white — push-up from this track is set);
+    • wagons — coloured bars by type (pale — empty), they run on the rails and bend together with the track
+      on curves; a red line on a wagon — mark «Л» or «Е»; locomotives — with a coloured stripe;
+    • track labels: «П1 · №2001 · 8 wagons · ready for humping», «1 North · 5/8» (collected / norm;
+      green — the norm is reached).
+  SIDE VIEW (under the diagram) — the hump profile (height exaggerated): you see the train approach the crest,
+    the cuts pass it and roll; above every cut — «number → track · speed km/h»
+    (a red label — the cut has no route or is going to the wrong track).
+  LOG (bottom left) — everything that happens; red lines are violations and refusals («Not possible: …»).
+
+
+5. THE RIGHT PANEL: WHAT EACH PART DOES
+---------------------------------------
+  The panel goes from top to bottom in the order in which you work. The group needed now is highlighted
+  with a yellow title.
+
+  «WHAT TO DO NOW» (yellow block) — a hint and the main button. A red flashing block — urgent.
+      Below it there may be a red line «Attention: …» — an early warning (for example, an «Л» comes in one cut).
+  «Step 1. Push the train onto the hump» — buttons П1–П4. A GREEN button — the train on this track is ready for
+      humping, blue — push-up from this track is in progress. Under the buttons — the state of the push-up.
+  «Step 2. Hump signal Г» — four buttons: «■ STOP» (red), «Slow» (yellow, 3 km/h),
+      «Normal» (yellow and green, 4.5 km/h), «Fast» (green, 6 km/h). A white frame — what is lit now.
+  «Step 3. Braking the cuts» — the tick «Brake automatically (ARS)». Without it — for every braking position
+      (1ТП, 2ТП-А, 2ТП-Б) there are three buttons: «Release», «Light», «Strong» and a display: which cut, its speed
+      and «needed at most …» — the speed that is needed.
+  «Step 4. Which track the cut goes to» — «Automatic from the list (GAC)» or «Manual», buttons for tracks 1–8 with
+      names, «Clear the last route» and a hint which cut is next.
+  «Cut list» — the table of the cuts of the train (section 12).
+  «Shunting» — visible only in the «Hump + shunting» variant (section 14).
+  «▸ Extra commands» — press to open: «Lower with locomotive», «Pull back (R + «Н»)»,
+      «Push cut through», «Compact track…» (section 15). They are rarely needed — the main button offers them
+      by itself when they are.
+  «Shift score» — grade, points, number of violations, how many wagons were humped and sent.
+  If the panel does not fit in height — scroll it with the mouse wheel.
+  Every button has a tooltip: hold the mouse over it.
+
+
+6. STEP 1 — PUSHING THE TRAIN UP
+--------------------------------
+  1) Find the GREEN button П1…П4 (at the start of a shift — П1) and press it. The shunting signal of this track
+     lights lunar white, this train appears in the list.
+  2) Look at the list: which cuts are ahead, are there marks «Л», «Е».
+  3) Go to step 2 — while the signal is red, the train stands.
+  Push-up from another track can be set only when humping of the current train is over.
+
+
+7. STEP 2 — HUMP SIGNAL Г AND HUMPING SPEED
+-------------------------------------------
+  Buttons and indications (Instruction on signalling in railway transport of the Republic of Kazakhstan, cl. 99):
+    «Fast»     — GREEN — humping at the set speed                                      — 6 km/h;
+    «Normal»   — YELLOW AND GREEN — at an intermediate speed                            — 4.5 km/h;
+    «Slow»     — YELLOW — at a reduced speed                                            — 3 km/h;
+    «■ STOP»   — RED — Stop! Humping is forbidden (Esc key);
+    «Pull back» (in «Extra») — RED AND A WHITE «Н» — pull the wagons back from the hump into the reception yard.
+  Until the first wagon reaches the crest, the train is drawn up faster (up to 9 km/h), then — at humping speed.
+  The repeater ПГ above the reception yard shows the same as Г.
+  How to choose the speed:
+    • usually — «Normal»;
+    • the faster the humping, the closer the cuts are to each other — the switches may not have time (catch-up,
+      «wrong track»);
+    • single wagons one after another to neighbouring tracks, a «good runner» behind a «poor» one — «Slow»;
+    • «Fast» — only when the cuts are long and go to different fans (1–4 and 5–8).
+  The hump locomotive does not go over the crest — it stops at the top by itself.
+
+
+8. STEP 3 — BRAKING THE CUTS (RETARDERS AND ARS)
+------------------------------------------------
+  Braking positions: 1ТП (all tracks), 2ТП-А (tracks 1–4), 2ТП-Б (tracks 5–8).
+  WITH THE TICK «Brake automatically (ARS)» (as at the start of a shift) — the retarders brake every cut by
+  themselves, the buttons are grey. The display still shows what is happening.
+  WITHOUT THE TICK — brake yourself with three buttons:
+    «Release» — no braking;
+    «Light»   — light braking;
+    «Strong»  — strong braking.
+  A pressed button stays on until you press another one.
+  The display to the right of the buttons: «cut 5: 16.4 km/h, needed at most 12.0» — the cut on the retarder and
+  the speed it must be braked to (then it reaches the wagons on its track and couples softly).
+  HINT: the button that has to be pressed now flashes with a YELLOW FRAME, and the display says «press «Strong»».
+  An orange display — the cut is faster than needed.
+  Rules:
+    • brake until the speed is «needed at most …», and then «Release» at once;
+    • do not leave braking on — the next cut will stop on the retarder;
+    • brake loaded wagons («good runners») harder; empty ones («poor runners») often need no braking at all;
+    • 1ТП holds back fast cuts and makes an interval if a cut is catching up with the one ahead.
+  ARS does not save you from humping too fast: the intervals are set by the push-up speed (step 2).
+
+
+9. STEP 4 — ROUTES OF THE CUTS (GAC OR MANUAL)
+----------------------------------------------
+  «Automatic from the list (GAC)» (as at the start of a shift) — the automatic hump interlocking takes the route
+    of every cut from the cut list by itself. To correct it: select the cut in the list (while it is still in the
+    train) and press the button of the right track.
+  «Manual» — the routes already taken from the list are erased, and before every cut, until it passes the crest,
+    press the button of its track (on the panel, keys 1–8 or a click on the classification track on the diagram).
+    Under the buttons it says: «Next without a route: cut 3 — by the list track 5. Press button «5»»,
+    and the right button is highlighted blue with a white frame. The route goes to the next cut without a route.
+    Made a mistake — «Clear the last route». Routes can be entered in advance for several cuts ahead.
+    If a cut comes to the crest without a route, the «What to do now» block turns red.
+  GAC moves the switches by the routes itself when a cut approaches a switch and its section is free.
+  A cut that has left the crest without a route goes where the switches lie — a violation.
+
+
+10. HUMP SWITCHES
+-----------------
+  Switches 1–7 are hump switches: they move in 0.6 s. «Plus» — towards the tracks with lower numbers,
+  «minus» — towards higher ones.
+  To move one by hand — click the switch number on the diagram (the tooltip shows where it lies).
+  It cannot be moved while a wagon is on the switch section (the section is red) — the program refuses.
+  If a switch has started to move and a cut runs onto it — «movement under a wagon», a serious violation.
+  So do not touch the switches by hand in front of an approaching cut — let GAC work.
+
+
+11. WAGONS THAT MUST NOT BE HUMPED («Л», «Е»)
+---------------------------------------------
+  In the list in the «Mark» column and with a red line: «Л» — a wagon with people (conductors, escorts),
+  «Е» — a tank with liquefied gas. Such wagons are not humped — they are lowered with the locomotive.
+  They stand at the rear of the train. The program prompts you:
+    1) in advance, when such a wagon comes after the first cut — a red line «Attention: …»;
+    2) when it is first at the crest, the «What to do now» block turns red: press «■ STOP (red)»;
+    3) the train has stopped — press «Lower with locomotive» (in the block or in «Extra»);
+       the signal opens «Slow» by itself: the locomotive lowers the wagons to their track at no more than 5 km/h,
+       couples them and returns to the crest.
+  Humping such a wagon off the hump is a violation (−15).
+
+
+12. THE CUT LIST
+----------------
+  Columns: № — cut number; Cars — number of wagons; Type — wagon types (Кр×2 — two box cars); t — gross mass;
+  Run — rolling properties: «good» (good runner, rolls far — usually loaded), «avg.», «poor»
+  (poor runner — usually empty); Track — the track by the make-up plan; Route — the route set;
+  Mark — special marks «Л», «Е»; State — in the train / first at the crest / rolling / on track N / coupled…
+  A blue line — the cut first at the crest, yellow — the selected one (click on a line), red — forbidden for
+  humping or gone to the wrong track. The list shows the train being humped now (or the next ready one).
+
+
+13. WAGONS AND LOCOMOTIVES
+--------------------------
+  The type by the first digit of the wagon number:
+    Кр — box car (2),                   Пв — gondola (6),           Пл — flat car (4),
+    Кп — container flat car (4),        Цс — tank car (7),          Хп — grain hopper (9),
+    Рф — refrigerator car (8),          Цг — gas tank car (7, mark «Е»),
+    Сл — wagon with people (9, mark «Л»).
+  A loaded wagon is heavier and rolls better; an empty one rolls worse. Every wagon has its own running resistance.
+  Locomotives: ТЭ33А (freight diesel) and KZ8A (freight electric, two sections) — haul trains;
+  ТЭМ18 — a shunting diesel, here the hump locomotive: it pushes trains onto the hump and moves trains out to the
+  departure yard.
+
+
+14. WORK VARIANTS: «HUMP ONLY» AND «HUMP + SHUNTING»
+---------------------------------------------------
+  The «Variant…» list at the top of the window (can be changed at any moment):
+    «Hump only» — everything before and after the hump is done by itself: train reception, uncoupling of the train
+      locomotive, ПТО inspection (2 min), the hump locomotive coming to the rear of the train, its return after
+      humping, moving complete trains out to the departure yard, departure. Your job — push-up and humping.
+    «Hump + shunting» — the «Shunting» group appears on the panel, and you also do these yourself:
+      — «Hump locomotive to the train…» → choose track П1–П4 (the train there is «waiting for hump loco»);
+      — «Return hump locomotive» — after humping, from the crest to its stand (otherwise it will not go to the
+        next train);
+      — «Move train out…» → choose a classification track (when the norm is reached the track label is green).
+      The «What to do now» block prompts these actions as well.
+  If trains are not moved out, the classification tracks fill up.
+
+
+15. EXTRA COMMANDS: FIXING MISTAKES
+-----------------------------------
+  Open «▸ Extra commands» on the panel:
+  «Lower with locomotive» — for wagons «Л» and «Е» (section 11).
+  «Pull back (R + «Н»)» — the train back from the hump into the reception yard.
+  «Push cut through» — a cut has stopped in the switch zone (in the list «stopped in the switch zone!»):
+    first «■ STOP» (push-up stopped), then this button — the cut is pushed onto its track.
+    While it stands there, the next cuts will crash into it. The «What to do now» block prompts both steps.
+  «Compact track…» (or right-click a classification track → «Compact track») — after short rolls «gaps» stay on
+    the track; a shunting locomotive pushes the wagons to the end of the track. Not allowed while a cut is rolling
+    onto the track.
+  A cut has stopped on a retarder — press «Release», it rolls on by itself.
+  Right-click a classification track — a menu: route a cut to this track, compact the track, move a train out.
+
+
+16. VIOLATIONS AND SCORE
+------------------------
+  A shift starts with 100 points. Violations (red lines in the log) take points away:
+    impact while coupling faster than 5 km/h                −5  (faster than 8 km/h — −10)
+    cut passes the clearance post (end of track > 5 km/h)   −5
+    cut came to the wrong track                             −5
+    catch-up of one cut by another in the switch zone       −5
+    cut stopped in the switch zone                          −5
+    humping a wagon marked «Л» / «Е»                        −15
+    switch moved under a wagon                              −10
+    cut went without a route                                −3
+    cut stopped on a braking position                       −3
+    short roll: a gap of more than 50 m to the wagons
+               (on an empty track — more than 100 m to the end of the track) −2
+  Grade: 90 points and more — «5», 75 — «4», 60 — «3», less — «2».
+  «Not possible: …» in the log is a refused command (the program explains why), no points are taken for it.
+  A new shift — the «New shift» button (score and log are reset, the wagons in the trains are different).
+
+
+17. TIME, LANGUAGE, AI ASSISTANT
+--------------------------------
+  Time: ⏸ — pause (or Space), ×1 — real time, ×2, ×4 — faster. Humping one train in real time takes
+  2–4 minutes. Reception, inspection (2 min) and departure are sped up.
+  Language: the list at the top (Русский, Қазақша, English) — changes at once.
+  AI assistant — the «AI» button (ЖИ in Kazakh, ИИ in Russian). It answers in Russian or Kazakh — in the language
+  of the question. Example questions (in Russian):
+    «как распустить состав?», «что значит жёлтый и зелёный?», «как тормозить замедлителем?», «что такое АРС?»,
+    «маршрут отцепу на путь 5», «что за стрелка 3?», «для чего 2ТП?», «почему недокат?».
+  Point the mouse at a switch, a retarder, a track or a cut and ask «что это?». After a refusal or a violation
+  the assistant suggests what to do by itself. Without the internet and a neural network it answers with ready
+  texts from the Knowledge folder.
+
+
+18. KEYS AND MOUSE
+------------------
+  Esc            — «■ STOP»: hump signal red (stop the push-up)
+  1–8            — route of the cut to track 1–8 (like the track buttons in step 4)
+  Space          — pause / continue
+  F1             — this guide
+  Click on a switch number             — move the switch
+  Click on a classification track      — route the cut to this track
+  Click on a cut on the diagram        — select it (yellow frame on the diagram and in the side view)
+  Click on a line of the list          — select a cut in the train (then a track button changes its route)
+  Right-click a classification track   — shunting menu
+  Mouse hover                          — tooltip (switch, retarder, track, cut, signal, any button)
+
+
+19. FREQUENTLY ASKED QUESTIONS
+------------------------------
+  I do not know what to press
+     — read the yellow block «What to do now» and press its button. The group highlighted in yellow is the one
+       needed now.
+  The signal does not open («Not possible: set the push-up route first»)
+     — first step 1: the green button П1…П4. The train on the track must be «ready for humping».
+  The train is «waiting for hump loco» and stands
+     — in the «Hump + shunting» variant — «Hump locomotive to the train…»; return the locomotive from the crest first.
+  A cut went to the wrong track
+     — in manual mode the route was not set or was set wrongly; or the cuts went too close and the switch did not
+       have time (press «Slow» in step 2).
+  Impacts while coupling
+     — brake down to «needed at most …» (the button in the yellow frame) or tick ARS.
+  Short rolls
+     — do not brake empty wagons without need; close gaps with «Compact track».
+  A cut stopped in the switch zone
+     — «■ STOP», then «Push cut through» (the «What to do now» block offers both buttons).
+  Trains are not moved out
+     — in the «Hump only» variant a train is moved out by itself when the norm is reached, nothing is rolling onto
+       the track and a departure yard track is free; in the «Hump + shunting» variant — «Move train out…».
+
+
+20. FOR THE TEACHER
+-------------------
+  Suggested order of lessons:
+    1) «Hump only», GAC, ARS on — getting acquainted: working by the «What to do now» block, hump signal,
+       push-up, the list, «Л» / «Е».
+    2) The same without ARS — manual braking with retarders (the main skill of a hump operator).
+    3) Manual route setting.
+    4) «Hump + shunting» — full work of the ДСПГ with their own hump locomotive and moving trains out.
+  Texts of the AI assistant — the Knowledge folder next to the program (Справка_по_интерфейсу.txt, Глоссарий.txt,
+  Подсказки_по_ошибкам.txt): they can be extended, the program re-reads them by itself. Questions the assistant
+  found no answer to are written to Knowledge\_Вопросы_без_ответа.txt.
+  Humping speeds, train norms, track destinations, train length — in the source
+  Исходники\Сортировочная\Sortirovka\Yard\YardSim.cs (at the start of class YardSim and in MakeTrain), the profile
+  and track lengths — Yard\YardLayout.cs.
+  NOT yet available: a link with the «Преподаватель» (teacher) program (tasks, faults, student screen), the Arduino
+  model, the third braking position and skid shoes, links with neighbouring stations.
+
+Sources: Instruction on signalling in railway transport of the Republic of Kazakhstan (hump and shunting signals,
+cl. 98–99); the articles «Сортировочная станция» and «Сортировочная горка» (Wikipedia, «Наш транспорт» — after the
+Railway Transport Encyclopedia, 1995); Rules and norms for the design of classification facilities (hump profile).

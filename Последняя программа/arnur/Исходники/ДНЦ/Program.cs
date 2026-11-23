@@ -14,9 +14,12 @@ static class Program
     static void Main()
     {
         ApplicationConfiguration.Initialize();
+        // [ДОБАВЛЕНО 23.11.2026] язык интерфейса (ru / kk / en) — выбор в панели управления, запоминается
+        StationApp.Core.L.Init(Path.Combine(Settings.Dir, "lang.txt"));
+        StationApp.Ui.LangUi.Install();
         // имя "dnc" на сервере одно — вторая копия программы выбила бы первую
         using var single = new Mutex(true, "DncApp_ArnurRail", out bool first);
-        if (!first) { MessageBox.Show("Программа «ДНЦ» уже запущена.", "ДНЦ"); return; }
+        if (!first) { MessageBox.Show(StationApp.Core.L.T("Программа «ДНЦ» уже запущена."), StationApp.Core.L.T("ДНЦ")); return; }
         Settings.Load();
         Application.Run(new DncForm());
     }

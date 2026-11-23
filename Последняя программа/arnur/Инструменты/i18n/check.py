@@ -16,7 +16,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.normpath(os.path.join(HERE, '..', '..'))
 SRC = [os.path.join(ROOT, p) for p in ('Исходники/АКЖТ/Station', 'Исходники/Алгабас/Algabas', 'Исходники/Преподаватель',
                                        'Исходники/Станция по схеме/StationFromJson',   # [ДОБАВЛЕНО 10.11.2026] берёт словари Алгабаса
-                                       'Исходники/Сортировочная/Sortirovka')]          # [ДОБАВЛЕНО 12.11.2026] тоже словари Алгабаса
+                                       'Исходники/Сортировочная/Sortirovka',           # [ДОБАВЛЕНО 12.11.2026] тоже словари Алгабаса
+                                       'Исходники/Редактор_05_11/StationEditor',       # [ДОБАВЛЕНО 23.11.2026] тоже словари Алгабаса
+                                       'Исходники/ДНЦ')]                               # [ДОБАВЛЕНО 23.11.2026] тоже словари Алгабаса
 OUT = [os.path.join(ROOT, 'Исходники/АКЖТ/Station/Lang'), os.path.join(ROOT, 'Исходники/Алгабас/Algabas/Lang')]
 TSV = os.path.join(HERE, 'strings.tsv')
 SKIP = os.path.join(HERE, 'skip.txt')
@@ -76,7 +78,8 @@ def todo():
         t = s.strip()
         if t in have or is_label(s): continue
         # шаблон покрывает строку, только если в его дырки попали подписи и числа, а не русские слова
-        if not extract.HOLE.search(t) and any((m := p.match(t)) and not any(re.search('[а-яё]{2,}', g) for g in m.groups()) for p in pats): continue
+        # [ДОБАВЛЕНО 23.11.2026] длинные тексты (справка ИИ) шаблонами не сверяем: «{0}{1}{2} — …» на 11 тыс. символов перебирается часами
+        if len(t) <= 600 and not extract.HOLE.search(t) and any((m := p.match(t)) and not any(re.search('[а-яё]{2,}', g) for g in m.groups()) for p in pats): continue
         res.append((s, f))
     return res
 

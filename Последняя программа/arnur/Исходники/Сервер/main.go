@@ -28,15 +28,17 @@ import (
 	"time"
 )
 
-const ServerVersion = "PromServer 1.4"
+const ServerVersion = "PromServer 1.5"
 
 var (
 	addr    = flag.String("addr", ":8090", "адрес и порт сервера")
 	verbose = flag.Bool("v", false, "писать в журнал каждое изменение показаний")
+	langArg = flag.String("lang", "", "язык сообщений: ru, kk или en") // [ДОБАВЛЕНО 23.11.2026]
 )
 
 func main() {
 	flag.Parse()
+	initLang(*langArg)
 	log.SetFlags(log.Ldate | log.Ltime)
 
 	hub := NewHub()
@@ -49,7 +51,7 @@ func main() {
 	mux.HandleFunc("/{$}", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		if err := statusPage.Execute(w, hub.Snapshot()); err != nil {
-			log.Printf("страница состояния: %v", err)
+			logf("страница состояния: %v", err)
 		}
 	})
 
@@ -70,7 +72,7 @@ func main() {
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt)
 	<-stop
-	log.Println("Остановка сервера...")
+	log.Println(T("Остановка сервера..."))
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	srv.Shutdown(ctx)
@@ -79,23 +81,23 @@ func main() {
 // printBanner — что вписать в программы станций: адреса этого ПК в локальной сети.
 func printBanner(port int) {
 	fmt.Println("==============================================================")
-	fmt.Println(" " + ServerVersion + " — сервер связи диспетчеров АКЖТ <-> Алгабас")
+	fmt.Println(" " + ServerVersion + T(" — сервер связи диспетчеров АКЖТ <-> Алгабас"))
 	fmt.Println("==============================================================")
 	ips := localIPv4()
 	if len(ips) == 0 {
-		fmt.Println(" Сетевых адресов не найдено — работает только на этом ПК:")
+		fmt.Println(T(" Сетевых адресов не найдено — работает только на этом ПК:"))
 		ips = []string{"127.0.0.1"}
 	} else {
-		fmt.Println(" В программах станций укажите адрес сервера:")
+		fmt.Println(T(" В программах станций укажите адрес сервера:"))
 	}
 	for _, ip := range ips {
 		fmt.Printf("     ws://%s:%d/ws\n", ip, port)
 	}
-	fmt.Println(" Состояние связи в браузере:")
+	fmt.Println(T(" Состояние связи в браузере:"))
 	for _, ip := range ips {
 		fmt.Printf("     http://%s:%d/\n", ip, port)
 	}
-	fmt.Println(" Остановить сервер — Ctrl+C или закрыть окно.")
+	fmt.Println(T(" Остановить сервер — Ctrl+C или закрыть окно."))
 	fmt.Println("==============================================================")
 }
 
@@ -122,6 +124,7 @@ func localIPv4() []string {
 }
 
 var statusPage = template.Must(template.New("status").Funcs(template.FuncMap{
+	"T":     T,
 	"lines": formatLines,
 	"secs":  formatSections,
 	"sigs": func(m map[string]string) string {
@@ -131,8 +134,8 @@ var statusPage = template.Must(template.New("status").Funcs(template.FuncMap{
 		return strings.ReplaceAll(formatSignals(m), ", ", "   ")
 	},
 }).Parse(`<!doctype html>
-<html lang="ru"><head><meta charset="utf-8"><meta http-equiv="refresh" content="2">
-<title>Связь диспетчеров</title>
+<html><head><meta charset="utf-8"><meta http-equiv="refresh" content="2">
+<title>{{T "Связь диспетчеров"}}</title>
 <style>
  body{font-family:Segoe UI,Arial,sans-serif;margin:24px;background:#f6f7f9;color:#222}
  table{border-collapse:collapse;background:#fff}
@@ -141,25 +144,25 @@ var statusPage = template.Must(template.New("status").Funcs(template.FuncMap{
  .on{color:#087f23;font-weight:bold} .off{color:#b00020;font-weight:bold}
  small{color:#666}
 </style></head><body>
-<h2>Связь диспетчеров АКЖТ ↔ Алгабас</h2>
+<h2>{{T "Связь диспетчеров АКЖТ ↔ Алгабас"}}</h2>
 {{if .}}
 <table>
-<tr><th>Станция</th><th>Связь</th><th>Адрес</th><th>С</th><th>Показания светофоров</th><th>Направление перегонов</th><th>Занятость общих участков</th><th>Изменены</th></tr>
+<tr><th>{{T "Станция"}}</th><th>{{T "Связь"}}</th><th>{{T "Адрес"}}</th><th>{{T "С"}}</th><th>{{T "Показания светофоров"}}</th><th>{{T "Направление перегонов"}}</th><th>{{T "Занятость общих участков"}}</th><th>{{T "Изменены"}}</th></tr>
 {{range .}}
 <tr><td>{{.Name}} <small>({{.Station}})</small></td>
-<td>{{if .Online}}<span class="on">есть</span>{{else}}<span class="off">нет</span>{{end}}</td>
+<td>{{if .Online}}<span class="on">{{T "есть"}}</span>{{else}}<span class="off">{{T "нет"}}</span>{{end}}</td>
 <td>{{.Addr}}</td><td>{{.Since}}</td><td>{{sigs .Signals}}</td><td>{{lines .Lines}}</td><td>{{secs .Sections}}</td><td>{{.Updated}}</td></tr>
 {{end}}
 </table>
-{{else}}<p>Ни одна станция ещё не подключалась.</p>{{end}}
-<p><small>Страница обновляется каждые 2 с.</small></p>
+{{else}}<p>{{T "Ни одна станция ещё не подключалась."}}</p>{{end}}
+<p><small>{{T "Страница обновляется каждые 2 с."}}</small></p>
 </body></html>`))
 
 // fatalf — ошибка, после которой сервер работать не может. Окно не закрывается сразу,
 // иначе при запуске двойным щелчком сообщение никто не успеет прочитать.
 func fatalf(format string, args ...any) {
-	log.Printf(format, args...)
-	fmt.Println("Нажмите Enter, чтобы закрыть окно.")
+	logf(format, args...)
+	fmt.Println(T("Нажмите Enter, чтобы закрыть окно."))
 	fmt.Scanln()
 	os.Exit(1)
 }

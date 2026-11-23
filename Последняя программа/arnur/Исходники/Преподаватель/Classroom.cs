@@ -102,8 +102,11 @@ public static class Classroom
         if (exe == null) { Say("PromServer.exe не найден рядом с программой (папка ..\\Сервер) — запустите сервер вручную"); return; }
         try
         {
-            server = Process.Start(new ProcessStartInfo(exe) { UseShellExecute = false, CreateNoWindow = true,
-                                                               WorkingDirectory = Path.GetDirectoryName(exe)! });
+            // [ИЗМЕНЕНО 23.11.2026] сервер — на языке преподавателя (переменная окружения: старый PromServer её просто не заметит)
+            var psi = new ProcessStartInfo(exe) { UseShellExecute = false, CreateNoWindow = true,
+                                                  WorkingDirectory = Path.GetDirectoryName(exe)! };
+            psi.Environment["PROMSERVER_LANG"] = StationApp.Core.L.Current;
+            server = Process.Start(psi);
             Say($"Запущен сервер связи: {exe}");
         }
         catch (Exception ex) { Say("Не удалось запустить сервер: " + ex.Message); }

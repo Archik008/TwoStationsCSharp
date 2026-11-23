@@ -174,7 +174,7 @@ public static class L
         d.Templates.Add(new Template
         {
             Key = key, Value = Hole.Replace(value, m => "{" + m.Groups[1].Value + "}"), Holes = holes.ToArray(), Literal = literal,
-            Re = new Regex(sb.ToString(), RegexOptions.Singleline | RegexOptions.CultureInvariant)
+            Re = new Regex(sb.ToString(), RegexOptions.Singleline | RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(50))
         });
     }
 
@@ -201,7 +201,10 @@ public static class L
         // шаблоны
         foreach (var t in d.Templates)
         {
-            var m = t.Re.Match(s);
+            // [ИЗМЕНЕНО 23.11.2026] шаблон с дырками подряд («{0}{1}{2} — …») на длинном тексте перебирается очень долго —
+            // окно бы зависло; дольше 50 мс — считаем, что не подошёл
+            Match m;
+            try { m = t.Re.Match(s); } catch (RegexMatchTimeoutException) { continue; }
             if (!m.Success) continue;
             var vals = new string[t.Holes.Length == 0 ? 0 : t.Holes.Max() + 1];
             bool ok = true, weakBefore = weak, weakAll = false;

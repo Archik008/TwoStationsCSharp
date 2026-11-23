@@ -17,6 +17,7 @@ if errorlevel 1 (
 del /q "%OUT%\*.pdb" 2>nul
 copy /y "%~dp0ИНСТРУКЦИЯ.txt" "%OUT%\ИНСТРУКЦИЯ.txt" >nul
 copy /y "%~dp0НҰСҚАУЛЫҚ.txt" "%OUT%\НҰСҚАУЛЫҚ.txt" >nul
+copy /y "%~dp0INSTRUCTION.txt" "%OUT%\INSTRUCTION.txt" >nul
 echo ===== ГОТОВО: %OUT%\Sortirovka.exe =====
 if "%~1"=="" pause
 exit /b 0

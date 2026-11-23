@@ -788,8 +788,9 @@ public sealed class YardForm : Form
     void OpenGuide()
     {
         // [ДОБАВЛЕНО 12.11.2026] на казахском — казахская инструкция (если её нет рядом — русская)
-        var kk = Path.Combine(AppContext.BaseDirectory, "НҰСҚАУЛЫҚ.txt");
-        var path = L.Current == "kk" && File.Exists(kk) ? kk : Path.Combine(AppContext.BaseDirectory, "ИНСТРУКЦИЯ.txt");
+        // [ИЗМЕНЕНО 23.11.2026] на английском — INSTRUCTION.txt
+        var own = Path.Combine(AppContext.BaseDirectory, L.Current switch { "kk" => "НҰСҚАУЛЫҚ.txt", "en" => "INSTRUCTION.txt", _ => "ИНСТРУКЦИЯ.txt" });
+        var path = File.Exists(own) ? own : Path.Combine(AppContext.BaseDirectory, "ИНСТРУКЦИЯ.txt");
         if (!File.Exists(path)) { MessageBox.Show(L.T("Файл инструкции не найден") + "\n" + path, Text); return; }
         try { Process.Start(new ProcessStartInfo(path) { UseShellExecute = true }); } catch (Exception ex) { MessageBox.Show(ex.Message, Text); }
     }
