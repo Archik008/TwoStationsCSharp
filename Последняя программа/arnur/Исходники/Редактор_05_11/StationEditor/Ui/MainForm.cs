@@ -159,6 +159,12 @@ public sealed partial class MainForm : Form
             Draw();
         };
         top.Items.Add(vLamps);
+        // [ДОБАВЛЕНО 23.11.2026] головки всех светофоров по Инструкции РК — в файл, отменяется Ctrl+Z
+        Btn("Группировка всех огней", "Всем светофорам — головки по Инструкции по сигнализации РК (как пометка «как в Инструкции РК»\n" +
+                                      "в «Свойствах»): 5 огней с пригласительным — 1+2+2, 4 — 2+2, 2–3 — одна головка.\n" +
+                                      "Записывается в файл; отменить — Ctrl+Z. Одному светофору — поле «Головки» в его «Свойствах»", GroupAllLamps);
+        var about = Btn("О программе", "О программе и о разработчиках", () => ShowHelpPage(2));
+        about.Alignment = ToolStripItemAlignment.Right;
         var help = Btn("Справка", "Справка и горячие клавиши (F1)", ShowHelp);
         help.Alignment = ToolStripItemAlignment.Right;
         // [ДОБАВЛЕНО 17.11.2026] инструкция для пользователя: по шагам, главное — маршруты здесь только для проверки схемы
@@ -615,10 +621,24 @@ public sealed partial class MainForm : Form
 
     void ShowHelp() => ShowHelp(false);
 
-    void ShowHelp(bool instructions)
+    void ShowHelp(bool instructions) => ShowHelpPage(instructions ? 0 : 1);
+
+    void ShowHelpPage(int page)
     {
-        using var f = new HelpForm(instructions);
+        using var f = new HelpForm(page);
         f.ShowDialog(this);
+    }
+
+    /// <summary>[ДОБАВЛЕНО 23.11.2026] «Группировка всех огней»: каждому светофору — головки по Инструкции РК (Aspects.RuleHeads).</summary>
+    void GroupAllLamps()
+    {
+        if (ui.IsTest) { Msg("Группировка — в редакторе: выйдите из «Испытания» (M)", true); return; }
+        var todo = Core.AllSignals(st)
+            .Select(e => (e.Sig, H: Aspects.RuleHeads(e.Sig, e.Tile)))
+            .Where(x => x.H != null && x.Sig.Heads != x.H).ToList();
+        if (todo.Count == 0) { Msg("Все светофоры уже сгруппированы по Инструкции РК"); return; }
+        Edit(() => { foreach (var (s, h) in todo) s.Heads = h; });
+        Msg($"Огни сгруппированы по Инструкции РК у {todo.Count} светоф. — отменить: Ctrl+Z");
     }
 
     /// <summary>[ДОБАВЛЕНО 10.11.2026] Окно «Обозначения…»: буква для →, шаблоны имён, вид по участку, «Перенумеровать все».</summary>

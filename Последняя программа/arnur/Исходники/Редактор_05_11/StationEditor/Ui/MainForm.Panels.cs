@@ -654,7 +654,21 @@ public sealed partial class MainForm
                 pos.SelectedIndexChanged += (_, _) =>
                 {
                     bool minus = OptV(pos) == "minus";
-                    Later(() => Edit(() => { if (TileAt(k) is Tile c) c.Plus = minus ? false : null; }));
+                    // [ИЗМЕНЕНО 23.11.2026] спаренные стрелки (один «съезд») — в одно положение; у перекрёстного съезда
+                    // вторая диагональ при этом в плюс (две диагонали сразу быть не могут)
+                    Later(() => Edit(() =>
+                    {
+                        if (TileAt(k) is not Tile c) return;
+                        string grp = Core.SwitchGroup(k, c);
+                        string rival = minus && Core.ScissorsRivals(st).TryGetValue(grp, out var rg) ? rg : null;
+                        foreach (var (kk, tt) in st.Tiles)
+                        {
+                            if (tt.T != "switch") continue;
+                            string g2 = Core.SwitchGroup(kk, tt);
+                            if (g2 == grp) tt.Plus = minus ? false : null;
+                            else if (g2 == rival) tt.Plus = null;
+                        }
+                    }));
                 };
                 Hint(f, w, "Стрелки с одинаковым «съездом» переводятся вместе (спаренные).");
                 // [ДОБАВЛЕНО 17.11.2026] данные с бумаги: марка крестовины (Инструкция РК п. 15, 19 — пологие марки),
@@ -729,6 +743,11 @@ public sealed partial class MainForm
                     fc.Enter += (_, _) => { ui.SelSig = new SigRef(k, ii); Draw(); };
                 row.Controls.AddRange(new Control[] { nm, kind, dir, del });
                 f.Controls.Add(row);
+                // [ДОБАВЛЕНО 23.11.2026] светофору не нашлось места — он закрывает путь (рамка «!» на схеме)
+                if (Renderer.CoverText(st, s) is string cov)
+                    Hint(f, w, $"⚠ Закрывает {cov}: рядом нет свободного места. Переставьте светофор на клетку дальше " +
+                               "от стрелки или изгиба, или раздвиньте пути на клетку. Пока он нарисован полупрозрачным — путь под ним видно.",
+                         Color.FromArgb(0x9a, 0x55, 0x00));
 
                 // [ДОБАВЛЕНО 10.11.2026] цифра в имени: своя (поле «№») или от названия пути / порядковая
                 var se = new SignalEntry { Key = k, Idx = ii, Sig = s, Tile = t };
@@ -1287,6 +1306,7 @@ public sealed partial class MainForm
     {
         var f = NewFlow(host, out int w);
         var probs = Validator.Validate(st, Routes);
+        probs.AddRange(Renderer.CoverProblems(st));    // [ДОБАВЛЕНО 23.11.2026] светофоры, которые закрывают путь
         int N(string l) => probs.Count(p => p.Level == l);
         H3(f, w, "Проверка схемы");
         Hint(f, w, $"Ошибок: {N("err")}, предупреждений: {N("warn")}. Щелчок по строке — показать место на схеме.");

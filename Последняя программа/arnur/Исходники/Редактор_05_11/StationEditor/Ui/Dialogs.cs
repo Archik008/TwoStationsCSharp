@@ -144,6 +144,12 @@ public sealed class HelpForm : Form
                     "1П — путь, 2-4СП — стрелочный, НАУ / Б12 — перегон, ВТ — тупик. Поменять — вкладка «Участки»."),
         ("Светофоры", "«→» (Ч, чётные) — под путём на правом краю клетки, «←» (Н, нечётные) — над путём на левом. " +
                       "Входные и выходные дают поездные маршруты, маневровые и выходные — маневровые."),
+        ("Где рисуются светофоры (23.11)", "Ряд огней у всех светофоров — на одном расстоянии от пути. Если огни легли бы на " +
+                      "другой путь, стрелку, изгиб, соседний светофор или надпись, редактор отодвигает светофор чуть дальше от пути " +
+                      "(сторону и направление не меняет). Места нет и там — светофор рисуется полупрозрачным (путь под ним видно), " +
+                      "в оранжевой рамке с «!»; в «Свойствах» и на вкладке «Проверка» написано, что он закрывает и что сделать: " +
+                      "переставить на клетку дальше от стрелки или раздвинуть пути. Подписи светофоров, номера стрелок и названия участков тоже ищут свободное место. " +
+                      "Кнопка «Группировка всех огней» — всем светофорам головки по Инструкции РК (отменить — Ctrl+Z)."),
         ("Испытание", "ЛКМ по светофору, потом по пути — задать маршрут (стрелки переводятся приводом по очереди, светофор откроется, " +
                       "когда они дойдут). ЛКМ по стрелке — перевести. ПКМ по пути — занять / освободить. " +
                       "Пересекающиеся маршруты и занятые участки не дают задать маршрут."),
@@ -161,9 +167,12 @@ public sealed class HelpForm : Form
     };
 
     /// <param name="instructions">true — открыть на вкладке «Инструкция», false — на «Справке».</param>
-    public HelpForm(bool instructions = false)
+    public HelpForm(bool instructions = false) : this(instructions ? 0 : 1) { }
+
+    /// <param name="page">[ДОБАВЛЕНО 23.11.2026] вкладка: 0 — «Инструкция», 1 — «Справка», 2 — «О программе», 3 — «О разработчиках».</param>
+    public HelpForm(int page)
     {
-        Text = "Инструкция и справка — Редактор станций";
+        Text = "Инструкция, справка, о программе — Редактор станций";
         Font = new Font("Segoe UI", 10f);
         StartPosition = FormStartPosition.CenterParent;
         ShowInTaskbar = false;
@@ -209,7 +218,15 @@ public sealed class HelpForm : Form
         var pRef = new TabPage("Справка: клавиши и подробности") { BackColor = Color.White };
         Pad(pRef).Controls.Add(Body(Rows));
         tabs.TabPages.Add(pRef);
-        tabs.SelectedIndex = instructions ? 0 : 1;
+        // [ДОБАВЛЕНО 23.11.2026] «О программе» и «О разработчиках» (тексты — Model\AboutInfo.cs, общие со «Станцией по схеме»)
+        var ver = typeof(HelpForm).Assembly.GetName().Version;
+        var pAbout = new TabPage("О программе") { BackColor = Color.White };
+        Pad(pAbout).Controls.Add(Body(StationEditor.Model.AboutInfo.Editor(ver == null ? "?" : $"{ver.Major}.{ver.Minor}.{ver.Build}")));
+        tabs.TabPages.Add(pAbout);
+        var pDev = new TabPage("О разработчиках") { BackColor = Color.White };
+        Pad(pDev).Controls.Add(Body(StationEditor.Model.AboutInfo.Developers));
+        tabs.TabPages.Add(pDev);
+        tabs.SelectedIndex = Math.Clamp(page, 0, tabs.TabPages.Count - 1);
 
         var close = new Button { Text = "Закрыть", Dock = DockStyle.Bottom, Height = s(34), DialogResult = DialogResult.Cancel };
         Controls.Add(tabs);

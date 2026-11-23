@@ -64,6 +64,9 @@ public sealed class SigGeom
     /// <summary>[ДОБАВЛЕНО 20.11.2026] Центр (X) светового указателя «Н» горочного / ПГ — у мачты, под огнями
     /// (РУ-30-80 листы 45–46: «Г ⊢□◎○●⊘», «П1Г1 ⊢□◎○●⊘»); NaN — нет.</summary>
     public float HumpX = float.NaN;
+    /// <summary>[ДОБАВЛЕНО 23.11.2026] Тело светофора (огни, корпуса, указатели — без ножки у пути) и прямоугольник подписи
+    /// — до поворота; по ним раскладка (LayoutScheme) ищет место, где светофор не лежит на путях и не закрывает надписи.</summary>
+    public RectangleF Body, LabelRect;
     /// <summary>[ДОБАВЛЕНО 09.11.2026] Поворот светофора вокруг точки (Ax, Ay), градусы: светофор лежит параллельно пути
     /// у края клетки (на наклонном пути и на изгибе — тоже, как Ч22 на стр. 89 РУ-30-80). Box и всё остальное — до поворота.</summary>
     public float Angle;
@@ -303,7 +306,9 @@ public static class Renderer
             else
             {
                 Poly(g, pen, tr, c, on);
-                Poly(g, pen, Gap(off), off);
+                // [ИЗМЕНЕНО 23.11.2026] у перекрёстного съезда в плюсе обрубок диагонали не рисуем: видно либо два параллельных
+                // пути, либо одну диагональ (ту пару, что в минусе) — а не крест «X» из четырёх обрубков
+                if (!(plusOn && scissorsTiles.Contains(t))) Poly(g, pen, Gap(off), off);
             }
         }
         else if (t.T == "buffer")
@@ -407,17 +412,23 @@ public static class Renderer
     /// иначе одна лампа — и не видно, как огни сгруппированы.</summary>
     public static bool FullInColor(Signal s) => s.Kind == "shunt";
 
-    public static SigGeom GetSigGeom(Tile t, Signal sig, float x, float y, float cs, bool diamond = false)
+    public static SigGeom GetSigGeom(Tile t, Signal sig, float x, float y, float cs, bool diamond = false) =>
+        GetSigGeom(t, sig, x, y, cs, diamond, sigPlaces.TryGetValue(sig, out var pl) ? pl : null);
+
+    static SigGeom GetSigGeom(Tile t, Signal sig, float x, float y, float cs, bool diamond, SigPlace pl)
     {
-        var gm = GetSigGeomFlat(t, sig, x, y, cs, diamond);
+        var gm = GetSigGeomFlat(t, sig, x, y, cs, diamond, pl ?? SigPlace.Default);
         gm.Angle = SigAngle(t, sig.Dir);
         return gm;
     }
 
-    static SigGeom GetSigGeomFlat(Tile t, Signal sig, float x, float y, float cs, bool diamond)
+    static SigGeom GetSigGeomFlat(Tile t, Signal sig, float x, float y, float cs, bool diamond, SigPlace pl)
     {
         var a = SigAnchor(t, x, y, cs, sig.Dir);
+        // [ИЗМЕНЕНО 23.11.2026] ряд огней — на одном уровне у всех светофоров (RowD); раскладка может только отодвинуть светофор
+        // от пути (Out). Сторона пути и направление огней не меняются никогда — светофор сам не «разворачивается»
         float side = sig.Dir == "R" ? 1 : -1, fwd = side;
+        float level = cs * (RowD + pl.Out);
         float r = cs * 0.12f, leg = cs * 0.12f;
         bool dwarf = Aspects.IsDwarf(sig, t);
         // [ИЗМЕНЕНО 09.11.2026] в виде «Огни по ГОСТ» — все лампы головки вплотную, как цельные светофоры в РУ-30-80:
@@ -483,7 +494,7 @@ public static class Renderer
                 5 => new[] { (0, 0), (0, 1), (0, 2), (1, 0), (1, 1) },
                 _ => Enumerable.Range(0, n).Select(i => (i, 0)).ToArray(),
             };
-            float start = a.Y + side * cs * 0.15f;    // край огней, ближний к пути
+            float start = a.Y + side * (level - r);    // край огней, ближний к пути: первый ряд — на общем уровне
             int cols = cells.Max(c => c.C) + 1, rows = cells.Max(c => c.Rw) + 1;
             for (int i = 0; i < n; i++)
                 lamps[i] = new PointF(a.X + fwd * (r + cells[i].C * 2 * r), start + side * (r + cells[i].Rw * 2 * r));
@@ -499,19 +510,20 @@ public static class Renderer
                 if (nStrips > 0) { cur += dg; dStripX0 = a.X + fwd * cur; cur += nStrips * stripW + (nStrips - 1) * dg; dStripX1 = a.X + fwd * cur; }
                 end = rowY + side * dh;
             }
-            var lab = new PointF(a.X + fwd * cols * r, end + side * cs * 0.2f);
             float bx0 = Math.Min(a.X, a.X + fwd * cols * 2 * r), bx1 = Math.Max(a.X, a.X + fwd * cols * 2 * r);
-            return new SigGeom
+            var dgm = new SigGeom
             {
-                Ax = a.X, Ay = a.Y, Sy = start, Side = side, Fwd = fwd, R = r, Lamps = lamps, Label = lab,
+                Ax = a.X, Ay = a.Y, Sy = start, Side = side, Fwd = fwd, R = r, Lamps = lamps,
                 DwarfBlock = true, Bar0 = start, Bar1 = end,
                 IndX = dIndX, IndY = rowY, StripX0 = dStripX0, StripX1 = dStripX1, StripY = rowY, Half = dh,
                 Strips = nStrips, StripW = stripW, StripGap = dg,
-                Box = RectangleF.FromLTRB(bx0 - 3, Math.Min(a.Y, lab.Y) - cs * 0.15f, bx1 + 3, Math.Max(a.Y, lab.Y) + cs * 0.15f),
+                Body = RectangleF.FromLTRB(bx0 - r * 0.2f, Math.Min(start, end), bx1 + r * 0.2f, Math.Max(start, end)),
             };
+            return WithLabel(dgm, sig, cs, pl.Slot);
         }
-        // карликовый — ниже, у самого пути; мачтовый в виде ГОСТ — ряд огней на уровне знака мачты «⊢»
-        float sy = a.Y + side * cs * (dwarf ? 0.27f : GostLamps ? 0.34f : 0.4f);
+        // [ИЗМЕНЕНО 23.11.2026] ряд огней на одном уровне у всех: мачтовых, карликовых, в цвете и в виде ГОСТ
+        // (было 0,4 / 0,34 / 0,27 клетки — светофоры стояли «ступеньками»)
+        float sy = a.Y + side * level;
         for (int i = 0; i < n; i++) lamps[i] = new PointF(a.X + fwd * (leg + Off(i)), sy);
         float minX = a.X, maxX = a.X;
         foreach (var l in lamps)
@@ -519,7 +531,6 @@ public static class Renderer
             float lx = l.X + fwd * r;
             minX = Math.Min(minX, lx); maxX = Math.Max(maxX, lx);
         }
-        var label = new PointF(a.X + fwd * (leg + (Off(0) + Off(n - 1)) / 2), sy + side * (r + cs * 0.22f));
         float indX = float.NaN, stripX0 = float.NaN, stripX1 = float.NaN, humpX = float.NaN;
         if (slotAt >= 0)
         {
@@ -528,14 +539,369 @@ public static class Renderer
             if (slotInd) { cur += g0; indX = a.X + fwd * (cur + half); cur += 2 * half; }
             if (nStrips > 0) { cur += g0; stripX0 = a.X + fwd * cur; cur += nStrips * stripW + (nStrips - 1) * g0; stripX1 = a.X + fwd * cur; }
         }
-        return new SigGeom
+        float rh = r * 1.35f;    // половина высоты тела: корпус головки, ромб, полоса
+        var body = RectangleF.FromLTRB(minX - r * 0.2f, sy - rh, maxX + r * 0.2f, sy + rh);
+        if (sig.HasRouteInd && sig.RouteIndOwnMast == true)
         {
-            Ax = a.X, Ay = a.Y, Sy = sy, Side = side, Fwd = fwd, R = r, Lamps = lamps, Label = label,
+            // указатель на своей мачте позади светофора — тоже часть тела
+            float mx = a.X - fwd * cs * 0.45f, mx2 = mx + fwd * (cs * 0.08f + 2 * half);
+            body = RectangleF.Union(body, RectangleF.FromLTRB(Math.Min(mx, mx2) - 1, sy - half, Math.Max(mx, mx2) + 1, sy + half));
+        }
+        var gm = new SigGeom
+        {
+            Ax = a.X, Ay = a.Y, Sy = sy, Side = side, Fwd = fwd, R = r, Lamps = lamps,
             MastRow = GostLamps && !dwarf, Gap = gap,
             Groups = groups, IndX = indX, StripX0 = stripX0, StripX1 = stripX1, Half = half, IndY = sy, StripY = sy,
-            Strips = nStrips, StripW = stripW, StripGap = g0, HumpX = humpX,
-            Box = RectangleF.FromLTRB(minX - 3, Math.Min(a.Y, label.Y) - cs * 0.15f, maxX + 3, Math.Max(a.Y, label.Y) + cs * 0.15f),
+            Strips = nStrips, StripW = stripW, StripGap = g0, HumpX = humpX, Body = body,
         };
+        return WithLabel(gm, sig, cs, pl.Slot);
+    }
+
+    // ---------------------------------------------------------------------
+    //  [ДОБАВЛЕНО 23.11.2026] РАСКЛАДКА: светофоры не лежат на путях, подписи не налезают друг на друга
+    // ---------------------------------------------------------------------
+    /// <summary>Уровень ряда огней от оси пути (доля клетки) — один у всех светофоров.</summary>
+    public const float RowD = 0.3f;
+
+    /// <summary>Где стоит светофор: Out — отодвинут от пути (доля клетки),
+    /// Slot — место подписи: 0 — снаружи под огнями, 1 — в ряд за огнями, 2 — в ряд позади мачты.</summary>
+    public sealed class SigPlace
+    {
+        public float Out; public int Slot;
+        public static readonly SigPlace Default = new();
+    }
+
+    static readonly Dictionary<Signal, SigPlace> sigPlaces = new();
+    static readonly Dictionary<Tile, (float X, float Y)> swLabelAt = new();
+    static readonly HashSet<Tile> scissorsTiles = new();
+    static readonly Dictionary<string, PointF> secLabelAt = new();    // участок → центр подписи (в клетках)
+    static readonly Dictionary<Signal, string> sigCovers = new();
+     // [23.11.2026] светофор, которому не нашлось места, → что он закрывает
+
+    /// <summary>[ДОБАВЛЕНО 23.11.2026] Что закрывает светофор (стрелку 12, изгиб пути…), если рядом не нашлось свободного места;
+    /// null — светофор ничего не закрывает. Раскладка считается заново.</summary>
+    public static string CoverText(Station st, Signal s)
+    {
+        LayoutScheme(st);
+        return sigCovers.TryGetValue(s, out var w) ? w : null;
+    }
+
+    /// <summary>[ДОБАВЛЕНО 23.11.2026] Предупреждения для вкладки «Проверка»: светофоры, которые закрывают путь, стрелку, изгиб.</summary>
+    public static List<Problem> CoverProblems(Station st)
+    {
+        LayoutScheme(st);
+        var res = new List<Problem>();
+        foreach (var e in Core.AllSignals(st))
+            if (sigCovers.TryGetValue(e.Sig, out var w))
+                res.Add(new Problem
+                {
+                    Level = "warn", Key = e.Key,
+                    Text = $"Светофор {(string.IsNullOrEmpty(e.Sig.Name) ? "?" : e.Sig.Name)} закрывает {w}: рядом нет свободного места. " +
+                           "Переставьте его на клетку дальше от стрелки или изгиба, или раздвиньте пути на клетку.",
+                });
+        return res;
+    }
+
+    static string TrackWhat(Tile t) => t.T switch
+    {
+        "switch" => "стрелку " + (string.IsNullOrEmpty(t.Name) ? "?" : t.Name),
+        "curve" => "изгиб пути",
+        "cross" => "пересечение путей",
+        "crossing" => "переезд",
+        "buffer" => "тупик",
+        _ => "путь" + (string.IsNullOrEmpty(t.Sec) ? "" : " " + t.Sec),
+    };
+
+    static string SigText(Signal sig) => (string.IsNullOrEmpty(sig.Name) ? "?" : sig.Name) + (sig.IsReadOnly ? " ↔" : "");
+
+    /// <summary>Подпись светофора в месте slot (до поворота) и рамка выделения / попадания мышью.</summary>
+    static SigGeom WithLabel(SigGeom gm, Signal sig, float cs, int slot)
+    {
+        var sz = measure.MeasureString(SigText(sig), GetFont(cs * 0.27f, true), PointF.Empty, StringFormat.GenericTypographic);
+        float tw = sz.Width + 2, th = sz.Height;
+        var b = gm.Body;
+        float rowY = gm.DwarfBlock ? gm.Bar0 + gm.Side * gm.R : gm.Sy;
+        float far = gm.Fwd > 0 ? b.Right : b.Left;
+        PointF c = slot switch
+        {
+            1 => new PointF(far + gm.Fwd * (cs * 0.05f + tw / 2), rowY),
+            2 => new PointF(gm.Ax - gm.Fwd * (cs * 0.07f + tw / 2), rowY),
+            _ => new PointF((b.Left + b.Right) / 2, (gm.Side > 0 ? b.Bottom : b.Top) + gm.Side * (th / 2 + cs * 0.02f)),
+        };
+        if (slot == 0 && !gm.DwarfBlock && gm.Lamps.Length > 0)
+            c.X = (gm.Lamps[0].X + gm.Lamps[^1].X) / 2;    // по середине огней, как раньше
+        gm.Label = c;
+        gm.LabelRect = new RectangleF(c.X - tw / 2, c.Y - th / 2, tw, th);
+        var anchor = new RectangleF(gm.Ax - 3, Math.Min(gm.Ay, gm.Sy) - 2, 6, Math.Abs(gm.Sy - gm.Ay) + 4);
+        var box = RectangleF.Union(RectangleF.Union(b, gm.LabelRect), anchor);
+        box.Inflate(3, 2);
+        gm.Box = box;
+        return gm;
+    }
+
+    /// <summary>Прямоугольник в кадре светофора — четырёхугольник на экране (с поворотом вокруг точки привязки).</summary>
+    static PointF[] Quad(SigGeom gm, RectangleF r)
+    {
+        var q = RectQ(r);
+        if (gm.Angle == 0) return q;
+        double a = gm.Angle * Math.PI / 180, cos = Math.Cos(a), sin = Math.Sin(a);
+        for (int i = 0; i < 4; i++)
+        {
+            double dx = q[i].X - gm.Ax, dy = q[i].Y - gm.Ay;
+            q[i] = new PointF((float)(gm.Ax + dx * cos - dy * sin), (float)(gm.Ay + dx * sin + dy * cos));
+        }
+        return q;
+    }
+
+    static PointF[] RectQ(RectangleF r) =>
+        new[] { new PointF(r.Left, r.Top), new PointF(r.Right, r.Top), new PointF(r.Right, r.Bottom), new PointF(r.Left, r.Bottom) };
+
+    /// <summary>Отрезок пути толщиной 2·hw — четырёхугольником.</summary>
+    static PointF[] SegQ(PointF p, PointF q, float hw)
+    {
+        float dx = q.X - p.X, dy = q.Y - p.Y, len = MathF.Sqrt(dx * dx + dy * dy);
+        if (len < 0.01f) return RectQ(new RectangleF(p.X - hw, p.Y - hw, 2 * hw, 2 * hw));
+        float nx = -dy / len * hw, ny = dx / len * hw;
+        return new[] { new PointF(p.X + nx, p.Y + ny), new PointF(q.X + nx, q.Y + ny), new PointF(q.X - nx, q.Y - ny), new PointF(p.X - nx, p.Y - ny) };
+    }
+
+    /// <summary>Пересекаются ли два выпуклых четырёхугольника (теорема о разделяющей оси).</summary>
+    static bool Overlap(PointF[] a, PointF[] b) => !Separated(a, b) && !Separated(b, a);
+
+    static bool Separated(PointF[] a, PointF[] b)
+    {
+        for (int i = 0; i < a.Length; i++)
+        {
+            var p = a[i]; var q = a[(i + 1) % a.Length];
+            float nx = -(q.Y - p.Y), ny = q.X - p.X;
+            float a0 = float.MaxValue, a1 = float.MinValue, b0 = float.MaxValue, b1 = float.MinValue;
+            foreach (var v in a) { float d = v.X * nx + v.Y * ny; a0 = Math.Min(a0, d); a1 = Math.Max(a1, d); }
+            foreach (var v in b) { float d = v.X * nx + v.Y * ny; b0 = Math.Min(b0, d); b1 = Math.Max(b1, d); }
+            if (a1 <= b0 || b1 <= a0) return true;
+        }
+        return false;
+    }
+
+    /// <summary>Препятствие раскладки: четырёхугольник и его габарит (габариты сравниваются первыми — так быстро).</summary>
+    sealed class Ob
+    {
+        public readonly PointF[] Q; public readonly RectangleF B;
+        /// <summary>Что это (для предупреждения «светофор закрывает …») и клетка.</summary>
+        public readonly string What, Key;
+        public Ob(PointF[] q, string what = null, string key = null)
+        {
+            Q = q; What = what; Key = key;
+            float x0 = q.Min(p => p.X), y0 = q.Min(p => p.Y), x1 = q.Max(p => p.X), y1 = q.Max(p => p.Y);
+            B = RectangleF.FromLTRB(x0, y0, x1, y1);
+        }
+    }
+
+    static int CountHits(Ob q, List<Ob> list)
+    {
+        int n = 0;
+        foreach (var o in list) if (o.B.IntersectsWith(q.B) && Overlap(q.Q, o.Q)) n++;
+        return n;
+    }
+
+    static bool HitsAny(Ob q, List<Ob> list, Ob except = null)
+    {
+        foreach (var o in list)
+            if (!ReferenceEquals(o, except) && o.B.IntersectsWith(q.B) && Overlap(q.Q, o.Q)) return true;
+        return false;
+    }
+
+    /// <summary>[ДОБАВЛЕНО 23.11.2026] Отметка «светофор закрывает путь»: оранжевая пунктирная рамка вокруг огней и кружок «!».</summary>
+    static void DrawCoverMark(Graphics g, SigGeom gm, float cs)
+    {
+        var body = gm.Body;
+        body.Inflate(cs * 0.04f, cs * 0.04f);
+        var q = Quad(gm, body);
+        var orange = Color.FromArgb(0xf0, 0x8a, 0x00);
+        using (var p = new Pen(orange, Math.Max(1.5f, cs * 0.04f)) { DashPattern = new[] { 2f, 1.5f } }) g.DrawPolygon(p, q);
+        if (cs < 12) return;
+        float rr = Math.Max(5f, cs * 0.13f);
+        var at = q.OrderBy(v => v.Y).ThenByDescending(v => v.X).First();    // верхний правый угол
+        using (var b = new SolidBrush(orange)) g.FillEllipse(b, at.X - rr, at.Y - rr, 2 * rr, 2 * rr);
+        g.DrawString("!", GetFont(rr * 1.5f, true), Brushes.White, at, Center);
+    }
+
+    /// <summary>Клетки участка для подписи: прямые горизонтальные и переезды (если есть), слева направо.</summary>
+    static List<(int X, int Y)> SecLabelPool(Station st, List<string> keys)
+    {
+        var flat = keys.Where(k => { var t = st.Tiles[k]; return (t.T == "straight" && t.V == 0) || t.T == "crossing"; }).ToList();
+        return (flat.Count > 0 ? flat : keys).Select(Core.Parse).OrderBy(p => p.X).ThenBy(p => p.Y).ToList();
+    }
+
+    /// <summary>Где подписать стрелку (доли клетки): место из раскладки, иначе как раньше (Core.SwitchLabelAt).</summary>
+    public static (float X, float Y) SwitchLabelFrac(Tile t) => swLabelAt.TryGetValue(t, out var p) ? p : Core.SwitchLabelAt(t);
+
+    /// <summary>Раскладка схемы (в координатах станции, клетка = Core.Cell, поэтому от масштаба не зависит): для каждого светофора —
+    /// первое место без наложений (по ходу на общем уровне → огни развёрнуты назад → дальше от пути на 0,15 и 0,3 клетки),
+    /// затем место подписи (под огнями → в ряд за огнями → позади мачты), затем места номеров стрелок.
+    /// Препятствия: линии путей, знаки, стрелочные указатели, надписи, названия путей в разрыве, подписи тормозных позиций,
+    /// уже поставленные светофоры и подписи.</summary>
+    public static void LayoutScheme(Station st)
+    {
+        float cs = Core.Cell;
+        sigPlaces.Clear(); swLabelAt.Clear(); scissorsTiles.Clear(); secLabelAt.Clear(); sigCovers.Clear();
+        foreach (var (sa, sb) in Core.Scissors(st))
+            foreach (var k in sa.Concat(sb)) if (st.Tiles.TryGetValue(k, out var sct)) scissorsTiles.Add(sct);
+
+        var tracks = new List<Ob>();
+        var fixedQ = new List<Ob>();
+        float hw = cs * 0.09f;    // полтолщины линии пути с запасом
+        var sigs = new List<(Tile T, Signal S, float X, float Y, bool Dia)>();
+        foreach (var (k, t) in st.Tiles)
+        {
+            var (gx, gy) = Core.Parse(k);
+            float X = gx * cs, Y = gy * cs;
+            var c = new PointF(X + cs / 2, Y + cs / 2);
+            string what = TrackWhat(t);
+            foreach (var e in Core.EdgesOf(t))
+            {
+                tracks.Add(new Ob(SegQ(Pnt(X, Y, cs, e.A), c, hw), what, k));
+                if (e.B != null) tracks.Add(new Ob(SegQ(c, Pnt(X, Y, cs, e.B), hw), what, k));
+            }
+            if (t.Signs != null)
+                foreach (var s in t.Signs)
+                    fixedQ.Add(new Ob(RectQ(s.Type == "limit"
+                        ? new RectangleF(X + cs * 0.45f, Y + cs * 0.62f, cs * 0.1f, cs * 0.22f)
+                        : new RectangleF(X + cs * 0.25f, s.Dir != "L" ? Y + cs * 0.56f : Y + cs * 0.06f, cs * 0.5f, cs * 0.38f))));
+            if (t.T == "switch" && t.IsManual)
+            {
+                var v = Core.VariantOf(t);
+                float fx = v.Trunk is "W" or "NW" or "SW" ? 0.8f : 0.2f, fy = v.Minus.Contains('N') ? 0.84f : 0.16f;
+                fixedQ.Add(new Ob(RectQ(new RectangleF(X + cs * (fx - 0.12f), Y + cs * (fy - 0.11f), cs * 0.24f, cs * 0.22f))));
+            }
+            if (t.HasSigs)
+                for (int i = 0; i < t.Sigs.Count; i++)
+                    sigs.Add((t, t.Sigs[i], X, Y, Aspects.IsDiamond(st, new SignalEntry { Key = k, Idx = i, Sig = t.Sigs[i], Tile = t })));
+        }
+        foreach (var (k, tx) in st.Texts)
+        {
+            var (gx, gy) = Core.Parse(k);
+            var f = GetFont(Math.Max(6, (float)Math.Round(tx.Size > 0 ? tx.Size : 14)), true);
+            var sz = measure.MeasureString(string.IsNullOrEmpty(tx.Text) ? " " : tx.Text, f, PointF.Empty, StringFormat.GenericTypographic);
+            fixedQ.Add(new Ob(RectQ(new RectangleF(gx * cs + 3, gy * cs + cs / 2 - sz.Height / 2, sz.Width, sz.Height))));
+        }
+        foreach (var l in st.Labels) fixedQ.Add(new Ob(RectQ(LabelRect(l, 0, 0, cs, 1))));
+        var gapList = st.TrackGaps != false ? TrackGapList(st, 0, 0, cs) : new List<TrackGap>();
+        foreach (var gp in gapList)
+                fixedQ.Add(new Ob(RectQ(new RectangleF(gp.Center.X - gp.TextHalf, gp.Center.Y - cs * 0.17f, 2 * gp.TextHalf, cs * 0.34f))));
+        var bf = GetFont(cs * 0.24f, true);
+        foreach (var k in Core.BrakeLabelTiles(st))
+        {
+            if (!st.Tiles.TryGetValue(k, out var t)) continue;
+            var (gx, gy) = Core.Parse(k);
+            var p = BrakeLabelPos(t, gx * cs, gy * cs, cs);
+            var sz = measure.MeasureString(t.Brk.Label, bf, PointF.Empty, StringFormat.GenericTypographic);
+            fixedQ.Add(new Ob(RectQ(new RectangleF(p.X - sz.Width / 2, p.Y - sz.Height / 2, sz.Width, sz.Height))));
+        }
+
+        // 1) тела светофоров: сверху вниз, слева направо
+        // [ИЗМЕНЕНО 23.11.2026] на своём месте; занято — чуть дальше от пути. Огни не разворачиваются и на другую сторону пути
+        // светофор не переносится (по просьбе пользователя: это выглядело так, будто светофор сам поменял направление)
+        var cands = new[] { 0f, 0.15f, 0.3f, 0.45f };
+        var bodies = new List<Ob>();
+        var placed = new List<(Tile T, Signal S, float X, float Y, bool Dia, SigPlace P, Ob Body)>();
+        foreach (var e in sigs.OrderBy(q => q.Y).ThenBy(q => q.X))
+        {
+            SigPlace best = null; Ob bestQ = null;
+            foreach (var outv in cands)
+            {
+                var pl = new SigPlace { Out = outv };
+                var gm = GetSigGeom(e.T, e.S, e.X, e.Y, cs, e.Dia, pl);
+                var q = new Ob(Quad(gm, gm.Body));
+                if (!HitsAny(q, tracks) && !HitsAny(q, bodies) && !HitsAny(q, fixedQ)) { best = pl; bestQ = q; break; }
+            }
+            if (best == null)
+            {
+                // [ИЗМЕНЕНО 23.11.2026] свободного места нет — светофор остаётся на обычном месте (не уезжает от пути),
+                // рисуется полупрозрачным с «!»
+                best = new SigPlace();
+                var gm0 = GetSigGeom(e.T, e.S, e.X, e.Y, cs, e.Dia, best);
+                bestQ = new Ob(Quad(gm0, gm0.Body));
+                // что именно закрыто — для рамки «!», подсказки в «Свойствах» и вкладки «Проверка»
+                var what = tracks.Where(o => o.B.IntersectsWith(bestQ.B) && Overlap(bestQ.Q, o.Q)).Select(o => o.What).Distinct().ToList();
+                if (HitsAny(bestQ, bodies)) what.Add("другой светофор");
+                if (HitsAny(bestQ, fixedQ)) what.Add("знак или надпись");
+                sigCovers[e.S] = string.Join(", ", what);
+            }
+            bodies.Add(bestQ);
+            placed.Add((e.T, e.S, e.X, e.Y, e.Dia, best, bestQ));
+        }
+        // 2) подписи светофоров
+        var labels = new List<Ob>();
+        foreach (var e in placed)
+        {
+            Ob first = null;
+            bool ok = false;
+            for (int slot = 0; slot <= 2 && !ok; slot++)
+            {
+                e.P.Slot = slot;
+                var gm = GetSigGeom(e.T, e.S, e.X, e.Y, cs, e.Dia, e.P);
+                var q = new Ob(Quad(gm, gm.LabelRect));
+                first ??= q;
+                if (!HitsAny(q, tracks) && !HitsAny(q, fixedQ) && !HitsAny(q, bodies, e.Body) && !HitsAny(q, labels)) { labels.Add(q); ok = true; }
+            }
+            if (!ok) { e.P.Slot = 0; labels.Add(first); }
+            sigPlaces[e.S] = e.P;
+        }
+        // 3) номера стрелок: как раньше, а если место занято светофором или надписью — первое свободное в клетке
+        var nf = GetFont(cs * 0.3f, true);
+        var spots = new (float X, float Y)[] { (0.5f, 0.1f), (0.5f, 0.9f), (0.2f, 0.16f), (0.8f, 0.16f), (0.2f, 0.84f), (0.8f, 0.84f) };
+        foreach (var (k, t) in st.Tiles)
+        {
+            if (t.T != "switch") continue;
+            var (gx, gy) = Core.Parse(k);
+            var sz = measure.MeasureString(string.IsNullOrEmpty(t.Name) ? "?" : t.Name, nf, PointF.Empty, StringFormat.GenericTypographic);
+            Ob At((float X, float Y) f) =>
+                new Ob(RectQ(new RectangleF(gx * cs + f.X * cs - sz.Width / 2, gy * cs + f.Y * cs - sz.Height / 2, sz.Width, sz.Height)));
+            bool Free(Ob q, bool checkTracks) =>
+                !HitsAny(q, bodies) && !HitsAny(q, labels) && !HitsAny(q, fixedQ) && (!checkTracks || !HitsAny(q, tracks));
+            var choice = Core.SwitchLabelAt(t);
+            var dq = At(choice);
+            if (!Free(dq, false))
+                foreach (var sp in spots)
+                {
+                    var q = At(sp);
+                    if (Free(q, true)) { choice = sp; dq = q; break; }
+                }
+            labels.Add(dq);
+            swLabelAt[t] = choice;
+        }
+        // 4) названия участков (кнопка «Названия»): клетка участка поближе к середине, под путём или над ним — где свободно
+        if (st.SecLabels == true)
+        {
+            var sf = GetFont(cs * 0.26f, false);
+            var gapSecs = new HashSet<string>(gapList.Select(gp => gp.Sec));
+            foreach (var (sec, keys) in Core.TilesBySection(st))
+            {
+                if (gapSecs.Contains(sec)) continue;
+                var pool = SecLabelPool(st, keys);
+                int mid = (pool.Count - 1) / 2;
+                var sz = measure.MeasureString(sec, sf, PointF.Empty, StringFormat.GenericTypographic);
+                Ob Rect(float cx, float cy) => new Ob(RectQ(new RectangleF(cx * cs - sz.Width / 2, cy * cs - sz.Height / 2, sz.Width, sz.Height)));
+                // под путём, над путём, потом углы клетки; свободного нет — где меньше всего наложений
+                var fr = new (float X, float Y)[] { (0.5f, 0.88f), (0.5f, 0.12f), (0.25f, 0.85f), (0.75f, 0.85f), (0.25f, 0.15f), (0.75f, 0.15f) };
+                PointF pick = new(pool[mid].X + 0.5f, pool[mid].Y + 0.88f);
+                Ob pq = Rect(pick.X, pick.Y);
+                int bestScore = int.MaxValue;
+                foreach (var (x, y) in pool.Select((p, i) => (p, i)).OrderBy(q => Math.Abs(q.i - mid)).Take(12).Select(q => q.p))
+                {
+                    foreach (var (fx, fy) in fr)
+                    {
+                        var q = Rect(x + fx, y + fy);
+                        int score = 3 * CountHits(q, bodies) + 3 * CountHits(q, labels) + 2 * CountHits(q, fixedQ) + CountHits(q, tracks);
+                        if (score < bestScore) { bestScore = score; pick = new PointF(x + fx, y + fy); pq = q; }
+                        if (score == 0) break;
+                    }
+                    if (bestScore == 0) break;
+                }
+                labels.Add(pq);
+                secLabelAt[sec] = pick;
+            }
+        }
     }
 
     public static Color LampColor(Lamp l) => l switch
@@ -808,7 +1174,7 @@ public static class Renderer
     /// <summary>Где написать номер стрелки: с той стороны, куда НЕ уходит отклонение.</summary>
     public static PointF SwitchLabelPos(Tile t, float x, float y, float cs)
     {
-        var (fx, fy) = Core.SwitchLabelAt(t);    // [ИЗМЕНЕНО 12.11.2026] общее с «Станцией по схеме» и экспортом
+        var (fx, fy) = SwitchLabelFrac(t);    // [ИЗМЕНЕНО 23.11.2026] место из раскладки (не под светофором); по умолчанию — Core.SwitchLabelAt
         return new PointF(x + cs * fx, y + cs * fy);
     }
 
@@ -1010,6 +1376,7 @@ public static class Renderer
         float SY(float gy) => oy + gy * cs;
 
         g.Clear(Pal.Bg);
+        LayoutScheme(st);    // [ДОБАВЛЕНО 23.11.2026] места светофоров, подписей и номеров стрелок без наложений
 
         int gx0 = (int)Math.Floor(-ox / cs) - 1, gx1 = (int)Math.Ceiling((W - ox) / cs) + 1;
         int gy0 = (int)Math.Floor(-oy / cs) - 1, gy1 = (int)Math.Ceiling((H - oy) / cs) + 1;
@@ -1173,11 +1540,15 @@ public static class Renderer
             foreach (var (sec, keys) in Core.TilesBySection(st))
             {
                 if (gapSecs.Contains(sec)) continue;
-                var flat = keys.Where(k => { var t = st.Tiles[k]; return (t.T == "straight" && t.V == 0) || t.T == "crossing"; }).ToList();
-                var pool = (flat.Count > 0 ? flat : keys).Select(Core.Parse).OrderBy(p => p.X).ThenBy(p => p.Y).ToList();
-                var (x, y) = pool[(pool.Count - 1) / 2];
-                if (!Visible(x, y)) continue;
-                g.DrawString(sec, f, b, new PointF(SX(x) + cs / 2, SY(y) + cs * 0.88f), Center);
+                // [ИЗМЕНЕНО 23.11.2026] место — из раскладки (не на светофоре, номере стрелки, другой подписи)
+                if (!secLabelAt.TryGetValue(sec, out var at))
+                {
+                    var pool = SecLabelPool(st, keys);
+                    var (px, py) = pool[(pool.Count - 1) / 2];
+                    at = new PointF(px + 0.5f, py + 0.88f);
+                }
+                if (!Visible((int)at.X, (int)at.Y)) continue;
+                g.DrawString(sec, f, b, new PointF(SX(at.X), SY(at.Y)), Center);
             }
         }
 
@@ -1202,11 +1573,16 @@ public static class Renderer
                 var r = new SigRef(e.K, i);
                 bool pending = test && T.Pending == r;
                 bool selected = !test && ui.SelSig == r;
+                bool dia = Aspects.IsDiamond(st, new SignalEntry { Key = e.K, Idx = i, Sig = e.T.Sigs[i], Tile = e.T });
+                // [ДОБАВЛЕНО 23.11.2026] светофор, которому не нашлось места, — полупрозрачный (стрелку / изгиб под ним видно)
+                bool covers = sigCovers.ContainsKey(e.T.Sigs[i]);
                 DrawSignal(g, e.T, e.T.Sigs[i], SX(e.X), SY(e.Y), cs,
                     aspect: test && T.Aspects.TryGetValue(e.K + "#" + i, out var asp) ? asp : null,
                     ring: selected || pending,
                     ringColor: pending ? Color.White : Pal.Sel,
-                    diamond: Aspects.IsDiamond(st, new SignalEntry { Key = e.K, Idx = i, Sig = e.T.Sigs[i], Tile = e.T }));
+                    alpha: covers ? 150 : 255,
+                    diamond: dia);
+                if (covers && !test) DrawCoverMark(g, GetSigGeom(e.T, e.T.Sigs[i], SX(e.X), SY(e.Y), cs, dia), cs);
             }
         }
 

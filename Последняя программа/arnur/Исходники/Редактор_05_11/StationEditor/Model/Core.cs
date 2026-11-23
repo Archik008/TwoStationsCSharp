@@ -579,6 +579,19 @@ public static class Core
                 foreach (var k in keys)
                     if (st.Tiles[k].Group != name) { st.Tiles[k].Group = name; changed = true; }
             }
+        // [ДОБАВЛЕНО 23.11.2026] положения: стрелки одной диагонали — вместе (одна в минусе — и вторая), обе диагонали сразу
+        // в минусе быть не могут — вторая (B) в плюс. Иначе на схеме висел обрывок диагонали (16 в минусе, 20 в плюсе)
+        foreach (var (a, b) in Scissors(st))
+        {
+            bool aMinus = a.Any(k => st.Tiles[k].Plus == false), bMinus = b.Any(k => st.Tiles[k].Plus == false);
+            if (aMinus && bMinus) bMinus = false;
+            foreach (var (keys, minus) in new[] { (a, aMinus), (b, bMinus) })
+                foreach (var k in keys)
+                {
+                    bool? want = minus ? false : null;
+                    if (st.Tiles[k].Plus != want) { st.Tiles[k].Plus = want; changed = true; }
+                }
+        }
         return changed;
     }
 
