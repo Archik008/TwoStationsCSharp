@@ -47,6 +47,12 @@ public sealed class Aspect
     /// <summary>[ДОБАВЛЕНО 17.11.2026] Горит маршрутный указатель: номер пути и цвет (белый / зелёный); null — тёмный.</summary>
     public string RouteText;
     public Lamp RouteColor = Lamp.White;
+    /// <summary>[ДОБАВЛЕНО 23.11.2026] Сколько зелёных полос горит (0 — ни одной): маршрут с отклонением по стрелкам пологих марок
+    /// (Инструкция по сигнализации РК п. 15, 19).</summary>
+    public int Strips;
+    /// <summary>[ДОБАВЛЕНО 23.11.2026] «Зелёный мигающий и жёлтый» с полосой (до 80 / 120 км/ч) — светофор перед ним (проходной,
+    /// предупредительный) показывает зелёный мигающий (Инструкция РК п. 27).</summary>
+    public bool StripFast;
 
     static Aspect Of(string text, bool perm, params LampLit[] l) => new() { Lamps = l, Text = text, Permissive = perm };
     public static Aspect Red(int n = 1) => Of("красный", false, Pad(n, new LampLit(Lamp.Red)));
@@ -104,6 +110,66 @@ public static class Aspects
     // ---- [ДОБАВЛЕНО 17.11.2026] маршрутный (путевой) указатель: РУ-30-80 лист 10 (стр. 18); Инструкция по сигнализации РК
     // (приказ № 209 от 18.04.2011) п. 70 — белый, путь приёма или направление; п. 71 и ПТЭ РК п. 134 — зелёный на групповых
     // выходных и маршрутных, номер пути, с которого разрешено отправление (и маневры при лунно-белом) ----
+
+    // ---- [ДОБАВЛЕНО 23.11.2026] ЗЕЛЁНЫЕ СВЕТЯЩИЕСЯ ПОЛОСЫ — Инструкция по сигнализации РК (приказ № 209):
+    //  п. 15 — входные и маршрутные, приём на боковой путь по стрелкам с крестовинами пологих марок:
+    //    1) зелёный мигающий и жёлтый + одна полоса — не более 80 км/ч, следующий открыт;
+    //    2) два жёлтых, верхний мигающий, + одна полоса — не более 80 км/ч, следующий открыт с уменьшенной скоростью;
+    //       два жёлтых + одна полоса — не более 60 км/ч, следующий закрыт;
+    //    3) зелёный мигающий и жёлтый + две полосы — не более 120 км/ч, следующий открыт;
+    //  п. 19 — выходные, отправление с отклонением по стрелкам пологих марок:
+    //    1) зелёный мигающий и жёлтый + одна полоса — не более 80 км/ч, следующий открыт; 2) два жёлтых + одна полоса — 60 км/ч.
+    //  Пологие марки: 1/18 — одна полоса (до 80 км/ч), 1/22 — до 120 км/ч (две полосы, если они есть на светофоре).
+    //  1/11 и круче или марка не задана — полос нет, обычные два жёлтых. ----
+
+    /// <summary>Знаменатель марки крестовины «1/18» → 18; не задана — 0.</summary>
+    public static int MarkN(string mark) =>
+        mark != null && mark.StartsWith("1/") && int.TryParse(mark[2..], out var n) ? n : 0;
+
+    /// <summary>Самая крутая марка среди стрелок маршрута, стоящих в минусе: 0 — маршрут без отклонения
+    /// или у какой-то стрелки в минусе марка не задана (тогда полос нет).</summary>
+    public static int PologicN(Station st, Route r)
+    {
+        int min = int.MaxValue;
+        foreach (var x in r.Switches.Where(x => !x.Plus))
+            foreach (var k in x.Keys)
+            {
+                int n = st.Tiles.TryGetValue(k, out var t) ? MarkN(t.Mark) : 0;
+                if (n == 0) return 0;
+                min = Math.Min(min, n);
+            }
+        return min == int.MaxValue ? 0 : min;
+    }
+
+    /// <summary>Показание с зелёной полосой (null — полосы нет, считается как обычно).</summary>
+    static Aspect StripAspect(Station st, SignalEntry s, Route route, Lamp[] head, bool nextOpen, Aspect na)
+    {
+        if (!s.Sig.HasStrip || route.Shunt || !route.Diverging) return null;
+        int n = PologicN(st, route);
+        if (n < 18) return null;
+        bool entry = s.Sig.Kind is "entry" or "route";    // п. 15 — приём; иначе выходной — п. 19
+        string pt = entry ? "п. 15" : "п. 19";
+        bool twoY = head.Count(l => l == Lamp.Yellow) >= 2;
+        Aspect a;
+        if (nextOpen && !(entry && na.Diverging))
+        {
+            int k = entry && n >= 22 ? Math.Min(2, s.Sig.StripCount) : 1;
+            a = OnHead(head, $"зелёный мигающий и жёлтый, {(k == 2 ? "две полосы" : "полоса")} — до {(k == 2 ? 120 : 80)} км/ч (марка 1/{n}, РК {pt})",
+                       true, false, new LampLit(Lamp.Green, true), new LampLit(Lamp.Yellow));
+            a.Strips = k;
+            a.StripFast = true;
+            return a;
+        }
+        if (nextOpen && twoY)
+            a = OnHead(head, $"два жёлтых, верхний мигающий, и полоса — до 80 км/ч (марка 1/{n}, РК {pt})", true, true,
+                       new LampLit(Lamp.Yellow, true), new LampLit(Lamp.Yellow));
+        else if (twoY)
+            a = OnHead(head, $"два жёлтых и полоса — до 60 км/ч (марка 1/{n}, РК {pt})", true, true, new LampLit(Lamp.Yellow), new LampLit(Lamp.Yellow));
+        else    // у светофора один жёлтый (боковой путь): жёлтый и полоса
+            a = OnHead(head, $"жёлтый и полоса — до 60 км/ч (марка 1/{n}, РК {pt})", true, true, new LampLit(Lamp.Yellow));
+        a.Strips = 1;
+        return a;
+    }
 
     /// <summary>Каким светофорам можно поставить маршрутный указатель.</summary>
     public static bool CanHaveRouteInd(string kind) => kind is "entry" or "exit" or "route" or "shunt";
@@ -413,6 +479,8 @@ public static class Aspects
                     var nx = NextMainWalk(s);
                     var na = nx.Sig != null ? Get(nx.Sig) : null;
                     bool nextOpen = na != null && na.Permissive;
+                    // [ДОБАВЛЕНО 23.11.2026] зелёные полосы — отклонение по стрелкам пологих марок (1/18 и положе)
+                    if (StripAspect(st, s, route, head, nextOpen, na) is Aspect sa) return sa;
                     // два жёлтых: входной — при любом отклонении; выходной / маршрутный — только с главного пути (РУ-30-80 стр. 9, 14)
                     bool twoYellow = route.Diverging && (s.Sig.Kind == "entry" || IsMainTrack(s.Tile.Sec));
                     if (twoYellow)
@@ -438,6 +506,8 @@ public static class Aspects
                     if (nx.Sig == null) return Aspect.Make("жёлтый", true, 1, new LampLit(Lamp.Yellow));
                     var na = Get(nx.Sig);
                     if (!na.Permissive) return Aspect.Make("жёлтый", true, 1, new LampLit(Lamp.Yellow));
+                    // [ДОБАВЛЕНО 23.11.2026] Инструкция РК п. 27: входной открыт с полосой (до 80 / 120 км/ч) — зелёный мигающий
+                    if (na.StripFast) return Aspect.Make("зелёный мигающий (входной — с полосой)", true, 1, new LampLit(Lamp.Green, true));
                     if (na.Diverging) return Aspect.Make("жёлтый мигающий", true, 1, new LampLit(Lamp.Yellow, true));
                     return Aspect.Make("зелёный", true, 1, new LampLit(Lamp.Green));
                 }
@@ -449,6 +519,7 @@ public static class Aspects
                     if (main.Sig.Kind == "barrier")
                         return ma.Lamps[0].Color == Lamp.Red ? Aspect.Make("жёлтый (заградительный закрыт)", true, 1, new LampLit(Lamp.Yellow)) : Aspect.Dark();
                     if (!ma.Permissive) return Aspect.Make("жёлтый (основной закрыт)", true, 1, new LampLit(Lamp.Yellow));
+                    if (ma.StripFast) return Aspect.Make("зелёный мигающий (основной — с полосой)", true, 1, new LampLit(Lamp.Green, true));    // [23.11.2026] РК п. 27
                     if (ma.Diverging) return Aspect.Make("жёлтый мигающий (основной — два жёлтых)", true, 1, new LampLit(Lamp.Yellow, true));
                     return Aspect.Make("зелёный (основной открыт)", true, 1, new LampLit(Lamp.Green));
                 }
@@ -511,6 +582,7 @@ public static class Aspects
             if (txt == null) continue;
             // показание может быть общим объектом (Aspect.Make) — указатель пишем в копию
             memo[Id(s)] = new Aspect { Lamps = a.Lamps, Text = a.Text + $", указатель «{txt}»", Permissive = a.Permissive, Diverging = a.Diverging,
+                                       Strips = a.Strips, StripFast = a.StripFast,
                                        Indicator = a.Indicator, RouteText = txt, RouteColor = RouteIndColor(s.Sig.Kind) };
         }
         return memo;

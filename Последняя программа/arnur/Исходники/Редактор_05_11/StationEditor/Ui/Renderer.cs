@@ -574,7 +574,8 @@ public static class Renderer
     static readonly Dictionary<Signal, SigPlace> sigPlaces = new();
     static readonly Dictionary<Tile, (float X, float Y)> swLabelAt = new();
     static readonly HashSet<Tile> scissorsTiles = new();
-    static readonly Dictionary<string, PointF> secLabelAt = new();    // участок → центр подписи (в клетках)
+    // участок → центр подписи (в клетках) и размер шрифта (доля от обычного; длинное имя, которому негде встать, — мельче)
+    static readonly Dictionary<string, (PointF At, float Scale)> secLabelAt = new();
     // [23.11.2026] светофор, которому не нашлось места, → что он закрывает (по-русски, части переводятся при показе)
     static readonly Dictionary<Signal, List<string>> sigCovers = new();
 
@@ -752,6 +753,15 @@ public static class Renderer
         g.DrawString("!", GetFont(rr * 1.5f, true), Brushes.White, at, Center);
     }
 
+    /// <summary>[ДОБАВЛЕНО 23.11.2026] Текст с обводкой цветом фона: читается и там, где задевает линию пути или цвет участка.</summary>
+    static void DrawHaloText(Graphics g, string text, Font f, Brush b, PointF c)
+    {
+        using var path = new GraphicsPath();
+        path.AddString(text, f.FontFamily, (int)f.Style, f.Size, c, Center);
+        using (var halo = new Pen(Color.FromArgb(200, Pal.Bg), Math.Max(2f, f.Size * 0.28f)) { LineJoin = LineJoin.Round }) g.DrawPath(halo, path);
+        g.FillPath(b, path);
+    }
+
     /// <summary>Клетки участка для подписи: прямые горизонтальные и переезды (если есть), слева направо.</summary>
     static List<(int X, int Y)> SecLabelPool(Station st, List<string> keys)
     {
@@ -897,30 +907,37 @@ public static class Renderer
             labels.Add(dq);
             swLabelAt[t] = choice;
         }
-        // 4) названия участков (кнопка «Названия»): клетка участка поближе к середине, под путём или над ним — где свободно
+        // 4) названия участков (кнопка «Названия»). [ИЗМЕНЕНО 23.11.2026] Порядок поиска места: в клетках участка (поближе к середине,
+        // под путём, над путём, у углов) → в пустой клетке рядом с участком → то же мельче (0,8). Свободного места нет нигде —
+        // где меньше всего наложений. Длинные имена коротких участков («М4-Turn10» на одной клетке) раньше ложились на пути и номера
         if (st.SecLabels == true)
         {
-            var sf = GetFont(cs * 0.26f, false);
             var gapSecs = new HashSet<string>(gapList.Select(gp => gp.Sec));
-            foreach (var (sec, keys) in Core.TilesBySection(st))
+            var fr = new (float X, float Y)[] { (0.5f, 0.88f), (0.5f, 0.12f), (0.25f, 0.85f), (0.75f, 0.85f), (0.25f, 0.15f), (0.75f, 0.15f) };
+            var around = new (int X, int Y)[] { (0, 1), (0, -1), (1, 0), (-1, 0), (1, 1), (-1, 1), (1, -1), (-1, -1) };
+            // короткие участки — первыми: у длинных больше вариантов
+            foreach (var (sec, keys) in Core.TilesBySection(st).OrderBy(p => p.Value.Count).ThenBy(p => p.Key, StringComparer.Ordinal))
             {
                 if (gapSecs.Contains(sec)) continue;
                 var pool = SecLabelPool(st, keys);
                 int mid = (pool.Count - 1) / 2;
-                var sz = measure.MeasureString(sec, sf, PointF.Empty, StringFormat.GenericTypographic);
-                Ob Rect(float cx, float cy) => new Ob(RectQ(new RectangleF(cx * cs - sz.Width / 2, cy * cs - sz.Height / 2, sz.Width, sz.Height)));
-                // под путём, над путём, потом углы клетки; свободного нет — где меньше всего наложений
-                var fr = new (float X, float Y)[] { (0.5f, 0.88f), (0.5f, 0.12f), (0.25f, 0.85f), (0.75f, 0.85f), (0.25f, 0.15f), (0.75f, 0.15f) };
-                PointF pick = new(pool[mid].X + 0.5f, pool[mid].Y + 0.88f);
-                Ob pq = Rect(pick.X, pick.Y);
+                var near = pool.Select((p, i) => (p, i)).OrderBy(q => Math.Abs(q.i - mid)).Take(12).Select(q => q.p).ToList();
+                var secSpots = new List<PointF>();
+                foreach (var (x, y) in near) foreach (var (fx, fy) in fr) secSpots.Add(new PointF(x + fx, y + fy));
+                foreach (var (x, y) in near)
+                    foreach (var (dx, dy) in around)
+                        if (!st.Tiles.ContainsKey(Core.Key(x + dx, y + dy))) secSpots.Add(new PointF(x + dx + 0.5f, y + dy + 0.5f));
+                (PointF At, float Scale) pick = (new PointF(pool[mid].X + 0.5f, pool[mid].Y + 0.88f), 1f);
+                Ob pq = null;
                 int bestScore = int.MaxValue;
-                foreach (var (x, y) in pool.Select((p, i) => (p, i)).OrderBy(q => Math.Abs(q.i - mid)).Take(12).Select(q => q.p))
+                foreach (float scale in new[] { 1f, 0.8f })
                 {
-                    foreach (var (fx, fy) in fr)
+                    var sz = measure.MeasureString(sec, GetFont(cs * 0.26f * scale, false), PointF.Empty, StringFormat.GenericTypographic);
+                    foreach (var sp in secSpots)
                     {
-                        var q = Rect(x + fx, y + fy);
-                        int score = 3 * CountHits(q, bodies) + 3 * CountHits(q, labels) + 2 * CountHits(q, fixedQ) + CountHits(q, tracks);
-                        if (score < bestScore) { bestScore = score; pick = new PointF(x + fx, y + fy); pq = q; }
+                        var q = new Ob(RectQ(new RectangleF(sp.X * cs - sz.Width / 2, sp.Y * cs - sz.Height / 2, sz.Width, sz.Height)));
+                        int score = 3 * CountHits(q, bodies) + 3 * CountHits(q, labels) + 2 * CountHits(q, fixedQ) + 2 * CountHits(q, tracks);
+                        if (pq == null || score < bestScore) { bestScore = score; pick = (sp, scale); pq = q; }
                         if (score == 0) break;
                     }
                     if (bestScore == 0) break;
@@ -1112,14 +1129,18 @@ public static class Renderer
             float x0, y0, w = gm.StripW > 0 ? gm.StripW : gm.R * 0.7f, sg = gm.StripGap > 0 ? gm.StripGap : gm.R * 0.35f;
             if (!float.IsNaN(gm.StripX0)) { x0 = gm.StripX0; y0 = gm.StripY; }
             else { var last = gm.Lamps[^1]; x0 = last.X + gm.Fwd * gm.R * 1.4f; y0 = last.Y; }
-            using var bb = new SolidBrush(A(lampTest ? Pal.LampGreen : Color.FromArgb(0x1d, 0x4a, 0x2c), alpha));
+            // [ИЗМЕНЕНО 23.11.2026] полоса горит по показанию (Aspect.Strips — маршрут по стрелкам пологих марок) и при проверке огней
+            using var bb = new SolidBrush(A(Color.FromArgb(0x1d, 0x4a, 0x2c), alpha));
+            using var lit = new SolidBrush(A(Pal.LampGreen, alpha));
             using var bp = new Pen(A(Pal.LampGreen, alpha), Math.Max(1f, lw * 0.8f));
+            using var litPen = new Pen(A(Pal.Dark, alpha), Math.Max(1f, lw * 0.35f));
             for (int j = 0; j < Math.Max(1, gm.Strips); j++)
             {
                 float a0 = x0 + gm.Fwd * j * (w + sg), a1 = a0 + gm.Fwd * w;
                 var bar = RectangleF.FromLTRB(Math.Min(a0, a1), y0 - gm.R * 1.2f, Math.Max(a0, a1), y0 + gm.R * 1.2f);
-                g.FillRectangle(bb, bar);
-                g.DrawRectangle(bp, bar.X, bar.Y, bar.Width, bar.Height);
+                bool on = lampTest || j < aspect.Strips;
+                g.FillRectangle(on ? lit : bb, bar);
+                g.DrawRectangle(on ? litPen : bp, bar.X, bar.Y, bar.Width, bar.Height);    // горящая — в тёмной рамке: две полосы не сливаются
             }
         }
         if (label && cs >= 14)
@@ -1567,15 +1588,16 @@ public static class Renderer
             foreach (var (sec, keys) in Core.TilesBySection(st))
             {
                 if (gapSecs.Contains(sec)) continue;
-                // [ИЗМЕНЕНО 23.11.2026] место — из раскладки (не на светофоре, номере стрелки, другой подписи)
-                if (!secLabelAt.TryGetValue(sec, out var at))
+                // [ИЗМЕНЕНО 23.11.2026] место и размер — из раскладки (не на светофоре, номере стрелки, другой подписи, пути)
+                if (!secLabelAt.TryGetValue(sec, out var lp))
                 {
                     var pool = SecLabelPool(st, keys);
                     var (px, py) = pool[(pool.Count - 1) / 2];
-                    at = new PointF(px + 0.5f, py + 0.88f);
+                    lp = (new PointF(px + 0.5f, py + 0.88f), 1f);
                 }
-                if (!Visible((int)at.X, (int)at.Y)) continue;
-                g.DrawString(sec, f, b, new PointF(SX(at.X), SY(at.Y)), Center);
+                var at = lp.At;
+                if (!Visible((int)Math.Floor(at.X), (int)Math.Floor(at.Y))) continue;
+                DrawHaloText(g, sec, lp.Scale < 1 ? GetFont(cs * 0.26f * lp.Scale, false) : f, b, new PointF(SX(at.X), SY(at.Y)));
             }
         }
 

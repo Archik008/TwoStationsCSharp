@@ -713,6 +713,7 @@ class RailSchemePanel : Panel
             {
                 case Aspect.Red: case Aspect.Invite: case Aspect.RedBack: c = LampColor(s.Has("red") ? "red" : "blue"); break;
                 case Aspect.Green: case Aspect.YellowGreen: c = LampColor("green"); break;
+                case Aspect.GreenBlinkYellow: case Aspect.GreenBlink: c = Blink ? LampColor("green") : LampOffSimple; break;    // [23.11.2026]
                 case Aspect.Yellow: case Aspect.TwoYellow: c = LampColor("yellow"); break;
                 case Aspect.YellowBlink: case Aspect.TwoYellowTopBlink: c = Blink ? LampColor("yellow") : LampOffSimple; break;
                 case Aspect.White: c = LampColor("white"); break;
@@ -797,7 +798,8 @@ class RailSchemePanel : Panel
                     cur += 2;
                     float sx0 = start + dir * cur, sx1 = start + dir * (cur + StripW);
                     var bar = RectangleF.FromLTRB(Math.Min(sx0, sx1), y - LampR * 1.2f, Math.Max(sx0, sx1), y + LampR * 1.2f);
-                    using (var sb = new SolidBrush(IL.TestMode ? LampColor("green") : Color.FromArgb(20, 70, 40))) g.FillRectangle(sb, bar);
+                    // [ИЗМЕНЕНО 23.11.2026] полоса горит, когда её зажёг расчёт показания (StripLit), и при проверке ламп
+                    using (var sb = new SolidBrush(IL.TestMode || j < s.StripLit ? LampColor("green") : Color.FromArgb(20, 70, 40))) g.FillRectangle(sb, bar);
                     using (var spn = new Pen(Color.FromArgb(20, 20, 20), 1f)) g.DrawRectangle(spn, bar.X, bar.Y, bar.Width, bar.Height);
                     cur += StripW;
                 }

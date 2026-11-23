@@ -264,6 +264,9 @@ public class JsonLayout
                 : $"Стрелка {label}";
             var sw = IL.AddSwitchL(Unique(label), label, title, ss);
             sw.Plus = plus0;
+            // [ДОБАВЛЕНО 23.11.2026] марка крестовины из конструктора — для зелёных полос (у спаренных — самая крутая; не задана у одной — 0)
+            var marks = keys.Select(k => Ed.Aspects.MarkN(St.Tiles[k].Mark)).ToList();
+            sw.Mark = marks.Contains(0) ? 0 : marks.Min();
             View.Switches.Add(sw);
             swByGroup[g] = sw;
         }
@@ -325,6 +328,7 @@ public class JsonLayout
             s.Heads = e.Sig.HeadGroups(lamps.Length);
             s.Strip = e.Sig.HasStrip;
             s.StripCount = e.Sig.StripCount;             // [20.11.2026] одна или две полосы
+            s.StripEntry = e.Sig.Kind is "entry" or "route";    // [23.11.2026] п. 15 (приём) или п. 19 (отправление)
             if (e.Sig.HasRouteInd)
             {
                 s.RouteInd = true;
@@ -442,6 +446,25 @@ public class JsonLayout
 
     readonly HashSet<string> loopWarned = new();
 
+    /// <summary>[ДОБАВЛЕНО 23.11.2026] Следующий поездной светофор по ходу от начала маршрута, со стрелками в положении маршрута
+    /// (у маршрута приёма — выходной в конце пути). End маршрута — встречный светофор для второго клика, по нему показание
+    /// считать нельзя: входной не видел, открыт ли выходной впереди (был жёлтый вместо зелёного, полоса не загоралась).</summary>
+    RailSignal AheadSignal(Ed.Route r)
+    {
+        var se = TC.AllSignals(St).FirstOrDefault(x => RefKey(x.Ref) == RefKey(r.Start));
+        if (se == null) return null;
+        var saved = new Dictionary<string, bool?>();
+        foreach (var x in r.Switches)
+            foreach (var k in x.Keys)
+                if (St.Tiles.TryGetValue(k, out var t)) { saved[k] = t.Plus; t.Plus = x.Plus ? null : false; }
+        try
+        {
+            var a = Ed.Aspects.MainAhead(St, se, null);
+            return a != null && sigByRef.TryGetValue(RefKey(a.Ref), out var rs) ? rs : null;
+        }
+        finally { foreach (var (k, v) in saved) St.Tiles[k].Plus = v; }
+    }
+
     void BuildRoutes()
     {
         var customs = BuildCustomRoutes();
@@ -500,6 +523,7 @@ public class JsonLayout
             rr.Sections.AddRange(r.Sections.Where(n => secs.ContainsKey(n) && !(r.Shunt && n == r.Dest)).Select(n => secs[n]));
             foreach (var x in r.Switches)
                 if (swByGroup.TryGetValue(x.Group, out var sw)) rr.Switches.Add((sw, x.Plus));
+            if (!r.Shunt) rr.Ahead = AheadSignal(r);    // [23.11.2026] следующий по ходу — для показания (зелёный / полосы)
             IL.AddRoute(rr);
             View.Routes.Add(rr);
             routeTiles[rr] = r.Tiles;    // [23.11.2026] для жёлтого маршрута (RoutePieces)
@@ -598,6 +622,8 @@ public class JsonLayout
             s.Protects = step?.Section;
             // следующий светофор по ходу
             var cur = step;
+            // [ДОБАВЛЕНО 23.11.2026] уже на первой границе другой светофор (проходной стоит внутри участка перед входным) — он и следующий
+            if (cur?.Signal != null && cur.Signal != s) { s.Next = cur.Signal; cur = null; }
             for (int i = 0; i < 60 && cur != null && cur.Section != null; i++)
             {
                 cur = Step(cur.Section, s.Dir, live: false);

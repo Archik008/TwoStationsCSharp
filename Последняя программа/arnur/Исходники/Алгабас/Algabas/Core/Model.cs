@@ -47,7 +47,12 @@ public enum Aspect
     /// <summary>Жёлтый и зелёный — роспуск «нормально».</summary>
     YellowGreen,
     /// <summary>Красный и «Н» на указателе — осаживание назад.</summary>
-    RedBack
+    RedBack,
+    // [ДОБАВЛЕНО 23.11.2026] зелёные светящиеся полосы («Станция по схеме»; Инструкция по сигнализации РК п. 15, 19, 27) — в конце
+    /// <summary>Зелёный мигающий и жёлтый (с полосой) — с отклонением по стрелкам пологих марок, до 80 / 120 км/ч, следующий открыт.</summary>
+    GreenBlinkYellow,
+    /// <summary>Зелёный мигающий (проходной перед входным) — входной открыт с полосой, до 80 / 120 км/ч.</summary>
+    GreenBlink
 }
 
 /// <summary>[ДОБАВЛЕНО 13.11.2026] Режим горочного светофора, задаёт оператор горки (РУ-30-80 листы 45–47; caredenis.ru урок 14):
@@ -86,7 +91,8 @@ public static class AspectInfo
     /// <summary>Разрешает ли показание проехать светофор.</summary>
     public static bool IsPermissive(Aspect a) =>
         a is Aspect.Yellow or Aspect.YellowBlink or Aspect.Green
-          or Aspect.TwoYellow or Aspect.TwoYellowTopBlink or Aspect.Invite or Aspect.White or Aspect.YellowGreen;
+          or Aspect.TwoYellow or Aspect.TwoYellowTopBlink or Aspect.Invite or Aspect.White or Aspect.YellowGreen
+          or Aspect.GreenBlinkYellow or Aspect.GreenBlink;
 
     /// <summary>"Запрещающее" для следующего светофора: красный, погашен или пригласительный.</summary>
     public static bool IsRestrictive(Aspect a) =>
@@ -107,6 +113,8 @@ public static class AspectInfo
         Aspect.Blue => "синий",
         Aspect.YellowGreen => "жёлтый и зелёный",
         Aspect.RedBack => "красный и «Н»",
+        Aspect.GreenBlinkYellow => "зелёный мигающий и жёлтый",
+        Aspect.GreenBlink => "зелёный мигающий",
         _ => a.ToString()
     };
 
@@ -125,6 +133,10 @@ public static class AspectInfo
         Aspect.Blue => "Синий — маневры запрещены.",
         Aspect.YellowGreen => "Горочный: жёлтый и зелёный — роспуск с нормальной скоростью.",
         Aspect.RedBack => "Горочный: красный и «Н» — осаживание назад.",
+        Aspect.GreenBlinkYellow => "Зелёный мигающий и жёлтый с зелёной полосой — с отклонением по стрелкам пологих марок: одна полоса — " +
+                                   "не более 80 км/ч, две — не более 120 км/ч; следующий светофор открыт (Инструкция РК п. 15, 19).",
+        Aspect.GreenBlink => "Зелёный мигающий — входной открыт и требует проследования со скоростью не более 80 (120) км/ч; " +
+                             "поезд принимается на боковой путь (Инструкция РК п. 27).",
         _ => ""
     };
 }
@@ -193,6 +205,9 @@ public class RailSwitch
     public string Title = "";
 
     public bool Plus = true;           // + прямо (нормальное положение), − на отклонение
+    /// <summary>[ДОБАВЛЕНО 23.11.2026] Марка крестовины — знаменатель (1/18 → 18); 0 — не задана. Для зелёных полос
+    /// («Станция по схеме»); у Алгабаса и АКЖТ 0 — полос там нет.</summary>
+    public int Mark;
     public bool Controlled = true;     // есть контроль положения (не в процессе перевода)
     public double MoveTimer;           // сколько секунд ещё переводится
 
@@ -304,6 +319,10 @@ public class RailSignal
     public bool Strip;
     /// <summary>[ДОБАВЛЕНО 20.11.2026] Сколько зелёных полос (1 или 2 — Инструкция РК п. 15 подп. 3); 0 — как одна.</summary>
     public int StripCount;
+    /// <summary>[ДОБАВЛЕНО 23.11.2026] Сколько полос горит сейчас (считает Interlocking.Compute); 0 — не горят.</summary>
+    public int StripLit;
+    /// <summary>[ДОБАВЛЕНО 23.11.2026] Полоса по п. 15 (входной, маршрутный — приём; до двух полос) — иначе по п. 19 (выходной).</summary>
+    public bool StripEntry;
     /// <summary>Маршрутный указатель (Инструкция РК п. 70–71, ПТЭ РК п. 134): есть, на отдельной мачте, зелёный (иначе белый).</summary>
     public bool RouteInd, RouteIndOwnMast, RouteIndGreen;
     /// <summary>Что горит на маршрутном указателе (номер пути) — null, указатель тёмный.</summary>
@@ -329,6 +348,8 @@ public class RailSignal
             // [ДОБАВЛЕНО 13.11.2026] горочный; у повторителя в парке приёма вместо красного — синий
             case Aspect.YellowGreen: yield return ("yellow", false); yield return ("green", false); break;
             case Aspect.RedBack: yield return (Has("red") ? "red" : "blue", false); break;
+            case Aspect.GreenBlinkYellow: yield return ("green", true); yield return ("yellow", false); break;    // [23.11.2026]
+            case Aspect.GreenBlink: yield return ("green", true); break;
         }
     }
 
@@ -375,6 +396,10 @@ public class RailRoute
     /// <summary>[ДОБАВЛЕНО 23.11.2026] Как строится маршрут — для журнала при задании («стрелки 2+ 4−, участки …»).
     /// Заполняет только «Станция по схеме»; у Алгабаса и АКЖТ null — журнал как раньше.</summary>
     public string How;
+    /// <summary>[ДОБАВЛЕНО 23.11.2026] Следующий светофор ПО ХОДУ поезда (выходной в конце пути приёма) — от него зависит показание.
+    /// В «Станции по схеме» конец маршрута End — светофор для второго клика (встречный на пути назначения), поэтому
+    /// показание считается по Ahead. null — по End, как раньше (Алгабас, АКЖТ).</summary>
+    public RailSignal Ahead;
 
     /// <summary>Доп. условие (например, направление однопутного перегона). Вернуть текст причины или null.</summary>
     public Func<string> Precondition;

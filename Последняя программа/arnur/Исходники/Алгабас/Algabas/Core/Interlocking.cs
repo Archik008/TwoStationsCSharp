@@ -822,6 +822,7 @@ public partial class Interlocking   // [ИЗМЕНЕНО 21.10.2026] втора�
 
     Aspect Compute(RailSignal s)
     {
+        s.StripLit = 0;    // [23.11.2026] полосы горят, только если их зажжёт расчёт ниже (StripAspect)
         // светофор, которым управляет другая станция (связь диспетчеров), — только показываем
         if (s.Remote is Aspect remote) return remote;
 
@@ -854,6 +855,8 @@ public partial class Interlocking   // [ИЗМЕНЕНО 21.10.2026] втора�
                 if (s.Next == null) return Aspect.Yellow;
                 var n = s.Next.Aspect;
                 if (AspectInfo.IsRestrictive(n)) return Aspect.Yellow;
+                // [ДОБАВЛЕНО 23.11.2026] Инструкция РК п. 27: впереди входной с полосой (до 80 / 120 км/ч) — зелёный мигающий
+                if (n == Aspect.GreenBlinkYellow && s.Has("green")) return Aspect.GreenBlink;
                 if (n is Aspect.TwoYellow or Aspect.TwoYellowTopBlink) return Aspect.YellowBlink;
                 return Aspect.Green;
             }
@@ -870,7 +873,9 @@ public partial class Interlocking   // [ИЗМЕНЕНО 21.10.2026] втора�
 
                 r.SignalWasOpen = true;
                 if (r.Shunting) return s.Has("white") ? Aspect.White : ClosedAspect(s);
-                bool nextClosed = r.End == null || AspectInfo.IsRestrictive(r.End.Aspect);
+                var next = r.Ahead ?? r.End;    // [23.11.2026] Ahead — следующий по ходу («Станция по схеме»), иначе как раньше
+                bool nextClosed = next == null || AspectInfo.IsRestrictive(next.Aspect);
+                if (StripAspect(s, r, next, nextClosed) is Aspect sa) return sa;    // [23.11.2026] зелёные полосы
                 Aspect a;
                 if (r.Diverging) a = nextClosed ? Aspect.TwoYellow : Aspect.TwoYellowTopBlink;
                 else a = nextClosed ? Aspect.Yellow : Aspect.Green;
@@ -882,5 +887,31 @@ public partial class Interlocking   // [ИЗМЕНЕНО 21.10.2026] втора�
             }
         }
         return Aspect.Red;
+    }
+
+    /// <summary>[ДОБАВЛЕНО 23.11.2026] Показание с зелёной светящейся полосой — Инструкция по сигнализации РК:
+    /// п. 15 (входной, маршрутный — приём на боковой путь): зелёный мигающий и жёлтый + одна полоса — до 80 км/ч,
+    /// + две полосы — до 120 км/ч (следующий открыт); два жёлтых, верхний мигающий, + полоса — следующий открыт
+    /// с уменьшенной скоростью; два жёлтых + полоса — до 60 км/ч, следующий закрыт.
+    /// п. 19 (выходной): зелёный мигающий и жёлтый + полоса — до 80 км/ч; два жёлтых + полоса — до 60 км/ч.
+    /// Только по стрелкам пологих марок: все стрелки маршрута в минусе — 1/18 и положе (1/22 и положе — до 120 км/ч).
+    /// null — полос нет (светофор без полосы, у Алгабаса и АКЖТ — всегда).</summary>
+    static Aspect? StripAspect(RailSignal s, RailRoute r, RailSignal next, bool nextClosed)
+    {
+        if (!s.Strip || !r.Diverging || r.Shunting) return null;
+        var minus = r.Switches.Where(x => !x.plus).ToList();
+        if (minus.Count == 0 || minus.Any(x => x.sw.Mark < 18)) return null;
+        int n = minus.Min(x => x.sw.Mark);
+        // следующий требует уменьшенной скорости: два жёлтых или полоса без зелёного мигающего («жёлтый и полоса» у бокового выходного)
+        bool nextDiverging = next != null && (next.Aspect is Aspect.TwoYellow or Aspect.TwoYellowTopBlink
+                                              || (next.StripLit > 0 && next.Aspect != Aspect.GreenBlinkYellow));
+        if (!nextClosed && !(s.StripEntry && nextDiverging) && s.Has("green") && s.Has("yellow"))
+        {
+            s.StripLit = s.StripEntry && n >= 22 ? Math.Min(2, Math.Max(1, s.StripCount)) : 1;
+            return Aspect.GreenBlinkYellow;
+        }
+        s.StripLit = 1;
+        if (!s.Has("yellow1")) return Aspect.Yellow;
+        return nextClosed ? Aspect.TwoYellow : Aspect.TwoYellowTopBlink;
     }
 }
