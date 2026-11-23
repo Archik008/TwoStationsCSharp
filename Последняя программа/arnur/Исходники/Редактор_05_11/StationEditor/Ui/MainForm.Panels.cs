@@ -77,7 +77,10 @@ public sealed partial class MainForm
         panelsRebuild = false;
 
         int errs = Validator.Validate(st, Routes).Count(p => p.Level == "err");
-        var ct = errs > 0 ? $"Проверка ({errs})" : "Проверка";
+        // [23.11.2026] и светофоры, которые закрывают путь (оранжевый «!» на схеме): «Проверка (2 / !3)»
+        int covers = Renderer.CoverProblems(st).Count;
+        string chk = StationApp.Core.L.T("Проверка");
+        var ct = errs > 0 && covers > 0 ? $"{chk} ({errs} / !{covers})" : errs > 0 ? $"{chk} ({errs})" : covers > 0 ? $"{chk} (!{covers})" : chk;
         if (tpChecks.Text != ct) tpChecks.Text = ct;
 
         var page = PageOf(ui.Tab);
@@ -747,8 +750,8 @@ public sealed partial class MainForm
                 f.Controls.Add(row);
                 // [ДОБАВЛЕНО 23.11.2026] светофору не нашлось места — он закрывает путь (рамка «!» на схеме)
                 if (Renderer.CoverText(st, s) is string cov)
-                    Hint(f, w, $"⚠ Закрывает {cov}: рядом нет свободного места. Переставьте светофор на клетку дальше " +
-                               "от стрелки или изгиба, или раздвиньте пути на клетку. Пока он нарисован полупрозрачным — путь под ним видно.",
+                    Hint(f, w, "⚠ " + StationApp.Core.L.F("Закрывает {0}: рядом нет свободного места. Переставьте светофор на клетку дальше " +
+                               "от стрелки или изгиба, или раздвиньте пути на клетку. Пока он нарисован полупрозрачным — путь под ним видно.", cov),
                          Color.FromArgb(0x9a, 0x55, 0x00));
 
                 // [ДОБАВЛЕНО 10.11.2026] цифра в имени: своя (поле «№») или от названия пути / порядковая

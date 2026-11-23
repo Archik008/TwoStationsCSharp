@@ -25,6 +25,45 @@ public sealed partial class MainForm
     Point CellAt(float mx, float my) =>
         new((int)Math.Floor((mx - ui.Cam.X) / CS), (int)Math.Floor((my - ui.Cam.Y) / CS));
 
+    // ---- [ДОБАВЛЕНО 23.11.2026] всплывающая подсказка над оранжевым «!»: что закрывает светофор и что сделать
+    // (тот же текст, что во вкладке «Проверка») ----
+    readonly ToolTip coverTip = new() { ToolTipIcon = ToolTipIcon.Warning, UseFading = false };
+    Signal coverTipFor;
+
+    void UpdateCoverTip(float mx, float my)
+    {
+        Signal found = null; string text = null;
+        if (!ui.IsTest)
+        {
+            var p = CellAt(mx, my);
+            float c = CS;
+            for (int dy = -1; dy <= 1 && found == null; dy++)
+                for (int dx = -1; dx <= 1 && found == null; dx++)
+                {
+                    var k = Core.Key(p.X + dx, p.Y + dy);
+                    if (!st.Tiles.TryGetValue(k, out var t) || !t.HasSigs) continue;
+                    foreach (var s in t.Sigs)
+                        if (Renderer.CoverHit(t, s, ui.Cam.X + (p.X + dx) * c, ui.Cam.Y + (p.Y + dy) * c, c, mx, my))
+                        { found = s; text = Renderer.CoverMessage(s); break; }
+                }
+        }
+        if (found == coverTipFor) return;
+        coverTipFor = found;
+        if (found == null || text == null) { coverTip.Hide(canvas); return; }
+        coverTip.ToolTipTitle = StationApp.Core.L.T("Светофор закрывает путь");    // [23.11.2026] на языке интерфейса
+        // перенос строк, чтобы подсказка не тянулась на весь экран
+        var words = text.Split(' ');
+        var lines = new List<string>(); var cur = "";
+        foreach (var w in words)
+        {
+            if (cur.Length + w.Length > 70) { lines.Add(cur.TrimEnd()); cur = ""; }
+            cur += w + " ";
+        }
+        if (cur.Length > 0) lines.Add(cur.TrimEnd());
+        coverTip.Show(string.Join("\n", lines) + "\n\n" + StationApp.Core.L.T("Все такие светофоры — во вкладке «Проверка»."),
+                      canvas, (int)mx + 16, (int)my + 18);
+    }
+
     SigRef? SignalAt(float mx, float my)
     {
         var p = CellAt(mx, my);
@@ -603,6 +642,7 @@ public sealed partial class MainForm
         bool moved = ui.Hover is not Point h || h != p;
         ui.Hover = p;
         if (moved) { UpdateGhost(); ShowCellInfo(p.X, p.Y); }
+        if (drag == null) UpdateCoverTip(e.X, e.Y);    // [23.11.2026] подсказка над «!» у светофора, который закрывает путь
 
         if (drag == null) { if (moved) Draw(); return; }
         if (drag.Kind == "pan")

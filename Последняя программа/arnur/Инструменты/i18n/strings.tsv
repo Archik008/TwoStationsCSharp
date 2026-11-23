@@ -3464,3 +3464,16 @@ id {0} уже у другой тормозной позиции — другая
 {Б} — буква Н / Ч, {П} — номер пути (3П → 3, IIП → II), {N} — порядковый номер, {О} — имя основного впереди. Пусто — по умолчанию (серым). Свою цифру у отдельного светофора — поле «№» в его свойствах.	{Б} — Н / Ч әрпі, {П} — жол нөмірі (3П → 3, IIП → II), {N} — реттік нөмір, {О} — алдағы негізгі бағдаршамның аты. Бос — әдепкі бойынша (сұр). Жеке бағдаршамның өз цифры — оның қасиеттеріндегі «№» өрісі.	{Б} — the letter Н / Ч, {П} — the track number (3П → 3, IIП → II), {N} — a serial number, {О} — the name of the main signal ahead. Empty — default (grey). A digit of its own for a single signal — the «№» field in its properties.
 В шаблоне буква Н / Ч вписана жёстко — тогда такие светофоры получат её в обе стороны (например, выходной → у входного Н станет Ч).\n\nЗаменить на {Б} — буква будет браться от входного своего направления?\n\n	Үлгіде Н / Ч әрпі қатаң жазылған — сонда мұндай бағдаршамдар оны екі жаққа да алады (мысалы, Н кіру бағдаршамы жағындағы шығу → Ч болады).\n\n{Б}-ға ауыстыру керек пе — әріп өз бағытының кіру бағдаршамынан алынады?\n\n	The letter Н / Ч is hard-coded in the template — then such signals get it in both directions (e.g. an exit → next to home signal Н becomes Ч).\n\nReplace with {Б} — the letter will be taken from the home signal of its direction?\n\n
 проверка огней	оттарды тексеру	light check
+Светофор {0} закрывает {1}: рядом нет свободного места. Переставьте его на клетку дальше от стрелки или изгиба, или раздвиньте пути на клетку.	{0} бағдаршамы {1} жабады: жанында бос орын жоқ. Оны бағыттамадан немесе иілімнен бір торға алысырақ қойыңыз немесе жолдарды бір торға алшақтатыңыз.	Signal {0} covers {1}: there is no free room nearby. Move it one cell further from the switch or bend, or spread the tracks one cell apart.
+Закрывает {0}: рядом нет свободного места. Переставьте светофор на клетку дальше от стрелки или изгиба, или раздвиньте пути на клетку. Пока он нарисован полупрозрачным — путь под ним видно.	{0} жабады: жанында бос орын жоқ. Бағдаршамды бағыттамадан немесе иілімнен бір торға алысырақ қойыңыз немесе жолдарды бір торға алшақтатыңыз. Әзірге ол жартылай мөлдір салынған — астындағы жол көрінеді.	Covers {0}: there is no free room nearby. Move the signal one cell further from the switch or bend, or spread the tracks one cell apart. Until then it is drawn semi-transparent so the track under it stays visible.
+Светофор закрывает путь	Бағдаршам жолды жабады	Signal covers a track
+Все такие светофоры — во вкладке «Проверка».	Мұндай бағдаршамдардың бәрі — «Тексеру» қойындысында.	All such signals are listed on the «Check» tab.
+стрелку {0}	{0} бағыттамасын	switch {0}
+линию пути {0}	{0} жол сызығын	track line {0}
+линию пути	жол сызығын	the track line
+изгиб пути	жол иілімін	the track bend
+пересечение путей	жолдардың қиылысын	the track crossing
+путь на переезде	өткелдегі жолды	the track at the level crossing
+тупиковый упор	тұйық тірегін	the buffer stop
+другой светофор	басқа бағдаршамды	another signal
+знак или надпись	белгіні немесе жазуды	a sign or label

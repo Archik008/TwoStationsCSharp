@@ -575,15 +575,18 @@ public static class Renderer
     static readonly Dictionary<Tile, (float X, float Y)> swLabelAt = new();
     static readonly HashSet<Tile> scissorsTiles = new();
     static readonly Dictionary<string, PointF> secLabelAt = new();    // участок → центр подписи (в клетках)
-    static readonly Dictionary<Signal, string> sigCovers = new();
-     // [23.11.2026] светофор, которому не нашлось места, → что он закрывает
+    // [23.11.2026] светофор, которому не нашлось места, → что он закрывает (по-русски, части переводятся при показе)
+    static readonly Dictionary<Signal, List<string>> sigCovers = new();
+
+    /// <summary>Что закрыто — на языке интерфейса: каждая часть («стрелку 4», «линию пути 1П»…) переводится словарём (L.T).</summary>
+    static string WhatText(List<string> parts) => string.Join(", ", parts.Select(StationApp.Core.L.T));
 
     /// <summary>[ДОБАВЛЕНО 23.11.2026] Что закрывает светофор (стрелку 12, изгиб пути…), если рядом не нашлось свободного места;
     /// null — светофор ничего не закрывает. Раскладка считается заново.</summary>
     public static string CoverText(Station st, Signal s)
     {
         LayoutScheme(st);
-        return sigCovers.TryGetValue(s, out var w) ? w : null;
+        return sigCovers.TryGetValue(s, out var w) ? WhatText(w) : null;
     }
 
     /// <summary>[ДОБАВЛЕНО 23.11.2026] Предупреждения для вкладки «Проверка»: светофоры, которые закрывают путь, стрелку, изгиб.</summary>
@@ -592,14 +595,39 @@ public static class Renderer
         LayoutScheme(st);
         var res = new List<Problem>();
         foreach (var e in Core.AllSignals(st))
-            if (sigCovers.TryGetValue(e.Sig, out var w))
-                res.Add(new Problem
-                {
-                    Level = "warn", Key = e.Key,
-                    Text = $"Светофор {(string.IsNullOrEmpty(e.Sig.Name) ? "?" : e.Sig.Name)} закрывает {w}: рядом нет свободного места. " +
-                           "Переставьте его на клетку дальше от стрелки или изгиба, или раздвиньте пути на клетку.",
-                });
+            if (CoverMessage(e.Sig) is string text)
+                res.Add(new Problem { Level = "warn", Key = e.Key, Text = text });
         return res;
+    }
+
+    /// <summary>[ДОБАВЛЕНО 23.11.2026] Текст предупреждения о светофоре, который закрывает путь (по последнему рисунку) — один и тот же
+    /// во вкладке «Проверка» и во всплывающей подсказке над «!»; null — светофор ничего не закрывает.</summary>
+    /// [ИЗМЕНЕНО 23.11.2026] на языке интерфейса (ru / kk / en — Инструменты/i18n/strings.tsv)
+    public static string CoverMessage(Signal s) =>
+        sigCovers.TryGetValue(s, out var w)
+            ? StationApp.Core.L.F("Светофор {0} закрывает {1}: рядом нет свободного места. " +
+                                  "Переставьте его на клетку дальше от стрелки или изгиба, или раздвиньте пути на клетку.",
+                                  string.IsNullOrEmpty(s.Name) ? "?" : s.Name, WhatText(w))
+            : null;
+
+    /// <summary>[ДОБАВЛЕНО 23.11.2026] Мышь над кружком «!» или над самим светофором, который закрывает путь.</summary>
+    public static bool CoverHit(Tile t, Signal s, float x, float y, float cs, float mx, float my)
+    {
+        if (!sigCovers.ContainsKey(s)) return false;
+        var gm = GetSigGeom(t, s, x, y, cs);
+        if (gm.Hit(mx, my)) return true;
+        var (at, rr) = CoverBadge(gm, cs);
+        float dx = mx - at.X, dy = my - at.Y;
+        return dx * dx + dy * dy <= (rr + 2) * (rr + 2);
+    }
+
+    /// <summary>Где кружок «!»: верхний правый угол рамки вокруг огней, радиус.</summary>
+    static (PointF At, float R) CoverBadge(SigGeom gm, float cs)
+    {
+        var body = gm.Body;
+        body.Inflate(cs * 0.04f, cs * 0.04f);
+        var q = Quad(gm, body);
+        return (q.OrderBy(v => v.Y).ThenByDescending(v => v.X).First(), Math.Max(5f, cs * 0.13f));
     }
 
     static string TrackWhat(Tile t) => t.T switch
@@ -607,9 +635,9 @@ public static class Renderer
         "switch" => "стрелку " + (string.IsNullOrEmpty(t.Name) ? "?" : t.Name),
         "curve" => "изгиб пути",
         "cross" => "пересечение путей",
-        "crossing" => "переезд",
-        "buffer" => "тупик",
-        _ => "путь" + (string.IsNullOrEmpty(t.Sec) ? "" : " " + t.Sec),
+        "crossing" => "путь на переезде",
+        "buffer" => "тупиковый упор",
+        _ => string.IsNullOrEmpty(t.Sec) ? "линию пути" : "линию пути " + t.Sec,
     };
 
     static string SigText(Signal sig) => (string.IsNullOrEmpty(sig.Name) ? "?" : sig.Name) + (sig.IsReadOnly ? " ↔" : "");
@@ -719,8 +747,7 @@ public static class Renderer
         var orange = Color.FromArgb(0xf0, 0x8a, 0x00);
         using (var p = new Pen(orange, Math.Max(1.5f, cs * 0.04f)) { DashPattern = new[] { 2f, 1.5f } }) g.DrawPolygon(p, q);
         if (cs < 12) return;
-        float rr = Math.Max(5f, cs * 0.13f);
-        var at = q.OrderBy(v => v.Y).ThenByDescending(v => v.X).First();    // верхний правый угол
+        var (at, rr) = CoverBadge(gm, cs);    // верхний правый угол
         using (var b = new SolidBrush(orange)) g.FillEllipse(b, at.X - rr, at.Y - rr, 2 * rr, 2 * rr);
         g.DrawString("!", GetFont(rr * 1.5f, true), Brushes.White, at, Center);
     }
@@ -825,7 +852,7 @@ public static class Renderer
                 var what = tracks.Where(o => o.B.IntersectsWith(bestQ.B) && Overlap(bestQ.Q, o.Q)).Select(o => o.What).Distinct().ToList();
                 if (HitsAny(bestQ, bodies)) what.Add("другой светофор");
                 if (HitsAny(bestQ, fixedQ)) what.Add("знак или надпись");
-                sigCovers[e.S] = string.Join(", ", what);
+                sigCovers[e.S] = what;
             }
             bodies.Add(bestQ);
             placed.Add((e.T, e.S, e.X, e.Y, e.Dia, best, bestQ));
