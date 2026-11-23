@@ -101,6 +101,9 @@ public class JsonLayout
     public TrackSection SectionByName(string n) => n != null && secs.TryGetValue(n, out var s) ? s : null;
     public string NameOf(TrackSection s) => secs.FirstOrDefault(p => p.Value == s).Key;
     readonly HashSet<string> relabeled = new();   // одиночные стрелки с номером из настройки — тот же номер и на схеме
+    // [ДОБАВЛЕНО 23.11.2026] для жёлтого маршрута: клетки автомаршрута (из редактора) и куски рисунка каждой клетки
+    readonly Dictionary<RailRoute, List<string>> routeTiles = new();
+    readonly Dictionary<string, List<(TrackPiece P, string A, string B, bool Run)>> tilePieces = new();
 
     public JsonLayout(Interlocking il, Ed.Station st, string fileName, SchemeSettings set = null)
     {
@@ -126,7 +129,9 @@ public class JsonLayout
         BuildAutoSignals();
         BuildCrossings();
         BuildGeometry();
-        foreach (var r in View.Routes) r.Pieces = RoutePainter.Compute(G, r);
+        // [ИЗМЕНЕНО 23.11.2026] жёлтые куски маршрута — по клеткам маршрута из редактора (RoutePieces); раньше — обход от ножки
+        // светофора (RoutePainter), который не находил ни одного куска, если светофор стоит не на стыке участков
+        foreach (var r in View.Routes) { r.Pieces = RoutePieces(r); r.How = HowText(r); }
         BuildSim();
         if (St.Objects.Count > 0)
             Notes.Add($"Объекты схемы (вокзал, часы, амперметр: {St.Objects.Count}) в программе станции пока не показываются.");
@@ -497,6 +502,7 @@ public class JsonLayout
                 if (swByGroup.TryGetValue(x.Group, out var sw)) rr.Switches.Add((sw, x.Plus));
             IL.AddRoute(rr);
             View.Routes.Add(rr);
+            routeTiles[rr] = r.Tiles;    // [23.11.2026] для жёлтого маршрута (RoutePieces)
             // [ДОБАВЛЕНО 18.11.2026] маршрут заходит на один и тот же участок дважды (участок обходит петлю или съезд) —
             // в ЭЦ так не бывает: поезд не поймёт, куда ехать, посекционное размыкание путается. Схему надо поправить.
             var order = new List<string>();
@@ -775,8 +781,8 @@ public class JsonLayout
             int j = i;
             while (j + 1 < flat.Count && flat[j + 1].XY.Y == flat[i].XY.Y && flat[j + 1].XY.X == flat[j].XY.X + 1 &&
                    (flat[j + 1].T.Sec ?? "") == (flat[i].T.Sec ?? "") && !SplitAfter(flat[j].K) && !SplitBefore(flat[j + 1].K)) j++;
-            g.Piece(Pid(), Sid(flat[i].T), T(Pt(flat[i].K, "W")), T(Pt(flat[j].K, "E")));
-            for (int q = i; q <= j; q++) done.Add(flat[q].K);
+            var run = g.Piece(Pid(), Sid(flat[i].T), T(Pt(flat[i].K, "W")), T(Pt(flat[j].K, "E")));
+            for (int q = i; q <= j; q++) { done.Add(flat[q].K); AddTp(flat[q].K, run, "W", "E", true); }
             i = j + 1;
         }
         foreach (var (k, t) in St.Tiles)
@@ -787,18 +793,18 @@ public class JsonLayout
             if (t.T == "switch")
             {
                 var sw = swByGroup[TC.SwitchGroup(k, t)];
-                g.Piece(Pid(), Sid(t), T(Pt(k, v.Trunk)), T(c));
-                g.Branch(Pid(), Sid(t), sw.Id, true, true, T(c), T(Pt(k, v.Plus)));
-                g.Branch(Pid(), Sid(t), sw.Id, false, true, T(c), T(Pt(k, v.Minus)));
+                AddTp(k, g.Piece(Pid(), Sid(t), T(Pt(k, v.Trunk)), T(c)), v.Trunk, null, false);
+                AddTp(k, g.Branch(Pid(), Sid(t), sw.Id, true, true, T(c), T(Pt(k, v.Plus))), v.Plus, null, false);
+                AddTp(k, g.Branch(Pid(), Sid(t), sw.Id, false, true, T(c), T(Pt(k, v.Minus))), v.Minus, null, false);
             }
             else if (t.T == "buffer")
             {
-                g.Piece(Pid(), Sid(t), T(Pt(k, v.Ends[0])), T(c));
+                AddTp(k, g.Piece(Pid(), Sid(t), T(Pt(k, v.Ends[0])), T(c)), v.Ends[0], null, false);
                 g.Buffers.Add(c);
             }
             else if (t.T == "exit")
             {
-                g.Piece(Pid(), Sid(t), T(Pt(k, v.Ends[0])), T(Pt(k, TC.Opp[v.Ends[0]])));   // путь уходит за край схемы
+                AddTp(k, g.Piece(Pid(), Sid(t), T(Pt(k, v.Ends[0])), T(Pt(k, TC.Opp[v.Ends[0]]))), v.Ends[0], null, false);   // путь уходит за край схемы
             }
             else
             {
@@ -806,6 +812,7 @@ public class JsonLayout
                 {
                     var pts = TC.Opp[e.A] == e.B ? new[] { T(Pt(k, e.A)), T(Pt(k, e.B)) } : new[] { T(Pt(k, e.A)), T(c), T(Pt(k, e.B)) };
                     var piece = g.Piece(Pid(), Sid(t), pts);
+                    AddTp(k, piece, e.A, e.B, false);
                     // [ДОБАВЛЕНО 12.11.2026] тормозная позиция: путь — обычный кусок (соединяет соседей, занятость, маршруты),
                     // поверх — полоса замедлителя (SchemePanel.DrawBrakes); подпись — у средней клетки группы, как в редакторе
                     if (t.T == "brake") g.Brakes.Add(new BrakeGeom { PieceId = piece.Id, A = Pt(k, e.A), B = Pt(k, e.B) });
@@ -924,6 +931,79 @@ public class JsonLayout
 
     /// <summary>Горизонтальный кусок пути разрезается на мачте светофора (иначе маршрут не подсветится от светофора):
     /// мачта «→» — на правом краю клетки, «←» — на левом.</summary>
+    void AddTp(string key, TrackPiece p, string a, string b, bool run)
+    {
+        if (!tilePieces.TryGetValue(key, out var l)) tilePieces[key] = l = new();
+        l.Add((p, a, b, run));
+    }
+
+    /// <summary>[ДОБАВЛЕНО 23.11.2026] Куски рисунка, которые горят жёлтым при открытом маршруте: только участки маршрута.
+    /// Автомаршрут — по его клеткам (как нашёл редактор): прямые — куском, на стрелке — ножка и ветка нужного положения,
+    /// на изгибе / пересечении — те линии, что ведут к соседним клеткам маршрута. Свой маршрут из настройки (клеток нет) —
+    /// обход от светофора (RoutePainter), а участки, до которых обход не дошёл, — целиком (ветки стрелок — по положению).</summary>
+    List<string> RoutePieces(RailRoute r)
+    {
+        var secIds = r.Sections.Select(s => s.Id).ToHashSet();
+        // путь назначения маневрового в маршрут не входит (может быть занят), но на схеме тоже горит — видно, куда маршрут;
+        // занятый участок всё равно красный (SchemePanel.PieceColor сначала смотрит занятость)
+        if (r.Dest != null && r.ExitSection == null) secIds.Add(r.Dest.Id);
+        var need = r.Switches.ToDictionary(x => x.sw.Id, x => x.plus);
+        var res = new List<string>();
+        void Add(TrackPiece p) { if (!res.Contains(p.Id)) res.Add(p.Id); }
+        if (routeTiles.TryGetValue(r, out var tiles))
+        {
+            var set = tiles.ToHashSet();
+            for (int i = 0; i < tiles.Count; i++)
+            {
+                var k = tiles[i];
+                if (!tilePieces.TryGetValue(k, out var list)) continue;
+                bool In(string d) => d != null && TC.NeighborOf(St, k, d) is { } nb && set.Contains(nb.Key);
+                bool edge = i == 0 || i == tiles.Count - 1;
+                foreach (var (p, a, b, run) in list)
+                {
+                    if (!secIds.Contains(p.SectionId)) continue;
+                    if (run) { Add(p); continue; }
+                    if (p.SwitchId != null)
+                    {
+                        if (need.TryGetValue(p.SwitchId, out var plus) ? p.StraightBranch == plus : In(a)) Add(p);
+                        continue;
+                    }
+                    int ends = b == null ? 1 : 2, on = (In(a) ? 1 : 0) + (In(b) ? 1 : 0);
+                    if (on == ends || (on > 0 && edge) || (b == null && list.Count == 1)) Add(p);
+                }
+            }
+            if (res.Count > 0) return res;
+        }
+        foreach (var id in RoutePainter.Compute(G, r)) if (!res.Contains(id)) res.Add(id);
+        var covered = res.Select(id => G.Pieces.First(p => p.Id == id).SectionId).ToHashSet();
+        foreach (var p in G.Pieces)
+        {
+            if (!secIds.Contains(p.SectionId) || covered.Contains(p.SectionId)) continue;
+            if (p.SwitchId != null && p.StraightBranch != (need.TryGetValue(p.SwitchId, out var pl) ? pl : true)) continue;
+            Add(p);
+        }
+        return res;
+    }
+
+    /// <summary>[ДОБАВЛЕНО 23.11.2026] Как строится маршрут — строка для журнала: стрелки с положением, участки по порядку.</summary>
+    string HowText(RailRoute r)
+    {
+        var order = new List<string>();
+        if (routeTiles.TryGetValue(r, out var tiles))
+        {
+            var ids = r.Sections.Select(s => s.Id).ToHashSet();
+            foreach (var k in tiles)
+                if (SecOfTile(k) is { } s && ids.Contains(s.Id) && !order.Contains(s.Label)) order.Add(s.Label);
+        }
+        foreach (var s in r.Sections) if (!order.Contains(s.Label)) order.Add(s.Label);
+        var parts = new List<string>();
+        if (r.Switches.Count > 0) parts.Add("стрелки " + string.Join(" ", r.Switches.Select(x => x.sw.Label + (x.plus ? "+" : "−"))));
+        if (order.Count > 0) parts.Add("участки " + string.Join(" → ", order));
+        string to = r.ExitSection != null ? "на перегон " + r.ExitSection.Label : r.Dest != null ? "на " + r.Dest.Label : null;
+        if (to != null) parts.Add(to);
+        return parts.Count > 0 ? string.Join(", ", parts) : null;
+    }
+
     bool SplitAfter(string key) => sigsOnTile.TryGetValue(key, out var l) && l.Any(s => s.Dir == Dir.Right);
     bool SplitBefore(string key) => sigsOnTile.TryGetValue(key, out var l) && l.Any(s => s.Dir == Dir.Left);
 

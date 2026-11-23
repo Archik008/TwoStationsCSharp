@@ -190,7 +190,7 @@ public partial class Interlocking   // [ИЗМЕНЕНО 21.10.2026] втора�
         }
         MarkAuto(r);                                       // [ДОБАВЛЕНО 21.10.2026, этап 6] автодействие
 
-        Say($"Задан маршрут {r.Name}");
+        Say($"Задан маршрут {r.Name}" + (r.How != null ? ": " + r.How : ""));    // [23.11.2026] How — только «Станция по схеме»
         Commit();
         return true;
     }
