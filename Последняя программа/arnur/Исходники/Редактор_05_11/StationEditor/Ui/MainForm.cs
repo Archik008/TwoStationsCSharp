@@ -55,6 +55,7 @@ public sealed partial class MainForm : Form
     {
         startFile = fileToOpen;
         Text = "Редактор станций";
+        StationApp.Core.L.Changed += () => { UpdateTitle(); SetTool(ui.Tool); RefreshPanels(); };   // [ДОБАВЛЕНО 23.11.2026] смена языка
         Font = new Font("Segoe UI", 9f);
         KeyPreview = true;
         StartPosition = FormStartPosition.CenterScreen;
@@ -159,11 +160,17 @@ public sealed partial class MainForm : Form
             Draw();
         };
         top.Items.Add(vLamps);
+        // [ДОБАВЛЕНО 23.11.2026] язык интерфейса — справа с краю
+        var langBox = StationApp.Ui.LangUi.Selector();
+        langBox.Margin = Padding.Empty;
+        top.Items.Add(new ToolStripControlHost(langBox) { Alignment = ToolStripItemAlignment.Right, ToolTipText = "Язык / Тіл / Language", Margin = new Padding(S(4), 1, 0, 1), Overflow = ToolStripItemOverflow.Never });
         var help = Btn("Справка", "Справка и горячие клавиши (F1)", ShowHelp);
         help.Alignment = ToolStripItemAlignment.Right;
+        help.Overflow = ToolStripItemOverflow.Never;   // [ДОБАВЛЕНО 23.11.2026] на узком экране в «»» уходят другие кнопки, а не язык и справка
         // [ДОБАВЛЕНО 17.11.2026] инструкция для пользователя: по шагам, главное — маршруты здесь только для проверки схемы
         var guide = Btn("Инструкция", "Как пользоваться редактором — по шагам. Маршруты в редакторе — только для проверки схемы", () => ShowHelp(true));
         guide.Alignment = ToolStripItemAlignment.Right;
+        guide.Overflow = ToolStripItemOverflow.Never;
         guide.Font = new Font(guide.Font, FontStyle.Bold);
 
         // ---- строка состояния ----
@@ -461,7 +468,9 @@ public sealed partial class MainForm : Form
     void UpdateTitle()
     {
         var file = currentFile != null ? " — " + Path.GetFileName(currentFile) : "";
-        Text = $"{(dirty ? "• " : "")}{st.Name}{file} — Редактор станций";
+        // [ИЗМЕНЕНО 23.11.2026] название станции — как есть, перевод — только «Редактор станций» (Tag = "keeptext")
+        Tag = "keeptext";
+        Text = $"{(dirty ? "• " : "")}{st.Name}{file} — {StationApp.Core.L.T("Редактор станций")}";
     }
 
     void CommitName()

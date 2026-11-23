@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- [ДОБАВЛЕНО 23.11.2026] снимки окон редактора и ДНЦ на ru / kk / en и список непереведённых надписей.
+       Запуск: dotnet run -c Release, затем путь\к\StationEditor.dll|Dnc.dll папка_снимков -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+  </PropertyGroup>
+</Project>

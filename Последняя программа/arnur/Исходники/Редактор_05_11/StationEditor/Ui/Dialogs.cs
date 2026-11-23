@@ -178,10 +178,10 @@ public sealed class HelpForm : Form
             {
                 rtb.SelectionFont = bold;
                 rtb.SelectionColor = Color.FromArgb(0x1f, 0x7a, 0x68);
-                rtb.AppendText(h + "\n");
+                rtb.AppendText(StationApp.Core.L.T(h) + "\n");   // [ИЗМЕНЕНО 23.11.2026] перевод: RichTextBox сам не переводится
                 rtb.SelectionFont = Font;
                 rtb.SelectionColor = Color.FromArgb(0x23, 0x37, 0x32);
-                rtb.AppendText(t + "\n\n");
+                rtb.AppendText(StationApp.Core.L.T(t) + "\n\n");
             }
             rtb.Select(0, 0);
             return rtb;

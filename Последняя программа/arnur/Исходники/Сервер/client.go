@@ -3,8 +3,6 @@ package main
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
-	"log"
 	"net/http"
 	"sync"
 	"time"
@@ -50,7 +48,7 @@ type Client struct {
 func ServeWS(hub *Hub, w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Printf("не удалось открыть WebSocket с %s: %v", r.RemoteAddr, err)
+		logf("не удалось открыть WebSocket с %s: %v", r.RemoteAddr, err)
 		return
 	}
 	c := &Client{
@@ -65,7 +63,7 @@ func ServeWS(hub *Hub, w http.ResponseWriter, r *http.Request) {
 
 	hello, err := c.readHello()
 	if err != nil {
-		log.Printf("%s: отказ — %v", c.addr, err)
+		logf("%s: отказ — %v", c.addr, err)
 		c.SendJSON(ErrorMessage{Type: TypeError, Message: err.Error()})
 		c.Kick(err.Error())
 		return
@@ -81,16 +79,16 @@ func (c *Client) readHello() (*InMessage, error) {
 	c.conn.SetReadDeadline(time.Now().Add(helloWait))
 	var m InMessage
 	if _, err := c.readJSON(&m); err != nil {
-		return nil, fmt.Errorf("не получено приветствие hello: %v", err)
+		return nil, errf("не получено приветствие hello: %v", err)
 	}
 	if m.Type != TypeHello {
-		return nil, fmt.Errorf("первым сообщением должно быть hello, пришло %q", m.Type)
+		return nil, errf("первым сообщением должно быть hello, пришло %q", m.Type)
 	}
 	if !stationIDRe.MatchString(m.Station) {
-		return nil, fmt.Errorf("неправильное имя станции %q (латиница a-z, цифры, - и _, до 32 символов)", m.Station)
+		return nil, errf("неправильное имя станции %q (латиница a-z, цифры, - и _, до 32 символов)", m.Station)
 	}
 	if utf8.RuneCountInString(m.Name) > maxNameLen {
-		return nil, errors.New("слишком длинное name")
+		return nil, errors.New(T("слишком длинное name"))
 	}
 	if m.Name == "" {
 		m.Name = m.Station
@@ -141,9 +139,9 @@ func (c *Client) readLoop() string {
 		case TypePing:
 			c.Send(pongMessage)
 		case TypeHello:
-			c.SendJSON(ErrorMessage{Type: TypeError, Message: "hello уже был"})
+			c.SendJSON(ErrorMessage{Type: TypeError, Message: T("hello уже был")})
 		default:
-			c.SendJSON(ErrorMessage{Type: TypeError, Message: fmt.Sprintf("неизвестный тип сообщения %q", m.Type)})
+			c.SendJSON(ErrorMessage{Type: TypeError, Message: Tf("неизвестный тип сообщения %q", m.Type)})
 		}
 	}
 }
@@ -152,7 +150,7 @@ var pongMessage = []byte(`{"type":"pong"}`)
 
 type syntaxError struct{ err error }
 
-func (e *syntaxError) Error() string { return "неправильный JSON: " + e.err.Error() }
+func (e *syntaxError) Error() string { return Tf("неправильный JSON: %s", e.err.Error()) }
 
 // readJSON — прочитать одно текстовое сообщение. Ошибка разбора JSON — *syntaxError (связь при этом жива).
 func (c *Client) readJSON(v any) ([]byte, error) {
@@ -168,27 +166,27 @@ func (c *Client) readJSON(v any) ([]byte, error) {
 
 func validateState(sig map[string]string, lines map[string]LineState, sections map[string]bool) error {
 	if len(sig) > maxSignals {
-		return fmt.Errorf("слишком много светофоров в снимке: %d (не больше %d)", len(sig), maxSignals)
+		return errf("слишком много светофоров в снимке: %d (не больше %d)", len(sig), maxSignals)
 	}
 	for k, v := range sig {
 		if k == "" || utf8.RuneCountInString(k) > maxNameLen || utf8.RuneCountInString(v) > maxNameLen {
-			return fmt.Errorf("неправильная запись светофора %q=%q", k, v)
+			return errf("неправильная запись светофора %q=%q", k, v)
 		}
 	}
 	if len(lines) > maxLines {
-		return fmt.Errorf("слишком много перегонов в снимке: %d (не больше %d)", len(lines), maxLines)
+		return errf("слишком много перегонов в снимке: %d (не больше %d)", len(lines), maxLines)
 	}
 	for k, l := range lines {
 		if k == "" || utf8.RuneCountInString(k) > maxNameLen || (l.Dir != "Right" && l.Dir != "Left") || l.Ver < 0 {
-			return fmt.Errorf("неправильная запись перегона %q: dir=%q ver=%d (dir — Right или Left)", k, l.Dir, l.Ver)
+			return errf("неправильная запись перегона %q: dir=%q ver=%d (dir — Right или Left)", k, l.Dir, l.Ver)
 		}
 	}
 	if len(sections) > maxSignals {
-		return fmt.Errorf("слишком много участков в снимке: %d (не больше %d)", len(sections), maxSignals)
+		return errf("слишком много участков в снимке: %d (не больше %d)", len(sections), maxSignals)
 	}
 	for k := range sections {
 		if k == "" || utf8.RuneCountInString(k) > maxNameLen {
-			return fmt.Errorf("неправильное имя участка %q", k)
+			return errf("неправильное имя участка %q", k)
 		}
 	}
 	return nil
@@ -196,13 +194,13 @@ func validateState(sig map[string]string, lines map[string]LineState, sections m
 
 func validateEvent(c *Client, m *InMessage) error {
 	if !stationIDRe.MatchString(m.To) {
-		return fmt.Errorf("event: неправильный адресат %q", m.To)
+		return errf("event: неправильный адресат %q", m.To)
 	}
 	if m.To == c.station {
-		return errors.New("event: нельзя отправить самому себе")
+		return errors.New(T("event: нельзя отправить самому себе"))
 	}
 	if len(m.Data) == 0 || len(m.Data) > maxEventBytes || m.Data[0] != '{' {
-		return fmt.Errorf("event: data должен быть JSON-объектом не длиннее %d байт", maxEventBytes)
+		return errf("event: data должен быть JSON-объектом не длиннее %d байт", maxEventBytes)
 	}
 	return nil
 }
@@ -211,15 +209,15 @@ func closeReason(err error) string {
 	var ce *websocket.CloseError
 	if errors.As(err, &ce) {
 		if ce.Text != "" {
-			return "станция закрыла связь: " + ce.Text
+			return Tf("станция закрыла связь: %s", ce.Text)
 		}
-		return fmt.Sprintf("станция закрыла связь (код %d)", ce.Code)
+		return Tf("станция закрыла связь (код %d)", ce.Code)
 	}
 	var ne interface{ Timeout() bool }
 	if errors.As(err, &ne) && ne.Timeout() {
-		return fmt.Sprintf("нет ответа больше %d с", int(pongWait.Seconds()))
+		return Tf("нет ответа больше %d с", int(pongWait.Seconds()))
 	}
-	return "обрыв связи: " + err.Error()
+	return Tf("обрыв связи: %s", err.Error())
 }
 
 // Send — поставить готовое сообщение в очередь. Никогда не ждёт: если станция не успевает
@@ -229,14 +227,14 @@ func (c *Client) Send(data []byte) {
 	case <-c.done:
 	case c.send <- data:
 	default:
-		c.Kick("станция не успевает принимать сообщения")
+		c.Kick(T("станция не успевает принимать сообщения"))
 	}
 }
 
 func (c *Client) SendJSON(v any) {
 	data, err := json.Marshal(v)
 	if err != nil {
-		log.Printf("ошибка JSON: %v", err)
+		logf("ошибка JSON: %v", err)
 		return
 	}
 	c.Send(data)
@@ -261,13 +259,13 @@ func (c *Client) writePump() {
 		case data := <-c.send:
 			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if err := c.conn.WriteMessage(websocket.TextMessage, data); err != nil {
-				c.Kick("ошибка отправки: " + err.Error())
+				c.Kick(Tf("ошибка отправки: %s", err.Error()))
 				return
 			}
 		case <-ticker.C:
 			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
-				c.Kick("ошибка отправки ping: " + err.Error())
+				c.Kick(Tf("ошибка отправки ping: %s", err.Error()))
 				return
 			}
 		case <-c.done:
@@ -308,7 +306,7 @@ var knownFields = map[string]bool{"type": true, "station": true, "name": true, "
 func extraFields(raw []byte) (map[string]json.RawMessage, error) {
 	var all map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &all); err != nil {
-		return nil, fmt.Errorf("неправильный JSON: %v", err)
+		return nil, errf("неправильный JSON: %v", err)
 	}
 	extra := map[string]json.RawMessage{}
 	for k, v := range all {
@@ -316,12 +314,12 @@ func extraFields(raw []byte) (map[string]json.RawMessage, error) {
 			continue
 		}
 		if !stationIDRe.MatchString(k) {
-			return nil, fmt.Errorf("неправильное имя поля %q (латиница a-z, цифры, - и _)", k)
+			return nil, errf("неправильное имя поля %q (латиница a-z, цифры, - и _)", k)
 		}
 		extra[k] = v
 	}
 	if len(extra) > maxExtraFields {
-		return nil, fmt.Errorf("слишком много дополнительных полей: %d (не больше %d)", len(extra), maxExtraFields)
+		return nil, errf("слишком много дополнительных полей: %d (не больше %d)", len(extra), maxExtraFields)
 	}
 	return extra, nil
 }

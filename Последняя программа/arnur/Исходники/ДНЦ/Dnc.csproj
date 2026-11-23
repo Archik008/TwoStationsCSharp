@@ -18,4 +18,13 @@
     <Compile Include="..\АКЖТ\Station\Core\DispatchLink.cs" Link="Shared\DispatchLink.cs" />
   </ItemGroup>
 
+  <!-- [ДОБАВЛЕНО 23.11.2026] языки интерфейса ru / kk / en — общие файлы перевода Алгабаса (ссылками);
+       словари собираются из Инструменты\i18n\strings.tsv -->
+  <ItemGroup>
+    <Compile Include="..\Алгабас\Algabas\Core\Lang.cs" Link="Shared\Lang.cs" />
+    <Compile Include="..\Алгабас\Algabas\Ui\LangUi.cs" Link="Shared\LangUi.cs" />
+    <EmbeddedResource Include="..\Алгабас\Algabas\Lang\Strings.kk.json" Link="Lang\Strings.kk.json" LogicalName="Strings.kk.json" WithCulture="false" />
+    <EmbeddedResource Include="..\Алгабас\Algabas\Lang\Strings.en.json" Link="Lang\Strings.en.json" LogicalName="Strings.en.json" WithCulture="false" />
+  </ItemGroup>
+
 </Project>

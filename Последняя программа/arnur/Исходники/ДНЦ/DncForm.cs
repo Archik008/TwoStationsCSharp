@@ -119,7 +119,15 @@ public class DncForm : Form
         WinBtn("⇄", SwapSides, "Поменять части окна местами: панель управления — на другой монитор (запоминается)");
         WinBtn("Свернуть", () => WindowState = FormWindowState.Minimized, "Свернуть окно ДНЦ");
         WinBtn("Выход", Close, "Закрыть программу ДНЦ (управление станциям вернётся)");
+        // [ДОБАВЛЕНО 23.11.2026] на казахском кнопки окна длиннее — строка переносится, а не обрезается
+        winRow.WrapContents = true;
+        winRow.MaximumSize = new Size(262, 0);
         flow.Controls.Add(winRow);
+        var langBox = StationApp.Ui.LangUi.Selector();   // [ДОБАВЛЕНО 23.11.2026] язык интерфейса — своей строкой
+        langBox.Margin = new Padding(3, 4, 2, 2);
+        langBox.Width = 140;
+        tips.SetToolTip(langBox, "Язык / Тіл / Language");
+        flow.Controls.Add(langBox);
 
         flow.Controls.Add(Title("Сервер связи"));
         var srv = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0) };

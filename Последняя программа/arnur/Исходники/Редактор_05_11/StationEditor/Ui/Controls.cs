@@ -61,7 +61,7 @@ public sealed class PaletteItem : Control
         DrawIcon?.Invoke(g, ir);
         g.SmoothingMode = SmoothingMode.None;
 
-        TextRenderer.DrawText(g, Caption, Font, new Rectangle(1, (int)ir.Bottom + 1, Width - 2, Height - (int)ir.Bottom - 3),
+        TextRenderer.DrawText(g, StationApp.Core.L.T(Caption), Font, new Rectangle(1, (int)ir.Bottom + 1, Width - 2, Height - (int)ir.Bottom - 3),
             Color.FromArgb(0x23, 0x37, 0x32), TextFormatFlags.HorizontalCenter | TextFormatFlags.Top | TextFormatFlags.EndEllipsis);
         if (!string.IsNullOrEmpty(KeyHint))
         {

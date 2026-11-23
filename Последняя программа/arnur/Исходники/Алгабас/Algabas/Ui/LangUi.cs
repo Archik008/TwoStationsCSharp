@@ -101,7 +101,8 @@ public static class LangUi
     static void Walk(Control c, bool force, Control form)
     {
         if (Skip(c)) return;
-        if (c is not (TextBoxBase or UpDownBase or DateTimePicker or ComboBox or ListControl or WebBrowser))
+        // [ДОБАВЛЕНО 23.11.2026] Tag = "keeptext" — свой текст (заголовок окна с названием станции) программа переводит сама
+        if (c is not (TextBoxBase or UpDownBase or DateTimePicker or ComboBox or ListControl or WebBrowser) && !Equals(c.Tag, "keeptext"))
             TrackText(c, force);
 
         switch (c)
@@ -149,7 +150,7 @@ public static class LangUi
 
     static void OnTextChanged(object sender, EventArgs e)
     {
-        if (busy || sender is not Control c || Skip(c) || c is TextBoxBase or UpDownBase or DateTimePicker or ComboBox or ListControl) return;
+        if (busy || sender is not Control c || Skip(c) || Equals(c.Tag, "keeptext") || c is TextBoxBase or UpDownBase or DateTimePicker or ComboBox or ListControl) return;
         if (state.TryGetValue(c, out var st)) Update(st, c.Text, false, t => c.Text = t);
     }
 
@@ -157,6 +158,18 @@ public static class LangUi
     {
         foreach (ToolStripItem it in items)
         {
+            // [ДОБАВЛЕНО 23.11.2026] поле ввода / список на полосе (ToolStripTextBox, ToolStripComboBox, свой элемент):
+            // их текст — данные пользователя (название станции), его не переводим; у списка — только показ строк
+            if (it is ToolStripControlHost host)
+            {
+                if (!string.IsNullOrEmpty(it.ToolTipText))
+                {
+                    var ht = itemTips.GetValue(it, _ => new Tr());
+                    Update(ht, it.ToolTipText, force, x => it.ToolTipText = x);
+                }
+                if (host.Control is ComboBox hc && !Skip(hc)) HookList(hc, force);
+                continue;
+            }
             var st = state.GetValue(it, _ => new Tr());
             if (!st.Hooked)
             {
