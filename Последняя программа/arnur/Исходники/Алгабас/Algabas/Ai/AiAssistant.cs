@@ -5,21 +5,21 @@ namespace StationApp.Ai;
 
 // =====================================================================
 //  ЖИ-ПОМОЩНИК: ВОПРОС → ОТВЕТ  [ДОБАВЛЕНО 28.10.2026, по Station LAB Тұмара (WikiAssistant + StationGuide)]
-//  Порядок:
-//   1) «не задаётся / ошибка / қате / неге?» после отказа — разбор отказа (подсказки преподавателя + состояние станции);
-//   2) маршрут с названиями («маршрут Н на путь 3», «Н-нан I жолға маршрут») — шаги по модели программы;
-//   3) объект схемы («для чего светофор Н1», «бұл не?» по наведению мыши) — описание по модели;
-//   4) база знаний (Knowledge + инструкция студента, на двух языках) — если нашлось уверенно;
-//   5) Википедия (только железная дорога);
-//   6) что-то из базы знаний, пусть не очень уверенно; иначе — «не знаю» и вопрос записывается
-//      в Knowledge\_Вопросы_без_ответа.txt (преподаватель допишет ответ в справку).
-//  Ответ всегда на языке вопроса. Нейросеть (Ollama) необязательна: с ней ответ короче и своими словами.
+//  [ИЗМЕНЕНО 24.11.2026] На вопросы отвечает ТОЛЬКО нейросеть (Google Gemini; при Provider = ollama — Ollama), коротко.
+//  Готовые тексты больше не выдаются — они идут нейросети как сведения:
+//   • справка программы (база знаний Knowledge + инструкция студента, на двух языках) — 3 ближайших куска;
+//   • маршрут с названиями («маршрут Н на путь 3») — шаги по модели программы (AiStation.HowToRoute);
+//   • объект схемы («для чего светофор Н1», «что это?» по наведению мыши) — описание по модели (AiStation.AboutObject);
+//   • вопрос «не задаётся / ошибка / почему?» — последний отказ программы, подсказка преподавателя, последние действия;
+//   • состояние станции (поезда, стрелки, все светофоры, маршруты) и, у Gemini, подходящие куски кода программы.
+//  Википедии нет. ИИ только консультирует — ничего не меняет на станции и в программе.
+//  ИИ не подключён (нет ключа, нет связи) — сообщение об этом; лимит Gemini исчерпан — сообщение о лимите.
+//  Вопрос без ответа записывается в Knowledge\_Вопросы_без_ответа.txt (преподаватель допишет справку).
 // =====================================================================
 
 public sealed class AiAssistant : IDisposable
 {
     readonly AiKnowledge kb = new();
-    readonly AiWiki wiki = new();
     readonly AiLlm llm = new();
 
     public AiLang LastLang { get; private set; } = AiLang.Ru;
@@ -35,189 +35,89 @@ public sealed class AiAssistant : IDisposable
     static readonly Regex WhyWords = new(@"почему|неге|отчего|что случилось|не понимаю|не түсінбедім", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     public async Task<bool> StartAsync() => await llm.EnsureAsync(true);
-    public Task<bool> PingWikiAsync() => AiLlm.WikipediaOn ? wiki.PingAsync() : Task.FromResult(false);
 
+    /// <summary>Ответ на вопрос — только нейросетью (сведения программы ей в помощь).</summary>
     public async Task<string> AskAsync(string question)
     {
         question = (question ?? "").Trim();
         if (question.Length == 0) return "";
         var lang = AiText.DetectLang(question);
         LastLang = lang;
+        bool kk = lang == AiLang.Kk;
+        llm.LimitHit = false;
         await llm.EnsureAsync();
+        if (!llm.Online)
+            return kk ? "ЖИ қосылмаған: бағдарлама жанындағы ai_settings.ini файлына Gemini кілтін (GeminiKey) жазыңыз немесе интернетті тексеріңіз."
+                      : "ИИ не подключён: впишите ключ Gemini (GeminiKey) в файл ai_settings.ini рядом с программой или проверьте интернет.";
 
-        // 1) ошибка в программе
+        var a = await llm.AskAsync(Prompt(question, lang), lang);
+        if (llm.LimitHit)
+            return kk ? "⚠ ЖИ-ді пайдалану лимиті таусылды. Біраз уақыттан кейін қайта сұраңыз."
+                      : "⚠ Лимит использования ИИ исчерпан. Попробуйте спросить позже.";
+        if (!string.IsNullOrWhiteSpace(a)) return a;
+        LogUnanswered(question, lang);
+        return llm.Online
+            ? (kk ? "ЖИ жауап бере алмады. Сұрақты басқаша қойып көріңіз." : "ИИ не смог ответить. Попробуйте спросить иначе.")
+            : (kk ? "ЖИ-мен байланыс жоқ. Интернетті тексеріп, кейінірек сұраңыз." : "Нет связи с ИИ. Проверьте интернет и спросите позже.");
+    }
+
+    /// <summary>Запрос нейросети: всё, что программа знает по вопросу, — сведения; отвечает нейросеть, коротко.</summary>
+    string Prompt(string question, AiLang lang)
+    {
+        var other = lang == AiLang.Kk ? AiLang.Ru : AiLang.Kk;
+        var sb = new StringBuilder();
+        sb.AppendLine("Ответь студенту коротко и по сути (1–4 предложения или до 4 шагов). Ты только консультируешь — ничего не меняешь. " +
+                      "Опирайся на сведения ниже; сведения, не относящиеся к вопросу, не пересказывай.");
+        sb.AppendLine(AiLlm.LangRule(lang));
+
+        // ошибка / «почему?» после отказа программы
         bool shortWhy = WhyWords.IsMatch(question) && question.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length <= 6
                         && AiStation.RecentRefusal(TimeSpan.FromMinutes(3)) != null;
+        string refusal = null;
         if (ErrorWords.IsMatch(question) || shortWhy)
         {
-            var route = AiStation.HowToRoute(question, lang);         // «почему не задаётся маршрут Н → 3» — сразу по маршруту
-            return route ?? await AboutProgram(question, lang);
+            refusal = AiStation.RecentRefusal(TimeSpan.FromMinutes(10));
+            if (refusal != null)
+                sb.AppendLine("\nПоследний отказ программы: " + refusal + "\nПодсказка преподавателя к нему: " + (Hint(refusal, AiLang.Ru) ?? "—"));
+            sb.AppendLine("\nПоследние действия студента:\n" + string.Join("\n", AiStation.LastActions(10)));
         }
 
-        // 2) конкретный маршрут
-        var r = AiStation.HowToRoute(question, lang);
-        if (r != null) return r;
+        // маршрут с названиями и объект схемы — сведения по модели программы
+        var route = AiStation.HowToRoute(question, lang);
+        if (route != null) sb.AppendLine("\nКак задаётся этот маршрут (по модели программы):\n" + route);
+        var obj = AiStation.AboutObject(question, lang);
+        if (obj != null) sb.AppendLine("\nОб объекте схемы, о котором спрашивают (по модели программы):\n" + obj);
 
-        // 3) объект схемы
-        var o = AiStation.AboutObject(question, lang);
-        if (o != null) return o;
-
-        // 4) база знаний
+        // справка программы
         var hits = kb.Search(question);
-        var best = hits.FirstOrDefault();
-        if (best != null && best.Coverage >= 0.5 && best.Score >= 3.0)
-            return await FromKnowledge(question, lang, hits);
-
-        // 5) Википедия
-        if (AiLlm.WikipediaOn)
+        if (hits.Count > 0)
         {
-            var w = await FromWikipedia(question, lang);
-            if (w != null) return w;
-        }
-
-        // 6) хоть что-то из базы знаний
-        if (best != null && best.Score >= 1.5) return await FromKnowledge(question, lang, hits);
-
-        LogUnanswered(question, lang);
-        return lang == AiLang.Kk
-            ? "Бұл сұраққа жауап таппадым. Басқаша сұрап көріңіз (мысалы: «маршрутты қалай беремін», «Н1 светофоры не үшін», «стрелка деген не») немесе оқытушыдан сұраңыз. Сұрағыңыз оқытушыға жазылып қойылды."
-            : "Ответа на этот вопрос не нашёл. Спросите иначе (например: «как задать маршрут», «для чего светофор Н1», «что такое стрелка») или спросите преподавателя. Вопрос записан для преподавателя.";
-    }
-
-    // ---------------------------------------------------------------------
-    //  База знаний
-    // ---------------------------------------------------------------------
-    async Task<string> FromKnowledge(string question, AiLang lang, List<AiKnowledge.Hit> hits)
-    {
-        var best = hits[0];
-        var other = lang == AiLang.Kk ? AiLang.Ru : AiLang.Kk;
-
-        // с нейросетью — коротко по 3 лучшим кускам (кроме простых готовых ответов справки)
-        if (llm.Online && !(best.Chunk.Curated && best.Chunk.Text(lang).Length > 0))
-        {
-            var sb = new StringBuilder();
-            sb.AppendLine("Ты — помощник студента железнодорожного колледжа в программе-тренажёре станции. Отвечай ТОЛЬКО по сведениям ниже.");
-            sb.AppendLine("Ответь по сути в 2–5 коротких предложениях или шагах. Если ответа нет — так и скажи. Не упоминай файлы и программный код.");
-            sb.AppendLine(AiLlm.LangRule(lang));
-            sb.AppendLine("\nСведения:");
+            sb.AppendLine("\nСправка программы (может не подходить к вопросу):");
             foreach (var h in hits.Take(3)) sb.AppendLine("- " + (h.Chunk.Text(lang).Length > 0 ? h.Chunk.Text(lang) : h.Chunk.Text(other)));
-            sb.AppendLine("\nВопрос: " + question);
-            sb.AppendLine(AiLlm.LangRule(lang));
-            var a = await llm.AskAsync(sb.ToString(), lang);
-            if (!string.IsNullOrWhiteSpace(a)) return a;
         }
 
-        string text = best.Chunk.Text(lang);
-        if (text.Length == 0)
-        {
-            // на языке вопроса этого куска нет: ищем похожий кусок на нужном языке
-            var alt = hits.Skip(1).FirstOrDefault(h => h.Chunk.Text(lang).Length > 0 && h.Score >= best.Score * 0.7);
-            if (alt != null) text = alt.Chunk.Text(lang);
-            else
-                return (lang == AiLang.Kk ? "Бұл туралы материал тек орыс тілінде бар:\n" : "Этот материал есть только на казахском:\n") + AiText.Cut(best.Chunk.Text(other), 900);
-        }
-        // второй кусок той же темы (инструкция студента: соседние пункты)
-        var second = hits.Skip(1).FirstOrDefault(h => h.Chunk != best.Chunk && h.Chunk.Source == best.Chunk.Source && h.Chunk.Title == best.Chunk.Title
-                                                  && h.Score >= best.Score * 0.85 && h.Chunk.Text(lang).Length > 0);
-        if (second != null && text.Length + second.Chunk.Text(lang).Length < 900) text += "\n" + second.Chunk.Text(lang);
-        return AiText.Cut(text, 1200);
+        var state = AiStation.State();
+        if (state.Length > 0) sb.AppendLine("\nСостояние станции " + AiProfile.Station + " сейчас:\n" + state);
+        if (AiLlm.UseGemini) AppendCode(sb, question + (refusal != null ? " " + refusal : ""));
+        sb.AppendLine("\nВопрос: " + question);
+        sb.AppendLine(AiLlm.LangRule(lang));
+        return sb.ToString();
     }
 
-    // ---------------------------------------------------------------------
-    //  Википедия
-    // ---------------------------------------------------------------------
-    async Task<string> FromWikipedia(string question, AiLang lang)
+    /// <summary>[ДОБАВЛЕНО 24.11.2026] Подходящие куски кода программы (вшиты в exe) — в запрос Gemini.</summary>
+    static void AppendCode(StringBuilder sb, string question)
     {
-        string query = AiWiki.CleanQuery(question);
-        if (query.Length == 0) query = question;
-        bool kk = lang == AiLang.Kk;
-        try
-        {
-            var pages = await wiki.FindAsync(kk ? "kk" : "ru", query);
-            AiWiki.Page ruPage = null;
-            if (kk && pages.Count == 0)
-            {
-                // казахский вопрос: русская статья → её казахская версия
-                var ru = await wiki.FindAsync("ru", query);
-                if (ru.Count > 0)
-                {
-                    ruPage = ru[0];
-                    var kkPage = await wiki.KazakhOfAsync(ru[0]);
-                    if (kkPage != null) pages.Add(kkPage);
-                }
-            }
-            string note = kk ? "\n\n— Уикипедия бойынша, оқытушы тексермеген" : "\n\n— по Википедии, преподаватель не проверял";
-            if (llm.Online && (pages.Count > 0 || ruPage != null))
-            {
-                var src = pages.Count > 0 ? pages : new List<AiWiki.Page> { ruPage };
-                var sb = new StringBuilder();
-                sb.AppendLine("Ты — помощник по железной дороге для студентов колледжа. Отвечай ТОЛЬКО по фрагментам Википедии ниже, 2–4 коротких предложения. " +
-                              "Фрагменты могут быть на другом языке — передай смысл на языке вопроса. Ничего не выдумывай.");
-                sb.AppendLine(AiLlm.LangRule(lang));
-                foreach (var p in src.Take(2)) sb.AppendLine($"\nСтатья «{p.Title}»:\n{AiWiki.Paragraphs(p.Text, question, 900)}");
-                sb.AppendLine("\nВопрос: " + question);
-                sb.AppendLine(AiLlm.LangRule(lang));
-                var a = await llm.AskAsync(sb.ToString(), lang);
-                if (!string.IsNullOrWhiteSpace(a)) return a + note;
-            }
-            if (pages.Count > 0)
-            {
-                var body = AiWiki.Sentences(pages[0].Text, query, 2, 450);
-                if (body.Length > 0) return body + note;
-            }
-            if (ruPage != null)
-            {
-                var body = AiWiki.Sentences(ruPage.Text, query, 2, 450);
-                if (body.Length > 0)
-                    return "Қазақ Уикипедиясында бұл туралы мақала жоқ. Орыс Уикипедиясында былай жазылған:\n" + body + note;
-            }
-        }
-        catch { }
-        return null;
+        var code = AiCode.Find(question);
+        if (code.Length == 0) return;
+        sb.AppendLine("\nФрагменты исходного кода программы (C#) — только чтобы понять, как она работает; код не показывай, правок не предлагай:");
+        sb.AppendLine(code);
     }
 
     // ---------------------------------------------------------------------
-    //  Ошибки в программе
+    //  Отказ программы — строка в окне ЖИ сама (без готовых советов: «почему?» объяснит нейросеть)
     // ---------------------------------------------------------------------
-    async Task<string> AboutProgram(string question, AiLang lang)
-    {
-        var refusal = AiStation.RecentRefusal(TimeSpan.FromMinutes(10));
-        if (llm.Online)
-        {
-            var sb = new StringBuilder();
-            sb.AppendLine("Ты — помощник студента в программе-тренажёре станции. Программа отказала студенту или он ошибся. " +
-                          "Одной фразой назови причину, затем не больше 3–4 коротких шагов, что сделать. Опирайся ТОЛЬКО на сведения ниже.");
-            sb.AppendLine(AiLlm.LangRule(lang));
-            if (refusal != null) sb.AppendLine("\nОтказ программы: " + refusal + "\nСправка преподавателя: " + (Hint(refusal, AiLang.Ru) ?? "—"));
-            sb.AppendLine("\nСостояние станции:\n" + AiStation.State());
-            sb.AppendLine("\nПоследние действия:\n" + string.Join("\n", AiStation.LastActions(10)));
-            sb.AppendLine("\nВопрос: " + question);
-            sb.AppendLine(AiLlm.LangRule(lang));
-            var a = await llm.AskAsync(sb.ToString(), lang);
-            if (!string.IsNullOrWhiteSpace(a)) return a;
-        }
-        if (refusal == null)
-        {
-            // отказа не было — может, вопрос «почему не переводится стрелка?» есть в справке
-            var hits = kb.Search(question);
-            if (hits.Count > 0 && hits[0].Score >= 2.5) return await FromKnowledge(question, lang, hits);
-            return lang == AiLang.Kk
-                ? "Соңғы уақытта бағдарлама бас тартқан жоқ. Не істелмей жатқанын нақтырақ жазыңыз (мысалы: «" + AiProfile.RouteExampleKk + " неге берілмейді»)."
-                : "Отказов программы в последнее время не было. Опишите точнее, что не получается (например: «почему не задаётся " + AiProfile.RouteExampleRu + "»).";
-        }
-        return RefusalHint(refusal, lang);
-    }
-
-    /// <summary>Подсказка, которую окно ЖИ показывает само, когда программа отказала.</summary>
-    public string RefusalHint(string refusal) => RefusalHint(refusal, LastLang);
-
-    static string RefusalHint(string refusal, AiLang lang)
-    {
-        var hint = Hint(refusal, lang) ?? (lang == AiLang.Kk
-            ? "Сызбадан маршруттағы бос емес учаскелерді және стрелкалардың қалпын қараңыз."
-            : "Посмотрите на схеме занятые участки и положение стрелок на пути маршрута.");
-        return lang == AiLang.Kk ? "⚠ " + KkObjects(refusal) + hint : "⚠ " + refusal + "\n" + hint;
-    }
+    /// <summary>Что показать в окне ЖИ, когда программа отказала: сам отказ (по-казахски — с названиями объектов).</summary>
+    public string RefusalHint(string refusal) => LastLang == AiLang.Kk ? "⚠ " + KkObjects(refusal) + refusal : "⚠ " + refusal;
 
     static readonly Regex ObjRx = new(@"(участ\w*|стрелк\w*|светофор\w*)\s+([^\s,:;]+)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 

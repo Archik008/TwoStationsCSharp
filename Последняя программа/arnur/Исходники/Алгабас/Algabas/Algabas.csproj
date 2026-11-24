@@ -23,4 +23,13 @@
     <EmbeddedResource Include="Lang\Strings.en.json" LogicalName="Strings.en.json" WithCulture="false" />
   </ItemGroup>
 
+  <!-- [ДОБАВЛЕНО 24.11.2026] исходники программы внутри exe: ИИ-помощник (Gemini) читает подходящие куски кода (Ai\AiCode.cs).
+       Только для чтения; на работу программы не влияет. -->
+  <Target Name="EmbedSourcesForAi" BeforeTargets="PrepareForBuild">
+    <ItemGroup>
+      <EmbeddedResource Include="@(Compile)" Condition="'%(Compile.Link)' == ''" LogicalName="aisrc/%(Compile.Identity)" WithCulture="false" />
+      <EmbeddedResource Include="@(Compile)" Condition="'%(Compile.Link)' != ''" LogicalName="aisrc/%(Compile.Link)" WithCulture="false" />
+    </ItemGroup>
+  </Target>
+
 </Project>

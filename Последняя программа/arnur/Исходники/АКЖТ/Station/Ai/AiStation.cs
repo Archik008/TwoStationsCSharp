@@ -87,6 +87,18 @@ public static class AiStation
         var open = il.Signals.Values.Where(s => s.Kind == SignalKind.Controlled && s.Aspect is not (Aspect.Red or Aspect.Dark or Aspect.Blue))
                      .Select(s => $"{s.Label} — {AspectName(s.Aspect, AiLang.Ru)}").ToList();
         sb.AppendLine("Открытые светофоры: " + (open.Count == 0 ? "нет" : string.Join(", ", open)));
+        // [ДОБАВЛЕНО 24.11.2026] для Gemini: показание КАЖДОГО светофора и поезда на станции
+        try
+        {
+            string Name(Aspect a) { var n = AspectName(a, AiLang.Ru); return n.Length > 0 ? n : a.ToString(); }
+            sb.AppendLine("Все светофоры: " + string.Join(", ", il.Signals.Values.Select(s => $"{s.Label} — {Name(s.Aspect)}")));
+            var trains = ModelHost.Model?.Trains?.Trains.Where(t => !t.Leaving).ToList() ?? new();
+            sb.AppendLine("Поезда: " + (trains.Count == 0 ? "нет" : string.Join("; ", trains.Select(t =>
+                $"№{t.Number} ({t.ModeText}{(string.IsNullOrEmpty(t.Category) ? "" : ", " + t.Category)}) голова на {t.Head?.Label ?? "?"}" +
+                $", занимает {string.Join(" ", t.Cells.Select(c => c.Label).Distinct())}, едет {(t.Dir == Dir.Right ? "→" : "←")}" +
+                (string.IsNullOrEmpty(t.Waiting) ? "" : $", стоит: {t.Waiting}")))));
+        }
+        catch { }
         foreach (var l in il.Lines) sb.AppendLine($"Перегон «{l.Title}»: направление {l.DirText(l.Current)}" + (l.Syncing ? ", идёт согласование" : ""));
         sb.AppendLine("Режим интерфейса: " + UiSettings.ModeName(UiSettings.Mode));
         sb.Append(ArduinoLink.IsConnected ? "Arduino: подключена" : "Arduino: нет соединения");

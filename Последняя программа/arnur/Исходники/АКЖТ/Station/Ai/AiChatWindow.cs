@@ -102,18 +102,17 @@ sealed class AiChatWindow : Form
     async Task InitAsync()
     {
         Append("Іске қосылып жатыр… / Запуск…", DimC);
-        var wikiTask = ai.PingWikiAsync();
         bool llm = await ai.StartAsync();
-        bool wiki = await wikiTask;
         if (IsDisposed) return;
-        headerInfo = $" · білім: {ai.KnowledgeCount} · Wikipedia: {(wiki ? "on" : "off")} · нейросеть: {(llm ? "on (" + ai.LlmWhere + ")" : "off")}";
+        // [ИЗМЕНЕНО 24.11.2026] Википедии нет — отвечает только нейросеть
+        headerInfo = $" · білім: {ai.KnowledgeCount} · нейросеть: {(llm ? "on (" + ai.LlmWhere + ")" : "off")}";
         header.Text = L.T("ИИ") + headerInfo;
         output.Clear();
         Append("Сәлем! Мен " + AiProfile.Station + " станциясының ЖИ-көмекшісімін. Бағдарлама, маршрут, светофор, стрелка туралы немесе темір жол терминдері туралы сұраңыз — қазақша немесе орысша. " +
                "Мысалы: «маршрутты қалай беремін?», «" + AiProfile.RouteExampleKk + "», «Н1 светофоры не үшін?», «автоблокировка деген не?»", AiC);
         Append("Здравствуйте! Я ИИ-помощник станции " + AiProfile.Station + ". Спросите про программу, маршруты, светофоры, стрелки или термины железной дороги — по-русски или қазақша. " +
                "Наведите мышь на объект схемы и спросите «что это?». Если программа откажет, подскажу здесь, что делать.", AiC);
-        if (!llm) Append("Нейросеть (Ollama) қосылмаған — дайын мәтіндермен жауап беремін. / Нейросеть не подключена — отвечаю готовыми текстами.", DimC);
+        if (!llm) Append("ЖИ қосылмаған — ai_settings.ini файлына Gemini кілтін (GeminiKey) жазыңыз. / ИИ не подключён — впишите ключ Gemini (GeminiKey) в ai_settings.ini рядом с программой.", DimC);
     }
 
     void OnRefused(string text)
