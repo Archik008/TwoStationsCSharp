@@ -791,6 +791,7 @@ public class JsonLayout
     void BuildGeometry()
     {
         var g = G;
+        g.AutoLabels = true;    // [ДОБАВЛЕНО 23.11.2026] подписи не налезают на пути, огни и друг на друга (SchemePanel.PlaceLabels)
         g.DesignW = X(maxX) + 2 * CX;
         g.DesignH = Y(maxY) + 2 * CY;
         int pieceN = 0;

@@ -39,7 +39,7 @@ class SchemeStationForm : StationForm
     SchemeSettingsForm settings;
 
     /// <summary>Версия «Станции по схеме» — как в журнале изменений CHANGES.md.</summary>
-    const string Version = "2.6";
+    const string Version = "2.10";
 
     /// <summary>[ДОБАВЛЕНО 23.11.2026] Окно с вкладками «О программе» и «О разработчиках».</summary>
     void ShowAbout()

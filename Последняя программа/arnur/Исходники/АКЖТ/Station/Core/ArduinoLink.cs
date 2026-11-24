@@ -17,7 +17,7 @@ namespace StationApp.Core;
 //    Arduino → ПК, датчики:    "Occ: 101\n"        (детекторы ПРЯМО на пинах 10, 8, 9; '0' = участок ЗАНЯТ;
 //                                                   при изменении и раз в 2 с; старая прошивка — без "Occ: ")
 //    Arduino → ПК, датчики:    "Data: 1011...\n"   (плата 74HC165 — пока не подключена)
-//  Обмен пишется в arduino_diag.log рядом с Station.exe (кадры ламп и всё, что прислала плата).
+//  Обмен пишется в папку «Логи Arduino» рядом с Station.exe, файл на день (Core/ArduinoLog.cs).
 // =====================================================================
 
 /// <summary>Карта "проводов" одной схемы: какой бит = какая лампа, канал = стрелка, бит датчика = участок.</summary>
@@ -75,10 +75,8 @@ public static class ArduinoLink
     /// <summary>[ДОБАВЛЕНО 28.10.2026] Проверка проводки «лампы по одной»: горит только этот бит (null — обычная работа).</summary>
     public static (int b, int bit)? OnlyLamp;
 
-    /// <summary>[ДОБАВЛЕНО 28.10.2026] Писать обмен с платой в arduino_diag.log рядом с exe (больше 5 МБ — в arduino_diag.old.log).</summary>
+    /// <summary>[ДОБАВЛЕНО 28.10.2026, ИЗМЕНЕНО 23.11.2026] Писать обмен с платой в «Логи Arduino» (Core/ArduinoLog.cs).</summary>
     public static bool DiagLog = true;
-    static StreamWriter diag;
-    static readonly object diagLock = new();
     static bool shieldWarned;
 
     public static event Action<string> Log;
@@ -119,7 +117,7 @@ public static class ArduinoLink
             // не принимают команды — тогда "Датчики: данных нет" и зависшие записи в порт.
             port = new SerialPort(name, BaudRate)
             {
-                NewLine = "\n", WriteTimeout = 1000, ReadTimeout = 500, Encoding = Encoding.ASCII,
+                NewLine = "\n", WriteTimeout = 1000, ReadTimeout = 500, Encoding = Encoding.UTF8,   // [ИЗМЕНЕНО 23.11.2026] русские сообщения прошивки — не «????» (команды и так байтами)
                 DtrEnable = true, RtsEnable = true, Handshake = Handshake.None
             };
             port.DataReceived += OnData;
@@ -138,6 +136,7 @@ public static class ArduinoLink
         catch (Exception ex)
         {
             port = null;
+            ArduinoLog.Event($"ОШИБКА открытия {name}: {ex.Message}");
             Say("Arduino: ошибка порта — " + ex.Message);
         }
         StatusChanged?.Invoke();
@@ -210,6 +209,7 @@ public static class ArduinoLink
                                 ? " От платы не пришло ни одной строки — скорее всего выбран НЕ ТОТ COM-порт " +
                                   "(например, Bluetooth). Посмотрите подпись порта в списке или Диспетчер устройств → «Порты (COM и LPT)»."
                                 : " Проверьте кабель и прошивку.";
+                            ArduinoLog.Event("ОШИБКА записи в порт: " + ex.Message);
                             Post(() => Say("Arduino: плата не принимает данные (" + ex.Message + ")." + hint));
                         }
                     }
@@ -404,37 +404,21 @@ public static class ArduinoLink
         return device.Replace("\\Device\\", "");
     }
 
-    // ---------------- журнал обмена arduino_diag.log ----------------
-    static string DiagPath => Path.Combine(AppContext.BaseDirectory, "arduino_diag.log");
+    // ---------------- журнал обмена ----------------
+    // [ИЗМЕНЕНО 23.11.2026] вместо одного arduino_diag.log рядом с exe — общий журнал ArduinoLog:
+    // папка «Логи Arduino», файл на день, повторы строк датчиков не дублируются (Core/ArduinoLog.cs)
+    static void OpenDiag() => ArduinoLog.Enabled = DiagLog;
 
-    static void OpenDiag()
-    {
-        if (!DiagLog) return;
-        lock (diagLock)
-        {
-            try
-            {
-                diag?.Dispose();
-                if (File.Exists(DiagPath) && new FileInfo(DiagPath).Length > 5_000_000)
-                    File.Move(DiagPath, Path.Combine(AppContext.BaseDirectory, "arduino_diag.old.log"), true);
-                diag = new StreamWriter(new FileStream(DiagPath, FileMode.Append, FileAccess.Write, FileShare.ReadWrite)) { AutoFlush = true };
-            }
-            catch { diag = null; }
-        }
-    }
-
-    static void CloseDiag()
-    {
-        lock (diagLock) { try { diag?.Dispose(); } catch { } diag = null; }
-    }
+    static void CloseDiag() => ArduinoLog.Close();
 
     static void Diag(string line)
     {
-        if (diag == null) return;
-        lock (diagLock) { try { diag?.WriteLine(DateTime.Now.ToString("dd.MM HH:mm:ss.fff") + " " + line); } catch { } }
+        if (line.StartsWith("RX ")) ArduinoLog.Rx(line[3..]);
+        else if (line.StartsWith("TX ")) ArduinoLog.Tx(line[3..]);
+        else ArduinoLog.Event(line);
     }
 
-    /// <summary>Какие биты кадра горят (0): "0.1,0.2,…" — для arduino_diag.log.</summary>
+    /// <summary>Какие биты кадра горят (0): "0.1,0.2,…" — для журнала.</summary>
     static string LitBits(byte[] frame)
     {
         var lit = new List<string>();

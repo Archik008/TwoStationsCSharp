@@ -578,6 +578,7 @@ public static class Renderer
     static readonly Dictionary<string, (PointF At, float Scale)> secLabelAt = new();
     // [23.11.2026] светофор, которому не нашлось места, → что он закрывает (по-русски, части переводятся при показе)
     static readonly Dictionary<Signal, List<string>> sigCovers = new();
+    static readonly Dictionary<string, PointF> brkLabelAt = new();    // [23.11.2026, слияние] клетка ТП → центр подписи (в клетках)
 
     /// <summary>Что закрыто — на языке интерфейса: каждая часть («стрелку 4», «линию пути 1П»…) переводится словарём (L.T).</summary>
     static string WhatText(List<string> parts) => string.Join(", ", parts.Select(StationApp.Core.L.T));
@@ -780,7 +781,7 @@ public static class Renderer
     public static void LayoutScheme(Station st)
     {
         float cs = Core.Cell;
-        sigPlaces.Clear(); swLabelAt.Clear(); scissorsTiles.Clear(); secLabelAt.Clear(); sigCovers.Clear();
+        sigPlaces.Clear(); swLabelAt.Clear(); scissorsTiles.Clear(); secLabelAt.Clear(); sigCovers.Clear(); brkLabelAt.Clear();
         foreach (var (sa, sb) in Core.Scissors(st))
             foreach (var k in sa.Concat(sb)) if (st.Tiles.TryGetValue(k, out var sct)) scissorsTiles.Add(sct);
 
@@ -825,15 +826,6 @@ public static class Renderer
         var gapList = st.TrackGaps != false ? TrackGapList(st, 0, 0, cs) : new List<TrackGap>();
         foreach (var gp in gapList)
                 fixedQ.Add(new Ob(RectQ(new RectangleF(gp.Center.X - gp.TextHalf, gp.Center.Y - cs * 0.17f, 2 * gp.TextHalf, cs * 0.34f))));
-        var bf = GetFont(cs * 0.24f, true);
-        foreach (var k in Core.BrakeLabelTiles(st))
-        {
-            if (!st.Tiles.TryGetValue(k, out var t)) continue;
-            var (gx, gy) = Core.Parse(k);
-            var p = BrakeLabelPos(t, gx * cs, gy * cs, cs);
-            var sz = measure.MeasureString(t.Brk.Label, bf, PointF.Empty, StringFormat.GenericTypographic);
-            fixedQ.Add(new Ob(RectQ(new RectangleF(p.X - sz.Width / 2, p.Y - sz.Height / 2, sz.Width, sz.Height))));
-        }
 
         // 1) тела светофоров: сверху вниз, слева направо
         // [ИЗМЕНЕНО 23.11.2026] на своём месте; занято — чуть дальше от пути. Огни не разворачиваются и на другую сторону пути
@@ -907,6 +899,30 @@ public static class Renderer
             labels.Add(dq);
             swLabelAt[t] = choice;
         }
+        // 3б) [ДОБАВЛЕНО 23.11.2026, слияние с веткой «подписи не налезают на пути и огни»] подписи тормозных позиций:
+        // сбоку от полосы, по другую сторону, дальше — первое свободное место (не на линии пути, не на огнях и подписях)
+        var bf = GetFont(cs * 0.24f, true);
+        foreach (var k in Core.BrakeLabelTiles(st))
+        {
+            if (!st.Tiles.TryGetValue(k, out var t) || t.Brk == null) continue;
+            var (gx, gy) = Core.Parse(k);
+            var p0 = BrakeLabelPos(t, gx * cs, gy * cs, cs);
+            var ctr = new PointF(gx * cs + cs / 2, gy * cs + cs / 2);
+            float vx = p0.X - ctr.X, vy = p0.Y - ctr.Y;
+            var sz = measure.MeasureString(t.Brk.Label ?? "", bf, PointF.Empty, StringFormat.GenericTypographic);
+            Ob bestB = null; PointF bestP = p0; int bestScore = int.MaxValue;
+            foreach (float kk in new[] { 1f, -1f, 1.35f, -1.35f, 1.7f, -1.7f })
+            {
+                var c = new PointF(ctr.X + vx * kk, ctr.Y + vy * kk);
+                var q = new Ob(RectQ(new RectangleF(c.X - sz.Width / 2, c.Y - sz.Height / 2, sz.Width, sz.Height)));
+                int score = 3 * CountHits(q, bodies) + 3 * CountHits(q, labels) + 2 * CountHits(q, fixedQ) + 2 * CountHits(q, tracks);
+                if (bestB == null || score < bestScore) { bestScore = score; bestB = q; bestP = c; }
+                if (score == 0) break;
+            }
+            labels.Add(bestB);
+            brkLabelAt[k] = new PointF(bestP.X / cs, bestP.Y / cs);
+        }
+
         // 4) названия участков (кнопка «Названия»). [ИЗМЕНЕНО 23.11.2026] Порядок поиска места: в клетках участка (поближе к середине,
         // под путём, над путём, у углов) → в пустой клетке рядом с участком → то же мельче (0,8). Свободного места нет нигде —
         // где меньше всего наложений. Длинные имена коротких участков («М4-Turn10» на одной клетке) раньше ложились на пути и номера
@@ -1149,7 +1165,7 @@ public static class Renderer
             using var tb = new SolidBrush(A(named ? Pal.Text : Pal.Bad, alpha));
             // [ДОБАВЛЕНО 09.11.2026] «только чтение» (показание с другой станции) — значок ↔ у имени
             var text = (named ? sig.Name : "?") + (sig.IsReadOnly ? " ↔" : "");
-            g.DrawString(text, GetFont(cs * 0.27f, true), tb, gm.Label, Center);
+            g.DrawString(text, GetFont(cs * 0.27f, true), tb, gm.Label, Center);    // место подписи — из раскладки (SigPlace.Slot)
         }
         if (ring)
         {
@@ -1549,7 +1565,7 @@ public static class Renderer
             foreach (var e in entries)
             {
                 if (e.T.T != "switch" || IsHidden(e.K)) continue;
-                var lp = SwitchLabelPos(e.T, SX(e.X), SY(e.Y), cs);
+                var lp = SwitchLabelPos(e.T, SX(e.X), SY(e.Y), cs);    // место — из раскладки (LayoutScheme)
                 bool named = !string.IsNullOrEmpty(e.T.Name);
                 g.DrawString(named ? e.T.Name : "?", f, named ? bt : bb, lp, Center);
             }
@@ -1566,7 +1582,8 @@ public static class Renderer
                 if (IsHidden(k) || !st.Tiles.TryGetValue(k, out var t)) continue;
                 var (x, y) = Core.Parse(k);
                 if (!Visible(x, y)) continue;
-                g.DrawString(t.Brk.Label, f, bt, BrakeLabelPos(t, SX(x), SY(y), cs), Center);
+                // [ИЗМЕНЕНО 23.11.2026, слияние] место — из раскладки: подпись не на линии пути (как в ветке с PlaceLabels)
+                g.DrawString(t.Brk.Label, f, bt, brkLabelAt.TryGetValue(k, out var bq) ? new PointF(SX(bq.X), SY(bq.Y)) : BrakeLabelPos(t, SX(x), SY(y), cs), Center);
             }
         }
 

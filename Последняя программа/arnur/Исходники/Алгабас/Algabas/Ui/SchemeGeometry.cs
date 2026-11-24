@@ -108,6 +108,9 @@ public class SwitchIndGeom
 public class SchemeGeometry
 {
     public float DesignW = 2400, DesignH = 640;
+    /// <summary>[ДОБАВЛЕНО 23.11.2026] Подписи (светофоры, стрелки, участки, ТП) сами ищут свободное место, чтобы не налезать
+    /// на пути, огни и другие подписи (SchemePanel.PlaceLabels). Включает «Станция по схеме»; у ручных схем — выкл.</summary>
+    public bool AutoLabels;
 
     public readonly List<TrackPiece> Pieces = new();
     public readonly List<PointF[]> Decor = new();          // просто линии (без участка)
