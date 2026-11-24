@@ -17,6 +17,8 @@ if errorlevel 1 (
 del /q "%OUT%\*.pdb" 2>nul
 rem примеры схем: свои файлы в папке Станции не затираются (/xo — только если пример новее)
 robocopy "%~dp0Станции" "%OUT%\Станции" *.station.json /xo /njh /njs /nfl /ndl >nul
+rem [24.11.2026] как рисовать сортировочную горку (для редактора станций)
+copy /y "%~dp0ФОРМАТ_ГОРКИ.txt" "%OUT%\ФОРМАТ_ГОРКИ.txt" >nul
 echo ===== ГОТОВО: %OUT%\StationFromJson.exe =====
 if "%~1"=="" pause
 exit /b 0

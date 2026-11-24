@@ -2,6 +2,9 @@
 using StationApp.Core;
 using StationApp.Yard;
 
+using Aspect = StationApp.Yard.Aspect;
+using Wagon = StationApp.Yard.Wagon;
+
 namespace StationApp.Ui;
 
 // =====================================================================
@@ -52,11 +55,12 @@ public sealed class YardView : Control
         g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
         g.TranslateTransform(ox, oy);
         g.ScaleTransform(scale, scale);
-        DrawStatic(g);
+        // [ИЗМЕНЕНО 24.11.2026] у горки из файла редактора парки, светофоры и подписи — по её схеме (G.*)
+        if (Lay.Cur.Builtin) DrawStatic(g); else DrawStaticGeo(g);
         DrawHump(g);
-        DrawSignals(g);
+        if (Lay.Cur.Builtin) DrawSignals(g); else DrawSignalsGeo(g);
         DrawVehicles(g);
-        DrawLabels(g);
+        if (Lay.Cur.Builtin) DrawLabels(g); else DrawLabelsGeo(g);
         DrawProfile(g);
         DrawHover(g);
     }
@@ -137,8 +141,8 @@ public sealed class YardView : Control
             if (e.Sw == null) { Poly(g, c, w, Lay.Line(e.S0, e.S1, e.Lo)); continue; }
             var sw = e.Sw;
             Poly(g, c, w, Lay.Line(e.S0, sw.S, e.Lo));
-            var plus = Lay.Line(sw.S, e.S1, sw.Lo);
-            var minus = Lay.Line(sw.S, e.S1, sw.Mid + 1);
+            var plus = Lay.Line(sw.S, e.S1, sw.Track(true));
+            var minus = Lay.Line(sw.S, e.S1, sw.Track(false));
             if (sw.Throwing) { Poly(g, Dim, w, plus); Poly(g, Dim, w, minus); }
             else if (sw.Plus) { Poly(g, Dim, w, minus); Poly(g, c, w, plus); }
             else { Poly(g, Dim, w, plus); Poly(g, c, w, minus); }
@@ -158,7 +162,7 @@ public sealed class YardView : Control
             using (var pen = new Pen(c, 11)) g.DrawLines(pen, pts);
             Poly(g, Color.FromArgb(30, 30, 30), 2, pts);
             var mid = pts[pts.Length / 2];
-            float dy = r.Lo == 5 ? 10 : -27;
+            float dy = Lay.Cur.Builtin && r.Lo == 5 ? 10 : -27;
             Label(g, $"{r.Name}: {(r.Step == 0 ? "О" : r.Step.ToString())}", F12, r.Step == 0 ? Txt : c, mid.X, mid.Y + dy, true);
         }
         // номера стрелок
@@ -304,7 +308,7 @@ public sealed class YardView : Control
         {
             var dt = Sim.Dep[d];
             if (dt.Wagons.Count == 0) continue;
-            float y = Lay.DepY(d), x = 1586;
+            float y = Lay.DepY(d), x = Lay.Cur.DepX1 - 2;
             if (dt.State is DepState.BrakeTest or DepState.Ready && dt.Loco != null)
             {
                 float l = (float)(dt.Loco.Length * Lay.SceneScale);
@@ -315,7 +319,7 @@ public sealed class YardView : Control
             foreach (var w in dt.Wagons)
             {
                 float l = (float)(w.Length * Lay.SceneScale);
-                if (x - l < 1432) break;
+                if (x - l < Lay.Cur.DepX0 + 2) break;
                 Body(g, new(x - l, y), new(x, y), w.Loaded ? w.Kind.Body : Blend(w.Kind.Body, Bg, 0.45f), WagonW);
                 x -= l;
             }
@@ -388,6 +392,177 @@ public sealed class YardView : Control
     }
 
     // =================================================================
+    //  [ДОБАВЛЕНО 24.11.2026] ГОРКА ИЗ ФАЙЛА РЕДАКТОРА: парки, светофоры, подписи — по схеме горки (YardGeo)
+    // =================================================================
+    static YardGeo G => Lay.Cur;
+
+    void DrawStaticGeo(Graphics g)
+    {
+        foreach (var (t, p, big) in G.Labels) Label(g, t, big ? F15 : F11, TxtDim, p.X, p.Y, true);
+        foreach (var d in G.Decor) if (d.Length > 1) Poly(g, Dim, 3, d);
+        // парк приёма
+        for (int a = 1; a <= Lay.ArrTracks; a++)
+        {
+            bool busy = Sim.Arr[a].Train != null || Sim.Arr[a].State == ArrState.Arriving;
+            if (G.ArrBody[a]?.Length > 1) Poly(g, busy ? Color.FromArgb(150, Busy) : Free, 4, G.ArrBody[a]);
+            bool route = Sim.Pushing != null && Sim.Pushing.Arr == a;
+            if (G.ArrLead[a]?.Length > 1) Poly(g, route ? Lunar : Free, route ? 4 : 3, G.ArrLead[a]);
+        }
+        // путь надвига
+        bool pushBusy = Sim.Pushing != null && Sim.Pushing.Head > Lay.SPushTrack - 5;
+        if (G.PushTrack.Length > 1) Poly(g, pushBusy ? Busy : Sim.Pushing != null ? Lunar : Free, 4, G.PushTrack);
+        // обходной путь, стоянка горочного локомотива, депо
+        float x0 = Enumerable.Range(1, Lay.ArrTracks).Min(a => Lay.At(Lay.SArrTail, 1, a).X) - 30;
+        Poly(g, Dim, 3, new(x0, G.BypassY), new(G.HumpLocoPark.X - 20, G.BypassY), G.HumpLocoPark);
+        Poly(g, Dim, 3, new(G.DepotGate.X + 20, G.BypassY), G.DepotGate);
+        using (var b = new SolidBrush(Color.FromArgb(40, 46, 54))) g.FillRectangle(b, G.Depot);
+        using (var p = new Pen(Dim, 2)) g.DrawRectangle(p, G.Depot.X, G.Depot.Y, G.Depot.Width, G.Depot.Height);
+        Label(g, "Депо (ТЧ)", F13, TxtDim, G.Depot.X + G.Depot.Width / 2, G.Depot.Y + 11, true);
+        Label(g, "стоянка ТЭМ18", F11, TxtDim, G.HumpLocoPark.X, G.HumpLocoPark.Y + 6, true);
+        Label(g, "обходной путь", F11, TxtDim, (x0 + G.HumpLocoPark.X) / 2, G.BypassY + 3, true);
+        // выход сортировочных путей в парк отправления, сам парк
+        for (int k = 1; k <= Lay.Tracks; k++)
+        {
+            var e = Lay.At(Lay.SEnd, k, 1);
+            int d = Enumerable.Range(1, Lay.DepTracks).OrderBy(x => Math.Abs(Lay.DepY(x) - e.Y)).First();
+            Poly(g, Dim, 2, e, new(e.X + 12, e.Y), new(G.DepX0, Lay.DepY(d)));
+        }
+        for (int d = 1; d <= Lay.DepTracks; d++)
+        {
+            float y = Lay.DepY(d);
+            Poly(g, Sim.Dep[d].State == DepState.Free ? Free : Color.FromArgb(150, Busy), 4, new(G.DepX0, y), new(G.DepX1, y));
+            Poly(g, Dim, 3, new(G.DepX1, y), new(G.DepX1 + 12, y));
+        }
+    }
+
+    void DrawSignalsGeo(Graphics g)
+    {
+        var p = Lay.SignalPoint;
+        HumpSignal(g, p.X, p.Y - 8, "Г", 6);
+        if (G.Repeater is PointF rp) HumpSignal(g, rp.X, rp.Y, "ПГ", 4);
+        for (int a = 1; a <= Lay.ArrTracks; a++)
+        {
+            var m = G.ShuntSig[a];
+            bool open = Sim.Pushing != null && Sim.Pushing.Arr == a && Sim.Arr[a].Train == Sim.Pushing;
+            Lamp(g, m.X, m.Y, 4, open ? Lunar : Blue, true);
+            Label(g, "М" + a, F11, TxtDim, m.X + 6, m.Y - 9);
+        }
+    }
+
+    void DrawLabelsGeo(Graphics g)
+    {
+        for (int k = 1; k <= Lay.Tracks; k++)
+        {
+            var p = G.TrackLabel[k];
+            int n = Sim.Cuts.Where(c => c.Active && c.Track == k).Sum(c => c.Wagons.Count);
+            bool hot = hover == "путь " + k;
+            var col = hot ? Color.White : n >= YardSim.Norm(k) ? Color.FromArgb(120, 220, 120) : Txt;
+            Label(g, $"{k}", F13, col, p.X, p.Y);
+            Label(g, L.T(YardSim.TrackNames[k]) + $" · {n}/{YardSim.Norm(k)}", F11, col, p.X + 16, p.Y + 2);
+        }
+        for (int a = 1; a <= Lay.ArrTracks; a++)
+        {
+            var at = Sim.Arr[a];
+            var p = G.ArrLabel[a];
+            string st = at.State switch
+            {
+                ArrState.Free => "свободен",
+                ArrState.Arriving => "приём поезда",
+                ArrState.Uncoupling => "отцепка локомотива",
+                ArrState.Inspection => "осмотр ПТО",
+                ArrState.WaitLoco => "ждёт горочный локомотив",
+                ArrState.LocoComing => "заезд горочного локомотива",
+                ArrState.Ready => "готов к роспуску",
+                ArrState.Pushing => "надвиг",
+                _ => "",
+            };
+            Label(g, "П" + a, F13, Txt, p.X, p.Y);
+            string info = at.Train != null ? $"{at.Train.Name} · {at.Train.WagonCount} " + L.T("ваг.") + " · " + L.T(st) : L.T(st);
+            Label(g, info, F11, at.State == ArrState.Ready ? Color.FromArgb(120, 220, 120) : TxtDim, p.X + 26, p.Y + 2);
+        }
+        for (int d = 1; d <= Lay.DepTracks; d++)
+        {
+            var dt = Sim.Dep[d];
+            var p = G.DepLabel[d];
+            string st = dt.State switch
+            {
+                DepState.Filling => "вывод состава",
+                DepState.WaitLoco or DepState.LocoComing => "ждёт локомотив",
+                DepState.BrakeTest => "опробование тормозов",
+                DepState.Leaving => "отправление",
+                _ => "",
+            };
+            Label(g, "О" + d, F13, Txt, p.X, p.Y);
+            if (st != "") Label(g, (dt.TrainNo > 0 ? "№" + dt.TrainNo + " · " : "") + L.T(st), F11, TxtDim, p.X + 24, p.Y + 2);
+        }
+    }
+
+    /// <summary>Тормозные позиции на виде сбоку: позиции на одном месте горки (2ТП-А и 2ТП-Б) — одной полосой.</summary>
+    void ProfileRetarders(Graphics g)
+    {
+        foreach (var grp in Sim.Retarders.GroupBy(r => (Math.Round(r.S0 / 10), Math.Round(r.S1 / 10))))
+        {
+            var r = grp.First();
+            if (r.S1 < Lay.ProfileFrom || r.S0 > Lay.ProfileTo) continue;
+            float x0 = Lay.ProfX(r.S0), x1 = Lay.ProfX(r.S1);
+            int step = grp.Max(x => x.Step);
+            string name = grp.Count() == 1 ? r.Name : r.Name.Split('-')[0];
+            var c = step == 0 ? Color.FromArgb(90, 98, 110) : Color.FromArgb(255, 200 - step * 30, 40);
+            using var b = new SolidBrush(c);
+            g.FillPolygon(b, new PointF[] { new(x0, Lay.ProfY(r.S0) + 1), new(x1, Lay.ProfY(r.S1) + 1), new(x1, Lay.ProfY(r.S1) + 6), new(x0, Lay.ProfY(r.S0) + 6) });
+            Label(g, name, F11, c, (x0 + x1) / 2, Lay.ProfY((r.S0 + r.S1) / 2) + 8, true);
+        }
+    }
+
+    static float DistTo(PointF[] pts, PointF v)
+    {
+        float best = float.MaxValue;
+        for (int i = 0; i + 1 < pts.Length; i++)
+        {
+            PointF a = pts[i], b = pts[i + 1];
+            float dx = b.X - a.X, dy = b.Y - a.Y, l2 = dx * dx + dy * dy;
+            float t = l2 <= 0 ? 0 : Math.Clamp(((v.X - a.X) * dx + (v.Y - a.Y) * dy) / l2, 0, 1);
+            float x = a.X + dx * t - v.X, y = a.Y + dy * t - v.Y;
+            best = Math.Min(best, MathF.Sqrt(x * x + y * y));
+        }
+        return best;
+    }
+
+    string HitTestGeo(PointF v, out int track, out Cut cut)
+    {
+        track = 0; cut = null;
+        foreach (var sw in Sim.Switches.Skip(1))
+        {
+            var p = Lay.SwitchPoint(sw);
+            if (Math.Abs(v.X - p.X) < 11 && v.Y > p.Y - 24 && v.Y < p.Y + 4) return "стрелка " + sw.No;
+        }
+        foreach (var r in Sim.Retarders)
+            if (DistTo(Lay.Line(r.S0, r.S1, r.Lo), v) < 8) return r.Name;
+        var sg = Lay.SignalPoint;
+        if (Math.Abs(v.X - sg.X) < 14 && v.Y < sg.Y && v.Y > sg.Y - 70) return "горочный светофор";
+        if (G.Repeater is PointF rp && Math.Abs(v.X - rp.X) < 10 && v.Y > rp.Y - 56 && v.Y < rp.Y + 4) return "повторитель горочного светофора";
+        foreach (var c in Sim.Cuts.Where(c => c.Active))
+            for (double s = c.Tail; s <= c.Head; s += 3)
+            {
+                var p = Lay.At(s, c.Lo, 1);
+                if (Math.Abs(p.X - v.X) < 6 && Math.Abs(p.Y - v.Y) < 8) { cut = c; return "отцеп " + c.No; }
+            }
+        for (int k = 1; k <= Lay.Tracks; k++)
+        {
+            var lp = G.TrackLabel[k];
+            if (DistTo(Lay.Line(Lay.STrack, Lay.SEnd, k), v) < 9 || (v.X >= lp.X - 4 && v.X < lp.X + 150 && v.Y >= lp.Y - 2 && v.Y < lp.Y + 16)) { track = k; return "путь " + k; }
+        }
+        for (int a = 1; a <= Lay.ArrTracks; a++)
+            if (G.ArrBody[a] != null && DistTo(G.ArrBody[a], v) < 10) return "П" + a;
+        for (int d = 1; d <= Lay.DepTracks; d++)
+            if (DistTo(G.DepLine(d), v) < 10) return "О" + d;
+        if (G.PushTrack.Length > 1 && DistTo(G.PushTrack, v) < 8) return "путь надвига";
+        if (Lay.Profile.Contains(v)) return "горка";
+        if (G.Depot.Contains(v)) return "депо";
+        return null;
+    }
+
+    // =================================================================
     //  ВИД СБОКУ
     // =================================================================
     void DrawProfile(Graphics g)
@@ -412,12 +587,9 @@ public sealed class YardView : Control
         }
         Mark(Lay.SSignal, "светофор Г", Txt);
         Mark(0, "горб", Color.White);
-        Mark(72, "стр. 1", TxtDim);
-        Mark(137, "стр. 2, 3", TxtDim);
-        Mark(177, "стр. 4–7", TxtDim);
-        Mark(Lay.STrack, "пути 1–8", TxtDim, 14);
-        Mark(-35, "расцепка", TxtDim);
-        foreach (var r in Sim.Retarders.Take(2))
+        foreach (var (ms, mt, mdy) in Lay.Cur.ProfileMarks) Mark(ms, mt, TxtDim, mdy);   // [24.11.2026] у горки (было 72, 137, 177, пути 1–8)
+        Mark(Lay.Cur.SUncouple, "расцепка", TxtDim);
+        foreach (var r in Lay.Cur.Builtin ? Sim.Retarders.Take(2) : Enumerable.Empty<Retarder>())
         {
             float x0 = Lay.ProfX(r.S0), x1 = Lay.ProfX(r.S1);
             string name = r.Lo == 1 && r.Hi == 8 ? "1ТП" : "2ТП";
@@ -427,6 +599,7 @@ public sealed class YardView : Control
             g.FillPolygon(b, new PointF[] { new(x0, Lay.ProfY(r.S0) + 1), new(x1, Lay.ProfY(r.S1) + 1), new(x1, Lay.ProfY(r.S1) + 6), new(x0, Lay.ProfY(r.S0) + 6) });
             Label(g, name, F11, c, (x0 + x1) / 2, Lay.ProfY((r.S0 + r.S1) / 2) + 8, true);
         }
+        if (!Lay.Cur.Builtin) ProfileRetarders(g);
         var sp = new PointF(Lay.ProfX(Lay.SSignal), Lay.ProfY(Lay.SSignal));
         HumpSignal(g, sp.X - 10, sp.Y - 2, "", 4);
 
@@ -622,6 +795,7 @@ public sealed class YardView : Control
     {
         track = 0; cut = null;
         if (Sim == null) return null;
+        if (!Lay.Cur.Builtin) return HitTestGeo(v, out track, out cut);
         foreach (var sw in Sim.Switches.Skip(1))
         {
             var p = Lay.SwitchPoint(sw);
@@ -706,7 +880,7 @@ public sealed class YardView : Control
         if (id.StartsWith("стрелка "))
         {
             var sw = Sim.Switches[int.Parse(id[8..])];
-            return $"Стрелка {sw.No}: " + (sw.Throwing ? "переводится" : sw.Plus ? $"плюс — на пути {sw.Lo}–{sw.Mid}" : $"минус — на пути {sw.Mid + 1}–{sw.Hi}") + ". Щелчок — перевести";
+            return $"Стрелка {sw.No}: " + (sw.Throwing ? "переводится" : sw.Plus ? $"плюс — на пути {sw.Range(true)}" : $"минус — на пути {sw.Range(false)}") + ". Щелчок — перевести";
         }
         if (id.StartsWith("путь ") && int.TryParse(id[5..], out int k))
             return $"Путь {k} — {YardSim.TrackNames[k]}: {Sim.OnTrack(k).Sum(c => c.Wagons.Count)} ваг. (норма {YardSim.Norm(k)}). Щелчок — маршрут отцепу на этот путь, правая кнопка — маневры";

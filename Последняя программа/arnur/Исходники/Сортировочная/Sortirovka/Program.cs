@@ -19,6 +19,10 @@ static class Program
         try { Directory.CreateDirectory(SettingsDir); } catch { }
         L.Init(Path.Combine(SettingsDir, "lang.txt"));
         LangUi.Install();
+        // [ДОБАВЛЕНО 24.11.2026] ИИ-помощник горки — через крючки окна (окно общее со «Станцией по схеме»)
+        YardForm.AiSim = s => Ai.AiStation.Sim = s;
+        YardForm.AiPoint = id => Ai.AiStation.Point(id);
+        YardForm.AiNote = (t, bad) => Ai.AiStation.Note(t, bad);
         // служебное: Sortirovka.exe --shot файл.png секунд [lang] — снимок окна без показа (для инструкций и проверки)
         var args = Environment.GetCommandLineArgs();
         int i = Array.IndexOf(args, "--shot");

@@ -10,5 +10,8 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="..\..\Исходники\Сортировочная\Sortirovka\Yard\*.cs" Link="Yard\%(Filename)%(Extension)" />
+    <!-- [ДОБАВЛЕНО 24.11.2026] горка из файла редактора станций (-j): чтение схемы и построитель «Станции по схеме» -->
+    <Compile Include="..\..\Исходники\Редактор_05_11\StationEditor\Model\*.cs" Link="Editor\%(Filename)%(Extension)" />
+    <Compile Include="..\..\Исходники\Станция по схеме\StationFromJson\Scheme\YardFromJson.cs" Link="Scheme\YardFromJson.cs" />
   </ItemGroup>
 </Project>

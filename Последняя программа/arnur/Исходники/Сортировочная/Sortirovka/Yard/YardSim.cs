@@ -50,7 +50,7 @@ public sealed class Train
     /// <summary>Спуск вагонов с горки локомотивом (запрещённые к роспуску) и возврат локомотива после него.</summary>
     public bool Escort, Returning;
     public readonly Dictionary<int, bool> Passed = new();
-    public int Lo = 1, Hi = 8;
+    public int Lo = 1, Hi = Lay.Tracks;
     public double ReadySince;
     public int WagonCount => AllCuts.Sum(c => c.Wagons.Count);
     public double CutsLength => Cuts.Sum(c => c.Length);
@@ -130,8 +130,9 @@ public sealed class YardSim
     public const double CoupleSpeed = 0.75, MaxCouple = 5 / 3.6;
     /// <summary>Норма состава для вывода в парк отправления: пути 1–6 и пути 7–8 (сборный, ремонт).</summary>
     public const int NormMain = 8, NormSmall = 5;   // [ИЗМЕНЕНО 17.11.2026] поезда короче — нормы меньше (было 15 и 10)
-    public static readonly string[] TrackNames = { "", "Северная", "Восточная", "Южная", "Западная", "Заводская", "Портовая", "Сборный (местные)", "Ремонт (ВЧД)" };
-    public static int Norm(int k) => k >= 7 ? NormSmall : NormMain;
+    // [ИЗМЕНЕНО 24.11.2026] назначения и нормы путей — у горки (Lay.Cur): у встроенной прежние, у горки из файла — свои
+    public static string[] TrackNames => Lay.Cur.TrackNames;
+    public static int Norm(int k) => Lay.Cur.Norm(k);
 
     // =================================================================
     //  СОСТОЯНИЕ
@@ -208,7 +209,7 @@ public sealed class YardSim
     // =================================================================
     Wagon MakeWagon(WagonKind k, int dest)
     {
-        bool loaded = k.Mark == "Л" || rnd.NextDouble() < (dest == 8 ? 0.15 : 0.62);
+        bool loaded = k.Mark == "Л" || rnd.NextDouble() < Lay.Cur.LoadedShare(dest);
         var w = new Wagon { Kind = k, Loaded = loaded, Dest = dest };
         w.Mass = k.Tare + (loaded ? k.MaxLoad * (0.75 + 0.25 * rnd.NextDouble()) : 0);
         w.W0 = (loaded ? k.W0Loaded : k.W0Empty) * (0.85 + 0.3 * rnd.NextDouble());
@@ -216,17 +217,7 @@ public sealed class YardSim
         return w;
     }
 
-    WagonKind KindFor(int dest)
-    {
-        double r = rnd.NextDouble();
-        return dest switch
-        {
-            6 => r < 0.5 ? Rolling.Container : r < 0.8 ? Rolling.Tank : Rolling.Covered,
-            5 => r < 0.4 ? Rolling.Gondola : r < 0.7 ? Rolling.Flat : Rolling.Hopper,
-            8 => Rolling.Normal[rnd.Next(Rolling.Normal.Length)],
-            _ => Rolling.Normal[rnd.Next(Rolling.Normal.Length)],
-        };
-    }
+    WagonKind KindFor(int dest) => Lay.Cur.KindFor(dest, rnd);
 
     Train MakeTrain(int arr)
     {
@@ -237,7 +228,7 @@ public sealed class YardSim
         int target = rnd.Next(6, 11) - (forb ? 1 : 0), count = 0;
         while (count < target)
         {
-            int dest = rnd.NextDouble() < 0.08 ? 8 : rnd.NextDouble() < 0.12 ? 7 : rnd.Next(1, 7);
+            int dest = Lay.Cur.RandomDest(rnd);
             if (t.AllCuts.Count > 0 && t.AllCuts[^1].Dest == dest) continue;
             int n = rnd.NextDouble() < 0.55 ? 1 : rnd.NextDouble() < 0.7 ? 2 : 3;
             n = Math.Min(n, target - count);
@@ -251,7 +242,7 @@ public sealed class YardSim
         if (forb)
         {
             var k = Rolling.Forbidden[rnd.Next(Rolling.Forbidden.Length)];
-            int dest = k == Rolling.Service ? 7 : rnd.Next(1, 7);
+            int dest = Lay.Cur.ForbiddenDest(k, rnd);
             var c = new Cut { No = nextCutNo++, Dest = dest, TrainNo = t.No };
             c.Wagons.Add(MakeWagon(k, dest));
             t.AllCuts.Add(c);
@@ -381,7 +372,7 @@ public sealed class YardSim
         if (sw.Throwing) return Refuse($"стрелка {no} ещё переводится");
         if (Occupied(sw.Section)) return Refuse($"стрелка {no}: стрелочный участок {sw.Section.Id} занят — переводить нельзя");
         StartThrow(sw, !sw.Plus);
-        Say($"Стрелка {no} переводится {(sw.ThrowTo ? "в плюс" : "в минус")} (на пути {(sw.ThrowTo ? $"{sw.Lo}–{sw.Mid}" : $"{sw.Mid + 1}–{sw.Hi}")})");
+        Say($"Стрелка {no} переводится {(sw.ThrowTo ? "в плюс" : "в минус")} (на пути {sw.Range(sw.ThrowTo)})");
         return true;
     }
 
@@ -524,7 +515,7 @@ public sealed class YardSim
             foreach (var c in Pushing.Cuts) yield return (c.Tail, c.Head, Pushing.Lo, Pushing.Hi);
             if (Pushing.HumpLoco) yield return (Pushing.LocoFront - Rolling.TEM18.Length, Pushing.LocoFront, Pushing.Lo, Pushing.Hi);
         }
-        if (Loco == HumpLocoState.AtHorb) yield return (LocoS - Rolling.TEM18.Length, LocoS, 1, 8);
+        if (Loco == HumpLocoState.AtHorb) yield return (LocoS - Rolling.TEM18.Length, LocoS, 1, Lay.Tracks);
     }
 
     public bool Occupied(Edge e) => Bodies().Any(b => b.s1 > e.S0 && b.s0 < e.S1 && b.lo <= e.Hi && b.hi >= e.Lo);
@@ -609,7 +600,7 @@ public sealed class YardSim
             t.Cuts.RemoveAt(0);
             c.State = CutState.Rolling;
             c.V = t.V;
-            c.Lo = 1; c.Hi = 8;
+            c.Lo = 1; c.Hi = Lay.Tracks;
             Cuts.Add(c);
             CutsRolled++;
             Rolled += c.Wagons.Count;
@@ -731,7 +722,7 @@ public sealed class YardSim
                 c.Head += c.V * dt;
             }
 #if SORTTEST
-            if (old - c.Length < 120 && c.Head - c.Length >= 120) { var rr = Retarders[c.Lo <= 4 ? 1 : 2]; Console.WriteLine($"      [выход 2ТП] t={T:0} {c.No} v={c.V * 3.6:0.0} цель={TargetSpeed(rr, c) * 3.6:0.0} ступень={rr.Step} n={c.Wagons.Count}"); }
+            if (Lay.Cur.Builtin && old - c.Length < 120 && c.Head - c.Length >= 120) { var rr = Retarders[c.Lo <= 4 ? 1 : 2]; Console.WriteLine($"      [выход 2ТП] t={T:0} {c.No} v={c.V * 3.6:0.0} цель={TargetSpeed(rr, c) * 3.6:0.0} ступень={rr.Step} n={c.Wagons.Count}"); }
 #endif
             PassSwitches(c.Passed, ref c.Lo, ref c.Hi, old, c.Head, c);
             if (c.Track == 0 && c.Lo == c.Hi && c.Tail > Lay.STrack - 30 && c.Head >= Lay.STrack)
@@ -775,7 +766,9 @@ public sealed class YardSim
                     string.Join(",", Cuts.Where(x => x != c && x.Active && x.Head > sw.Section.S0 && x.Tail < sw.Section.S1 && x.Lo <= sw.Hi && x.Hi >= sw.Lo).Select(x => $"{x.No}[{x.Tail:0}-{x.Head:0} v{x.V * 3.6:0.0}]")) + $" сам v{c.V * 3.6:0.0}");
 #endif
             passed[sw.No] = plus;
-            if (plus) hi = sw.Mid; else lo = sw.Mid + 1;
+            // [ИЗМЕНЕНО 24.11.2026] куда ведёт положение — у стрелки (у горки из файла «плюс» может вести и вниз)
+            if (plus) { lo = Math.Max(lo, sw.PlusLo); hi = Math.Min(hi, sw.PlusHi); }
+            else { lo = Math.Max(lo, sw.MinusLo); hi = Math.Min(hi, sw.MinusHi); }
         }
     }
 
@@ -873,7 +866,7 @@ public sealed class YardSim
                 if (ov > bestOv) { bestOv = ov; on = c; }
                 if (c.Head < r.S0 && c.Head > nearHead && c.State == CutState.Rolling) { nearHead = c.Head; near = c; }
             }
-            if (on == null && near == null && Pushing != null && Pushing.Cuts.Count > 0 && !Pushing.Escort && r.Lo == 1 && r.Hi == 8) near = Pushing.Cuts[0];
+            if (on == null && near == null && Pushing != null && Pushing.Cuts.Count > 0 && !Pushing.Escort && r.Lo == 1 && r.Hi == Lay.Tracks) near = Pushing.Cuts[0];
             r.Cut = on ?? near;
             r.CutOn = on != null;
             r.Target = r.Cut != null ? TargetSpeed(r, r.Cut) : 0;
@@ -928,7 +921,10 @@ public sealed class YardSim
         double exit = r.S1 + c.Length;
         // меньше этой скорости нельзя: отцеп остановится, не войдя на свой путь
         double lowMin = SpeedNeeded(c, exit, Math.Max(Lay.STrack + c.Length + 25, exit + 1), CoupleSpeed);
-        if (r.Lo != 1 || r.Hi != 8)
+        // [ИЗМЕНЕНО 24.11.2026] дальше по пути этого отцепа есть ещё тормозная позиция (как 2ТП после 1ТП) — целимся в неё;
+        // нет — в стоящие вагоны (было: «1ТП — для путей 1–8, остальные — 2ТП»; у встроенной горки то же самое)
+        var r2 = NextRetarder(r, track);
+        if (r2 == null)
         {
             double t2 = SpeedNeeded(c, exit, Math.Max(point, exit + 1), CoupleSpeed);
             // [ДОБАВЛЕНО 17.11.2026] интервал на 2ТП: впереди на общих стрелках (до входа на путь) отцеп ближе 40 м —
@@ -938,7 +934,6 @@ public sealed class YardSim
             return t2;
         }
         // 1ТП: чтобы к 2ТП отцеп пришёл с запасом на торможение, но не быстрее 15 км/ч (интервалы на стрелках)
-        var r2 = Retarders[track <= 4 ? 1 : 2];
         double need2 = TargetSpeed(r2, c);
         double low = SpeedNeeded(c, exit, r2.S0, need2);                 // меньше — не дойдёт до своего пути
         double tgt = Math.Max(SpeedNeeded(c, exit, r2.S0, need2 + 0.6), 4.2);
@@ -947,6 +942,10 @@ public sealed class YardSim
         if (prev != null && prev.Tail - c.Head < 45) tgt = Math.Min(tgt, Math.Max(prev.V - 0.4, 0));
         return Math.Max(low, tgt);
     }
+
+    /// <summary>Следующая тормозная позиция после r на пути track (null — нет).</summary>
+    Retarder NextRetarder(Retarder r, int track) =>
+        Retarders.Where(x => x != r && x.S0 >= r.S1 - 0.1 && x.Lo <= track && track <= x.Hi).OrderBy(x => x.S0).FirstOrDefault();
 
     int TrackOf(Cut c) => c.Route > 0 && c.Route >= c.Lo && c.Route <= c.Hi ? c.Route : c.Lo == c.Hi ? c.Lo : c.Dest;
 

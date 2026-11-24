@@ -49,6 +49,17 @@ static class Program
     static void Check(string f, bool verbose)
     {
         Console.WriteLine($"\n===== {Path.GetFileName(f)}  ({Path.GetDirectoryName(f)?.Split('\\').LastOrDefault()})");
+        // [ДОБАВЛЕНО 24.11.2026] сортировочная горка ("kind": "yard") — своя проверка: строится ли горка
+        if (StationApp.Scheme.YardFromJson.IsYard(f))
+        {
+            try
+            {
+                StationApp.Scheme.YardFromJson.Build(f, out var notes);
+                foreach (var n in notes) Console.WriteLine((n.StartsWith("горка из файла") ? "   " : "   · ") + n);
+            }
+            catch (Exception ex) { Bad("горка не строится: " + ex.Message); }
+            return;
+        }
         RailModel m;
         try { m = Build(f); }
         catch (Exception ex) { Bad("не строится: " + ex.Message); return; }

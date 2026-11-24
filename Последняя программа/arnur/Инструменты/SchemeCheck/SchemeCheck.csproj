@@ -19,6 +19,8 @@
     <Compile Include="..\..\Исходники\Алгабас\Algabas\Ui\*.cs" Link="Shared\Ui\%(Filename)%(Extension)" />
     <Compile Include="..\..\Исходники\Алгабас\Algabas\Ai\*.cs" Exclude="..\..\Исходники\Алгабас\Algabas\Ai\AiProfile.cs" Link="Shared\Ai\%(Filename)%(Extension)" />
     <Compile Include="..\..\Исходники\Редактор_05_11\StationEditor\Model\*.cs" Link="Editor\%(Filename)%(Extension)" />
+    <!-- [24.11.2026] горка из файла (Scheme\YardFromJson.cs) — модель горки «Сортировочной» -->
+    <Compile Include="..\..\Исходники\Сортировочная\Sortirovka\Yard\*.cs" Link="Yard\%(Filename)%(Extension)" />
     <Compile Include="..\..\Исходники\Станция по схеме\StationFromJson\**\*.cs" Exclude="..\..\Исходники\Станция по схеме\StationFromJson\Program.cs;..\..\Исходники\Станция по схеме\StationFromJson\obj\**;..\..\Исходники\Станция по схеме\StationFromJson\bin\**" Link="Scheme\%(RecursiveDir)%(Filename)%(Extension)" />
   </ItemGroup>
 </Project>

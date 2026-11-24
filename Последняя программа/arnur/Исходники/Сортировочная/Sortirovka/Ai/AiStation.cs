@@ -107,8 +107,8 @@ public static class AiStation
         {
             var sw = s.Switches[n];
             string pos = sw.Throwing ? (kk ? "қазір ауысып жатыр" : "сейчас переводится")
-                : sw.Plus ? (kk ? $"плюста — {sw.Lo}–{sw.Mid} жолдарға" : $"в плюсе — на пути {sw.Lo}–{sw.Mid}")
-                : (kk ? $"минуста — {sw.Mid + 1}–{sw.Hi} жолдарға" : $"в минусе — на пути {sw.Mid + 1}–{sw.Hi}");
+                : sw.Plus ? (kk ? $"плюста — {sw.Range(true)} жолдарға" : $"в плюсе — на пути {sw.Range(true)}")
+                : (kk ? $"минуста — {sw.Range(false)} жолдарға" : $"в минусе — на пути {sw.Range(false)}");
             bool busy = s.Occupied(sw.Section);
             return kk
                 ? $"{n}-стрелка — төбенің стрелкасы ({sw.Section.Id} учаскесі): {pos}. Оны ГАЦ әр отцептің маршруты бойынша 0,6 секундта өзі ауыстырады; қолмен — схемадағы нөмірін басу. " +

@@ -30,12 +30,14 @@ static class Program
             if (path == null) return;                                // выбор схемы отменён
             try
             {
+                // [ДОБАВЛЕНО 24.11.2026] схема сортировочной горки ("kind": "yard") — окно «Сортировочной» (пульт ДСПГ)
+                if (Scheme.YardFromJson.IsYard(path)) { RunYard(path, args); return; }
                 ModelHost.Start(path);
                 break;
             }
             catch (Exception ex)
             {
-                MessageBox.Show(L.T("Не удалось построить станцию по схеме") + $"\n{path}\n\n{ex.Message}",
+                MessageBox.Show(L.T("Не удалось построить станцию по схеме") + $"\n{path}\n\n{L.T(ex.Message)}",
                     L.T("Станция по схеме"), MessageBoxButtons.OK, MessageBoxIcon.Error);
                 path = AskFile(null);
             }
@@ -45,6 +47,47 @@ static class Program
         UiSettings.AiAvailable = true;
         Application.Run(new SchemeStationForm());
         ModelHost.Stop();
+    }
+
+    /// <summary>Сортировочная горка из файла: та же модель и то же окно, что в «Сортировочной».</summary>
+    static void RunYard(string path, string[] args)
+    {
+        var geo = Scheme.YardFromJson.Build(path, out var notes);
+        Yard.Lay.Use(geo);
+        SaveLast(path);
+        YardForm.AiEnabled = false;      // ИИ-помощник горки — в самой «Сортировочной»
+        var sortDir = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "Сортировочная"));
+        if (File.Exists(Path.Combine(sortDir, "ИНСТРУКЦИЯ.txt"))) YardForm.GuideDir = sortDir;
+        YardForm.StartNotes.AddRange(notes.Where(n => !n.StartsWith("горка из файла")));
+        YardForm.TopButtons.Add(("Схема…", f => { var p = AskFile(f); if (p != null) Reopen(f, p); }));
+        // служебное: StationFromJson.exe горка.station.json --shot снимок.png секунд [lang] [--manual]
+        int i = Array.IndexOf(args, "--shot");
+        if (i >= 0 && args.Length > i + 2)
+        {
+            if (args.Length > i + 3 && !args[i + 3].StartsWith("--")) L.Set(args[i + 3]);
+            using var f = new YardForm();
+            f.Shot(args[i + 1], double.Parse(args[i + 2], System.Globalization.CultureInfo.InvariantCulture), args.Contains("--manual"));
+            File.WriteAllLines(Path.ChangeExtension(args[i + 1], ".txt"), notes);
+            return;
+        }
+        Application.Run(new YardForm());
+    }
+
+    /// <summary>Открыть другую схему новым запуском программы.</summary>
+    public static void Reopen(Form owner, string path)
+    {
+        SaveLast(path);
+        try
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo(Application.ExecutablePath) { UseShellExecute = false };
+            psi.ArgumentList.Add(path);
+            System.Diagnostics.Process.Start(psi);
+            owner.Close();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(owner, L.T("Не удалось открыть схему: ") + ex.Message, owner.Text, MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
     }
 
     static string LoadLast()

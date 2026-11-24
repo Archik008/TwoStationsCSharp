@@ -50,6 +50,18 @@ static class P
     static void Main(string[] a)
     {
         Console.OutputEncoding = System.Text.Encoding.UTF8;
+        // [ДОБАВЛЕНО 24.11.2026] горка из файла редактора станций: SortTest -j горка.station.json [минут]
+        int j = Array.IndexOf(a, "-j");
+        if (j >= 0 && a.Length > j + 1)
+        {
+            var geo = StationApp.Scheme.YardFromJson.Build(a[j + 1], out var notes);
+            foreach (var n in notes) Console.WriteLine("# " + n);
+            Lay.Use(geo);
+            double min = a.Length > j + 2 ? double.Parse(a[j + 2]) : 60;
+            if (a.Contains("-v")) { Long.Log(min); return; }
+            for (int sd = 1; sd <= 3; sd++) { Long.Run(true, sd, min); Long.Run(false, sd + 10, min); }
+            return;
+        }
         if (a.Contains("-L")) { for (int sd = 1; sd <= 6; sd++) { Long.Run(true, sd, 60); Long.Run(false, sd + 10, 60); } return; }
         if (a.Contains("-l")) { Long.Run(true, 3, 90); Long.Run(false, 4, 90); return; }
         Physics(); Dbg.Ars(1.1, 90, 1); if (a.Contains("-d")) return;

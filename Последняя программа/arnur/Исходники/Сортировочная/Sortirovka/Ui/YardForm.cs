@@ -2,6 +2,9 @@
 using StationApp.Core;
 using StationApp.Yard;
 
+using Aspect = StationApp.Yard.Aspect;
+using Wagon = StationApp.Yard.Wagon;
+
 namespace StationApp.Ui;
 
 // =====================================================================
@@ -15,6 +18,19 @@ namespace StationApp.Ui;
 
 public sealed class YardForm : Form
 {
+    // [ДОБАВЛЕНО 24.11.2026] ИИ-помощник и инструкция — через крючки: «Сортировочная» подключает свой ИИ (Program.cs),
+    // «Станция по схеме» (горка из файла редактора) — без ИИ: у неё свой помощник для станций ДСП
+    public static Action<YardSim> AiSim;
+    public static Action<string> AiPoint;
+    public static Action<string, bool> AiNote;
+    public static bool AiEnabled = true;
+    /// <summary>Где искать ИНСТРУКЦИЯ.txt (по умолчанию — рядом с программой).</summary>
+    public static string GuideDir = AppContext.BaseDirectory;
+    /// <summary>Свои кнопки в верхней строке (перед «Инструкция»): текст и что делать.</summary>
+    public static readonly List<(string Text, Action<Form> Click)> TopButtons = new();
+    /// <summary>Что сказать в журнале в начале смены (замечания к горке из файла).</summary>
+    public static readonly List<string> StartNotes = new();
+
     /// <summary>Кнопки и подписи внутри групп — обычным шрифтом (у GroupBox — жирный заголовок).</summary>
     static readonly Font BtnFont = new("Segoe UI", 9.5f);
     YardSim sim;
@@ -47,11 +63,12 @@ public sealed class YardForm : Form
     /// <summary>Ручное торможение — три кнопки: «Отпустить», «Слабо», «Сильно» (ступени 0, 2, 4).</summary>
     static readonly int[] Levels = { 0, 2, 4 };
     static readonly string[] LevelNames = { "Отпустить", "Слабо", "Сильно" };
-    readonly Button[,] retBtns = new Button[3, 3];
-    readonly Label[] retInfo = new Label[3];
+    // [ИЗМЕНЕНО 24.11.2026] столько строк, сколько тормозных позиций у горки (у встроенной — 3), кнопок путей — сколько путей
+    readonly Button[,] retBtns = new Button[Lay.Cur.RetDefs.Count, 3];
+    readonly Label[] retInfo = new Label[Lay.Cur.RetDefs.Count];
     readonly RadioButton rbGac = new() { Text = "Сами по листку (ГАЦ)", AutoSize = true, ForeColor = Color.White, Checked = true, Margin = new Padding(3, 6, 10, 0) };
     readonly RadioButton rbManual = new() { Text = "Вручную (кнопки путей)", AutoSize = true, ForeColor = Color.White, Margin = new Padding(3, 6, 3, 0) };
-    readonly Button[] routeBtns = new Button[9];
+    readonly Button[] routeBtns = new Button[Lay.Tracks + 1];
     readonly Label lblNext = new() { AutoSize = false, Height = 38, Dock = DockStyle.Top, ForeColor = Color.Gainsboro, Font = BtnFont };
     readonly Label lblListok = new() { AutoSize = false, Height = 20, Dock = DockStyle.Top, ForeColor = Color.White, Font = BtnFont };
     readonly ListView listok = new() { View = View.Details, FullRowSelect = true, Dock = DockStyle.Top, Height = 214, Tag = "nolang", HideSelection = false, BackColor = Color.FromArgb(24, 28, 33), ForeColor = Color.Gainsboro, BorderStyle = BorderStyle.FixedSingle };
@@ -68,7 +85,8 @@ public sealed class YardForm : Form
 
     public YardForm()
     {
-        Text = L.T("Сортировочная — пульт дежурного по горке (ДСПГ)");
+        if (Lay.Cur.Title.Length > 0) Tag = "keeptext";   // название горки из файла не переводится (заголовок переводит OnLang)
+        Text = Lay.Cur.Title.Length > 0 ? Lay.Cur.Title + " — " + L.T("пульт дежурного по горке (ДСПГ)") : L.T("Сортировочная — пульт дежурного по горке (ДСПГ)");
         StartPosition = FormStartPosition.CenterScreen;
         Size = new Size(1600, 980);
         MinimumSize = new Size(1100, 700);
@@ -86,7 +104,7 @@ public sealed class YardForm : Form
         left.BringToFront();
 
         journal.DrawItem += DrawJournal;
-        view.Pointed += id => Ai.AiStation.Point(id);
+        view.Pointed += id => AiPoint?.Invoke(id);
         view.TrackMenu += ShowTrackMenu;
         view.Clicked += RefreshPanel;
         timer.Tick += (_, _) => OnTimer();
@@ -115,7 +133,7 @@ public sealed class YardForm : Form
     void BuildTop()
     {
         var top = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, BackColor = Color.FromArgb(22, 26, 31), WrapContents = true, Padding = new Padding(4, 0, 4, 4) };
-        top.Controls.Add(new Label { Text = "Сортировочная — пульт ДСПГ", AutoSize = true, ForeColor = Color.White, Font = new Font("Segoe UI", 12f, FontStyle.Bold), Margin = new Padding(6, 9, 6, 0) });
+        top.Controls.Add(new Label { Text = Lay.Cur.Title.Length > 0 ? Lay.Cur.Title : "Сортировочная — пульт ДСПГ", Tag = Lay.Cur.Title.Length > 0 ? "nolang" : null, AutoSize = true, ForeColor = Color.White, Font = new Font("Segoe UI", 12f, FontStyle.Bold), Margin = new Padding(6, 9, 6, 0) });
         top.Controls.Add(lblClock);
         cbVariant.Items.AddRange(new object[] { "Вариант: только горка", "Вариант: горка + маневры" });
         cbVariant.SelectedIndex = 0;
@@ -140,11 +158,13 @@ public sealed class YardForm : Form
         {
             if (MessageBox.Show(L.T("Начать новую смену? Оценка и журнал обнулятся."), Text, MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes) { seed = Environment.TickCount; NewShift(); }
         }));
+        foreach (var (text, click) in TopButtons) { var f = this; top.Controls.Add(Btn(text, () => click(f))); }   // [ДОБАВЛЕНО 24.11.2026] «Станция по схеме»: «Схема…»
         top.Controls.Add(Btn("Инструкция", OpenGuide));
         var lang = LangUi.Selector();
         top.Controls.Add(lang);
         btnAi = Btn("ИИ", () => ShowAi(aiWindow == null || !aiWindow.Visible), 60, Color.FromArgb(0, 105, 190));
         tips.SetToolTip(btnAi, "ИИ-помощник: вопросы про горку, роспуск, светофоры, замедлители");
+        btnAi.Visible = AiEnabled;
         top.Controls.Add(btnAi);
         Controls.Add(top);
     }
@@ -225,15 +245,16 @@ public sealed class YardForm : Form
         items.Add(g2);
 
         // ---- шаг 3: торможение ----
-        var g3 = steps[3] = Group("Шаг 3. Торможение отцепов (замедлители)", 222);
+        int nRet = Lay.Cur.RetDefs.Count;
+        var g3 = steps[3] = Group("Шаг 3. Торможение отцепов (замедлители)", 84 + 46 * nRet);
         chkArs.Dock = DockStyle.Top;
         chkArs.CheckedChanged += (_, _) => { sim.SetArs(chkArs.Checked); RefreshPanel(); };
         tips.SetToolTip(chkArs, "Галочка стоит — замедлители тормозят сами. Снимите — тормозите кнопками; жёлтая рамка подсказывает, какую нажать");
-        for (int i = 2; i >= 0; i--)
+        for (int i = nRet - 1; i >= 0; i--)
         {
             int ri = i;
             var row = Row(46);
-            row.Controls.Add(new Label { Text = new[] { "1ТП", "2ТП-А", "2ТП-Б" }[i], Width = 50, ForeColor = Color.White, Font = BtnFont, Margin = new Padding(3, 12, 0, 0) });
+            row.Controls.Add(new Label { Text = Lay.Cur.RetDefs[i].Name, Tag = "nolang", Width = 50, ForeColor = Color.White, Font = BtnFont, Margin = new Padding(3, 12, 0, 0) });
             for (int s = 0; s < 3; s++)
             {
                 int ss = s;
@@ -247,12 +268,13 @@ public sealed class YardForm : Form
             row.Controls.Add(retInfo[i]);
             g3.Controls.Add(row);
         }
-        g3.Controls.Add(new Label { Text = "1ТП — для всех путей, 2ТП-А — для путей 1–4, 2ТП-Б — для путей 5–8", Dock = DockStyle.Top, Height = 18, ForeColor = Color.FromArgb(150, 157, 166), Font = new Font("Segoe UI", 8.5f) });
+        g3.Controls.Add(retLegend = new Label { Text = RetLegend(), Tag = Lay.Cur.Builtin ? null : "nolang", Dock = DockStyle.Top, Height = 18, ForeColor = Color.FromArgb(150, 157, 166), Font = new Font("Segoe UI", 8.5f) });
         g3.Controls.Add(chkArs);
         items.Add(g3);
 
         // ---- шаг 4: маршруты ----
-        var g4 = steps[4] = Group("Шаг 4. На какой путь идёт отцеп (маршрут)", 236);
+        int routeRows = (Lay.Tracks + 3) / 4;
+        var g4 = steps[4] = Group("Шаг 4. На какой путь идёт отцеп (маршрут)", 140 + 48 * routeRows);
         var mode = Row(30);
         rbGac.Font = BtnFont; rbManual.Font = BtnFont;
         mode.Controls.Add(rbGac);
@@ -260,8 +282,7 @@ public sealed class YardForm : Form
         rbGac.CheckedChanged += (_, _) => { if (sim != null && sim.GacMode != rbGac.Checked) { sim.SetGac(rbGac.Checked); RefreshPanel(); } };
         tips.SetToolTip(rbGac, "ГАЦ сама берёт маршруты из сортировочного листка и переводит стрелки");
         tips.SetToolTip(rbManual, "Перед каждым отцепом нажмите кнопку его пути (или клавишу 1–8). Стрелки всё равно переведёт ГАЦ");
-        var rr2 = Row(48);
-        var rr1 = Row(48);
+        var rows = Enumerable.Range(0, routeRows).Select(_ => Row(48)).ToArray();
         for (int k = 1; k <= Lay.Tracks; k++)
         {
             int kk = k;
@@ -271,7 +292,7 @@ public sealed class YardForm : Form
             b.Font = new Font("Segoe UI", 9f, FontStyle.Bold);
             tips.SetToolTip(b, $"Путь {k} — {YardSim.TrackNames[k]} (клавиша {k})");
             routeBtns[k] = b;
-            (k <= 4 ? rr1 : rr2).Controls.Add(b);
+            rows[(k - 1) / 4].Controls.Add(b);
         }
         var rr3 = Row(36);
         var undo = Btn("Сбросить последний маршрут", () => sim.UndoRoute());
@@ -279,8 +300,7 @@ public sealed class YardForm : Form
         rr3.Controls.Add(undo);
         g4.Controls.Add(lblNext);
         g4.Controls.Add(rr3);
-        g4.Controls.Add(rr2);
-        g4.Controls.Add(rr1);
+        for (int i = rows.Length - 1; i >= 0; i--) g4.Controls.Add(rows[i]);
         g4.Controls.Add(mode);
         items.Add(g4);
         RouteTexts();
@@ -367,6 +387,17 @@ public sealed class YardForm : Form
         Controls.Add(right);
     }
 
+    /// <summary>«1ТП — для всех путей, 2ТП-А — для путей 1–4, …» по тормозным позициям горки.</summary>
+    /// <remarks>У горки из файла — склеенная строка: части переводятся сразу (и заново при смене языка, OnLang).</remarks>
+    static string RetLegend()
+    {
+        var g = Lay.Cur;
+        if (g.Builtin) return "1ТП — для всех путей, 2ТП-А — для путей 1–4, 2ТП-Б — для путей 5–8";
+        return string.Join(", ", g.RetDefs.Select(r => r.Lo == 1 && r.Hi == g.Tracks ? L.T($"{r.Name} — для всех путей")
+                                                    : r.Lo == r.Hi ? L.T($"{r.Name} — для пути {r.Lo}") : L.T($"{r.Name} — для путей {r.Lo}–{r.Hi}")));
+    }
+    Label retLegend;
+
     void RouteTexts()
     {
         for (int k = 1; k <= Lay.Tracks; k++) routeBtns[k].Text = $"{k} · " + L.T(YardSim.TrackNames[k].Split(' ')[0]);
@@ -419,10 +450,11 @@ public sealed class YardForm : Form
             Note(t, bad);
         };
         view.Sim = sim;
-        Ai.AiStation.Sim = sim;
+        AiSim?.Invoke(sim);
         log.Clear();
         journal.Items.Clear();
         Note("Смена началась. Поезд на пути П1 готов к роспуску. Делайте то, что написано в жёлтом блоке «Что делать сейчас» справа", false);
+        foreach (var n in StartNotes) Note(n, true);
         RefreshPanel();
     }
 
@@ -430,7 +462,7 @@ public sealed class YardForm : Form
     {
         var t = sim?.Clock.ToString("HH:mm:ss") ?? "";
         log.Add((t, text, bad));
-        Ai.AiStation.Note(text, bad);
+        AiNote?.Invoke(text, bad);
         journal.Items.Add(log.Count - 1);
         if (journal.Items.Count > 400) { journal.Items.RemoveAt(0); }
         journal.TopIndex = Math.Max(0, journal.Items.Count - journal.ClientSize.Height / journal.ItemHeight);
@@ -468,7 +500,8 @@ public sealed class YardForm : Form
         for (int i = 0; i < ListokCols.Length; i++) listok.Columns[i].Text = L.T(ListokCols[i]);
         listok.Items.Clear();
         RouteTexts();
-        Text = L.T("Сортировочная — пульт дежурного по горке (ДСПГ)");
+        if (!Lay.Cur.Builtin && retLegend != null) retLegend.Text = RetLegend();
+        Text = Lay.Cur.Title.Length > 0 ? Lay.Cur.Title + " — " + L.T("пульт дежурного по горке (ДСПГ)") : L.T("Сортировочная — пульт дежурного по горке (ДСПГ)");
         journal.Invalidate();
         RefreshPanel();
     }
@@ -477,8 +510,8 @@ public sealed class YardForm : Form
     {
         if (ActiveControl is TextBoxBase) return base.ProcessCmdKey(ref msg, key);
         if (key == Keys.Escape) { sim.SetAspect(Aspect.Red); RefreshPanel(); return true; }
-        if (key >= Keys.D1 && key <= Keys.D8) { sim.RouteButton(key - Keys.D0); RefreshPanel(); return true; }
-        if (key >= Keys.NumPad1 && key <= Keys.NumPad8) { sim.RouteButton(key - Keys.NumPad0); RefreshPanel(); return true; }
+        if (key >= Keys.D1 && key <= Keys.D9 && key - Keys.D0 <= Lay.Tracks) { sim.RouteButton(key - Keys.D0); RefreshPanel(); return true; }
+        if (key >= Keys.NumPad1 && key <= Keys.NumPad9 && key - Keys.NumPad0 <= Lay.Tracks) { sim.RouteButton(key - Keys.NumPad0); RefreshPanel(); return true; }
         if (key == Keys.F1) { OpenGuide(); return true; }
         if (key == Keys.Space) { speed = speed == 0 ? 1 : 0; return true; }
         return base.ProcessCmdKey(ref msg, key);
@@ -550,7 +583,7 @@ public sealed class YardForm : Form
         }
 
         // шаг 3: замедлители
-        for (int i = 0; i < 3; i++)
+        for (int i = 0; i < sim.Retarders.Length && i < retInfo.Length; i++)
         {
             var r = sim.Retarders[i];
             int cur = r.Step == 0 ? 0 : r.Step <= 2 ? 1 : 2;
@@ -789,8 +822,8 @@ public sealed class YardForm : Form
     {
         // [ДОБАВЛЕНО 12.11.2026] на казахском — казахская инструкция (если её нет рядом — русская)
         // [ИЗМЕНЕНО 23.11.2026] на английском — INSTRUCTION.txt
-        var own = Path.Combine(AppContext.BaseDirectory, L.Current switch { "kk" => "НҰСҚАУЛЫҚ.txt", "en" => "INSTRUCTION.txt", _ => "ИНСТРУКЦИЯ.txt" });
-        var path = File.Exists(own) ? own : Path.Combine(AppContext.BaseDirectory, "ИНСТРУКЦИЯ.txt");
+        var own = Path.Combine(GuideDir, L.Current switch { "kk" => "НҰСҚАУЛЫҚ.txt", "en" => "INSTRUCTION.txt", _ => "ИНСТРУКЦИЯ.txt" });
+        var path = File.Exists(own) ? own : Path.Combine(GuideDir, "ИНСТРУКЦИЯ.txt");
         if (!File.Exists(path)) { MessageBox.Show(L.T("Файл инструкции не найден") + "\n" + path, Text); return; }
         try { Process.Start(new ProcessStartInfo(path) { UseShellExecute = true }); } catch (Exception ex) { MessageBox.Show(ex.Message, Text); }
     }
