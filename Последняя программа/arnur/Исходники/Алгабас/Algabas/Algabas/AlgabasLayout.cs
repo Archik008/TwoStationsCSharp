@@ -258,7 +258,7 @@ public class AlgabasLayout
         // --- движение ← (белый на выходных Н) ---
         Route(true, M1, M8, P1, "М1 → путь 1", new[] { SP1 }, new[] { P(SW1) });
         Route(true, M1, M10, P3, "М1 → путь 3", new[] { SP1 }, new[] { M(SW1) });
-        Route(true, H1, M2, CH_M2, "Н1 → М2", new[] { SP24 }, new[] { P(SW46), P(SW2) });
+        // [УДАЛЕНО 24.11.2026] «Н1 → М2» (маневровый к Ч по участку Ч-М2) — по просьбе: от Н1 только поездной на перегон до светофора 1
         Route(true, H2, M2, CH_M2, "Н2 → М2", new[] { SP8, SP6, SP24 }, new[] { P(SW8), M(SW46), P(SW2) });
         Route(true, H3, M2, CH_M2, "Н3 → М2", new[] { SP24 }, new[] { M(SW2) });
         Route(true, H4, M2, CH_M2, "Н4 → М2", new[] { SP8, SP6, SP24 }, new[] { M(SW8), M(SW46), P(SW2) });
