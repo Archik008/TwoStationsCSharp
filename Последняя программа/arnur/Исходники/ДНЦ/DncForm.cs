@@ -6,7 +6,7 @@ namespace DncApp;
 //  ГЛАВНОЕ ОКНО ДНЦ
 //   слева — сервер, станции на связи и их схемы («Добавить →»), сколько схем можно открыть (N), режим станций, журнал;
 //   [ДОБАВЛЕНО 18.11.2026] станция подключилась к серверу — её схемы добавляются в ленту сами (кроме убранных ✕);
-//   режим интерфейса («Медеуский» / «Павлодарский») ДНЦ держит одинаковым у всех станций;
+//   режим интерфейса («Медеуский» / «Павлодарский» / [27.11.2026] «Учебный») ДНЦ держит одинаковым у всех станций;
 //   справа — лента схем в линию слева направо во всю высоту окна (прокрутка вбок, колесо мыши — тоже вбок);
 //   [ИЗМЕНЕНО 18.11.2026] лента — «сквозная» (Ribbon.cs): общий масштаб, пути соседних станций стыкуются,
 //   перегон, нарисованный у двух станций, показывается один раз; порядок по стыкам (или как расставил диспетчер);
@@ -119,6 +119,7 @@ public class DncForm : Form
         WinBtn("⇄", SwapSides, "Поменять части окна местами: панель управления — на другой монитор (запоминается)");
         WinBtn("Свернуть", () => WindowState = FormWindowState.Minimized, "Свернуть окно ДНЦ");
         WinBtn("Выход", Close, "Закрыть программу ДНЦ (управление станциям вернётся)");
+        WinBtn("Разработчики", () => StationApp.Common.DevelopersForm.Open(this, Text, StationApp.Core.L.Current), "Кто сделал программу");   // [ДОБАВЛЕНО 26.11.2026]
         // [ДОБАВЛЕНО 23.11.2026] на казахском кнопки окна длиннее — строка переносится, а не обрезается
         winRow.WrapContents = true;
         winRow.MaximumSize = new Size(262, 0);
@@ -201,14 +202,19 @@ public class DncForm : Form
 
         // [ДОБАВЛЕНО 18.11.2026] режим интерфейса — один у всех станций
         flow.Controls.Add(Title("Режим станций"));
-        var rbWork = new RadioButton { Text = "Медеуский (рабочий)", AutoSize = true, Checked = Settings.Mode != "Classic", Margin = new Padding(3, 2, 3, 0) };
+        var rbWork = new RadioButton { Text = "Медеуский (рабочий)", AutoSize = true, Checked = Settings.Mode is not ("Classic" or "Training"), Margin = new Padding(3, 2, 3, 0) };
         var rbClassic = new RadioButton { Text = "Павлодарский", AutoSize = true, Checked = Settings.Mode == "Classic", Margin = new Padding(3, 2, 3, 0) };
         rbWork.CheckedChanged += (_, _) => { if (rbWork.Checked) Net.SetModeAll("Work"); };
         rbClassic.CheckedChanged += (_, _) => { if (rbClassic.Checked) Net.SetModeAll("Classic"); };
+        // [ДОБАВЛЕНО 27.11.2026] учебный режим — у всех станций сразу (схема, маршруты, стрелки, журнал, имитация поездов)
+        var rbTraining = new RadioButton { Text = "Учебный", AutoSize = true, Checked = Settings.Mode == "Training", Margin = new Padding(3, 2, 3, 0) };
+        rbTraining.CheckedChanged += (_, _) => { if (rbTraining.Checked) Net.SetModeAll("Training"); };
+        tips.SetToolTip(rbTraining, "Для занятий: схема, маршруты, стрелки, пульт ДСП, журнал, имитация поездов — у всех станций сразу");
         tips.SetToolTip(rbWork, "Как АРМ ДСП станции Медеу: крупная схема, пульт полосой — у всех станций сразу");
         tips.SetToolTip(rbClassic, "Как тренажёр Павлодарского колледжа (пульт «Енисей») — у всех станций сразу");
         flow.Controls.Add(rbWork);
         flow.Controls.Add(rbClassic);
+        flow.Controls.Add(rbTraining);
         flow.Controls.Add(Title("Журнал"));
 
         side.Controls.Add(lstLog);

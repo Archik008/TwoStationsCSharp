@@ -112,6 +112,9 @@ public sealed partial class MainForm : Form
         vNames = Toggle("Названия", "Показать / скрыть названия участков", v => ui.ShowSecNames = v);
         var help = Btn("Справка", "Справка и горячие клавиши (F1)", ShowHelp);
         help.Alignment = ToolStripItemAlignment.Right;
+        // [ДОБАВЛЕНО 26.11.2026] окно «Разработчики» — кто сделал программу (общее для всех программ)
+        var devs = Btn("Разработчики", "Кто сделал программу", () => StationApp.Common.DevelopersForm.Open(this, "Редактор станций", "ru"));
+        devs.Alignment = ToolStripItemAlignment.Right;
 
         // ---- строка состояния ----
         status = new StatusStrip { SizingGrip = true };

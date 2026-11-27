@@ -61,6 +61,7 @@ public sealed class YardView : Control
         if (Lay.Cur.Builtin) DrawSignals(g); else DrawSignalsGeo(g);
         DrawVehicles(g);
         if (Lay.Cur.Builtin) DrawLabels(g); else DrawLabelsGeo(g);
+        DrawStrict(g);
         DrawProfile(g);
         DrawHover(g);
     }
@@ -383,6 +384,7 @@ public sealed class YardView : Control
                 DepState.Filling => "вывод состава",
                 DepState.WaitLoco or DepState.LocoComing => "ждёт локомотив",
                 DepState.BrakeTest => "опробование тормозов",
+                DepState.Ready => "готов к отправлению",
                 DepState.Leaving => "отправление",
                 _ => "",
             };
@@ -489,6 +491,7 @@ public sealed class YardView : Control
                 DepState.Filling => "вывод состава",
                 DepState.WaitLoco or DepState.LocoComing => "ждёт локомотив",
                 DepState.BrakeTest => "опробование тормозов",
+                DepState.Ready => "готов к отправлению",
                 DepState.Leaving => "отправление",
                 _ => "",
             };
@@ -789,6 +792,32 @@ public sealed class YardView : Control
     }
 
     // =================================================================
+    //  [ДОБАВЛЕНО 26.11.2026] «УЧЕБНЫЙ» / «ЭКЗАМЕН»: тормозные башмаки на путях, поезд у входного светофора
+    // =================================================================
+    void DrawStrict(Graphics g)
+    {
+        if (!Sim.Strict) return;
+        using var shoe = new SolidBrush(Color.FromArgb(240, 140, 30));
+        using var edge = new Pen(Color.Black, 1);
+        for (int k = 1; k <= Lay.Tracks; k++)
+        {
+            if (!Sim.Shoe[k]) continue;
+            var p = Lay.At(YardSim.ShoeS, k, 1);
+            // клин на рельсе: остриём к горке
+            var tri = new[] { new PointF(p.X - 7, p.Y + 1), new PointF(p.X + 3, p.Y - 6), new PointF(p.X + 3, p.Y + 1) };
+            g.FillPolygon(shoe, tri);
+            g.DrawPolygon(edge, tri);
+        }
+        var ap = Sim.Approaching;
+        if (ap != null)
+        {
+            var a = Lay.At(Lay.SArrTail, 1, 1);
+            bool blink = Environment.TickCount / 500 % 2 == 0;
+            Label(g, L.T($"Поезд {ap.Name} ({ap.WagonCount} ваг.) у входного — примите на путь П…"), F12, blink ? Color.Gold : Color.FromArgb(200, 160, 40), Math.Max(4, a.X - 20), Math.Max(4, a.Y - 70));
+        }
+    }
+
+    // =================================================================
     //  МЫШЬ
     // =================================================================
     string HitTest(PointF v, out int track, out Cut cut)
@@ -883,7 +912,8 @@ public sealed class YardView : Control
             return $"Стрелка {sw.No}: " + (sw.Throwing ? "переводится" : sw.Plus ? $"плюс — на пути {sw.Range(true)}" : $"минус — на пути {sw.Range(false)}") + ". Щелчок — перевести";
         }
         if (id.StartsWith("путь ") && int.TryParse(id[5..], out int k))
-            return $"Путь {k} — {YardSim.TrackNames[k]}: {Sim.OnTrack(k).Sum(c => c.Wagons.Count)} ваг. (норма {YardSim.Norm(k)}). Щелчок — маршрут отцепу на этот путь, правая кнопка — маневры";
+            return $"Путь {k} — {YardSim.TrackNames[k]}: {Sim.OnTrack(k).Sum(c => c.Wagons.Count)} ваг. (норма {YardSim.Norm(k)}). Щелчок — маршрут отцепу на этот путь, правая кнопка — маневры" +
+                   (Sim.Strict ? (Sim.Shoe[k] ? ". Тормозной башмак уложен" : ". Башмака нет") : "");
         if (id.StartsWith("отцеп "))
         {
             var c = Sim.Cuts.FirstOrDefault(x => "отцеп " + x.No == id && x.Active);

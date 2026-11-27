@@ -156,6 +156,8 @@ public sealed class Cut
     /// <summary>На какой путь въехал (0 — ещё не въехал).</summary>
     public int Track;
     public double ForcedV;
+    /// <summary>[ДОБАВЛЕНО 26.11.2026] Наехал на тормозной башмак: где остановится (0 — не наезжал).</summary>
+    public double ShoeStop;
     public bool Reported, StopChecked, Escort;
     /// <summary>Порядковый номер поезда, из которого отцеп.</summary>
     public int TrainNo;

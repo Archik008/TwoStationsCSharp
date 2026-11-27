@@ -59,7 +59,25 @@ static class P
             Lay.Use(geo);
             double min = a.Length > j + 2 ? double.Parse(a[j + 2]) : 60;
             if (a.Contains("-v")) { Long.Log(min); return; }
+            // [ДОБАВЛЕНО 26.11.2026] -j файл минут -t — «Учебный» и «Демонстрация» ботом на горке из файла
+            if (a.Contains("-t")) { foreach (var m in new[] { YardMode.Training, YardMode.Demo }) Long.Student(m, 1, min); return; }
             for (int sd = 1; sd <= 3; sd++) { Long.Run(true, sd, min); Long.Run(false, sd + 10, min); }
+            return;
+        }
+        // [ДОБАВЛЕНО 26.11.2026] SortTest -t [минут] — «Учебный», «Экзамен», «Демонстрация» (бот делает всё сам); -tv — с журналом
+        // SortTest -tasks — каждое задание ботом: выполнимы ли цели за отведённое время
+        if (a.Contains("-tasks"))
+        {
+            foreach (var t in YardTask.All) Long.Student(t.Mode, t.Seed, a.Contains("-x3") ? t.Minutes * 3 : t.Minutes, false, t);
+            return;
+        }
+        if (a.Contains("-t") || a.Contains("-tv"))
+        {
+            double min = a.Select(x => double.TryParse(x, out var v) ? v : 0).FirstOrDefault(v => v > 0);
+            if (min == 0) min = 40;
+            if (a.Contains("-tv")) { Long.Student(YardMode.Training, 1, min, true); return; }
+            foreach (var m in new[] { YardMode.Training, YardMode.Demo })
+                for (int sd = 1; sd <= 3; sd++) Long.Student(m, sd, min);
             return;
         }
         if (a.Contains("-L")) { for (int sd = 1; sd <= 6; sd++) { Long.Run(true, sd, 60); Long.Run(false, sd + 10, 60); } return; }

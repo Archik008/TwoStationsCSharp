@@ -37,4 +37,8 @@
     <EmbeddedResource Include="..\..\Алгабас\Algabas\Lang\Strings.en.json" Link="Lang\Strings.en.json" LogicalName="Strings.en.json" WithCulture="false" />
   </ItemGroup>
 
+  <!-- [ДОБАВЛЕНО 26.11.2026] окно «Разработчики» — общее для всех программ -->
+  <ItemGroup>
+    <Compile Include="..\..\Общее\DevelopersForm.cs" Link="Shared\DevelopersForm.cs" />
+  </ItemGroup>
 </Project>

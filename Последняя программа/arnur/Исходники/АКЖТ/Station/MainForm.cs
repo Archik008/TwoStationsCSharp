@@ -128,6 +128,10 @@ class MainForm : Form
         right.Controls.Add(btnLamps);
         right.Controls.Add(PinkButton("Убрать всё", ResetAll));
         right.Controls.Add(LangUi.Selector());   // [ДОБАВЛЕНО 22.10.2026, этап 8] язык
+        // [ДОБАВЛЕНО 26.11.2026] окно «Разработчики» — кто сделал программу (общее для всех программ)
+        var btnDevs = PinkButton("Разработчики", () => StationApp.Common.DevelopersForm.Open(this, Text, StationApp.Core.L.Current));
+        tips.SetToolTip(btnDevs, "Кто сделал программу");
+        right.Controls.Add(btnDevs);
         right.Controls.Add(PinkButton("Выход", Close));
 
         top.Controls.Add(right);

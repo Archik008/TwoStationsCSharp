@@ -14,6 +14,9 @@ namespace StationApp.Ui;
 //  1. Надвиг, 2. Горочный светофор, 3. Торможение (АРС или три кнопки), 4. Маршруты (ГАЦ или вручную),
 //  сортировочный листок, маневры (только «Горка + маневры»), «Дополнительно» (свёрнуто), оценка.
 //  Подписи, которые меняются по таймеру, ставятся через LangUi.SetText (иначе на kk / en мигают).
+//  [ДОБАВЛЕНО 26.11.2026] Под верхней строкой — варианты кнопками (Только горка, Горка + маневры, Учебный, Демонстрация,
+//  Экзамен) и «Задания…» (урок: цели, время, итог в файл). В «Учебном» и «Экзамене» справа — «Приём, башмаки,
+//  отправление»; в «Экзамене» подсказок нет; в «Демонстрации» пульт ведёт автопилот.
 // =====================================================================
 
 public sealed class YardForm : Form
@@ -30,6 +33,18 @@ public sealed class YardForm : Form
     public static readonly List<(string Text, Action<Form> Click)> TopButtons = new();
     /// <summary>Что сказать в журнале в начале смены (замечания к горке из файла).</summary>
     public static readonly List<string> StartNotes = new();
+    /// <summary>[26.11.2026] Вариант при запуске (служебное: --mode для снимков).</summary>
+    public static YardMode StartupMode = YardMode.Hump;
+    /// <summary>[26.11.2026] Задание при запуске (Sortirovka.exe --task exam — сразу урок; удобно преподавателю).</summary>
+    public static YardTask StartupTask;
+    /// <summary>Снимок без окна: итог задания не показывается окном (только файл).</summary>
+    bool headless;
+    /// <summary>Файл итога последнего задания.</summary>
+    public string LastReport;
+    /// <summary>Служебное: снимок окна «Задания» в файл.</summary>
+    public static string TasksShot;
+    public static int TasksShotIndex;
+    public void ShotTasks() { CreateControl(); OpenTasks(); }
 
     /// <summary>Кнопки и подписи внутри групп — обычным шрифтом (у GroupBox — жирный заголовок).</summary>
     static readonly Font BtnFont = new("Segoe UI", 9.5f);
@@ -41,7 +56,30 @@ public sealed class YardForm : Form
 
     // верх
     readonly Label lblClock = new() { AutoSize = true, ForeColor = Color.FromArgb(150, 210, 255), Font = new Font("Segoe UI", 12f, FontStyle.Bold), Margin = new Padding(10, 9, 6, 0) };
-    readonly ComboBox cbVariant = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 210, Margin = new Padding(6, 7, 6, 0) };
+    // [ДОБАВЛЕНО 26.11.2026] варианты и задания
+    YardMode mode = YardMode.Hump;
+    readonly Dictionary<YardMode, Button> modeBtns = new();
+    static readonly (YardMode m, string text, string tip)[] Variants =
+    {
+        (YardMode.Hump, "Только горка", "Приём, осмотр, горочный локомотив, вывод и отправление составов — сами; вы — надвиг и роспуск"),
+        (YardMode.HumpShunt, "Горка + маневры", "Вы ещё подаёте горочный локомотив под состав, возвращаете его и выводите составы в парк отправления"),
+        (YardMode.Training, "Учебный", "Всё делаете сами: приём поезда, горочный локомотив, надвиг, маршруты, торможение, башмаки, вывод и отправление. Программа проверяет каждый шаг и подсказывает"),
+        (YardMode.Demo, "Демонстрация", "Всё делает автопилот, в журнале — что и почему. Смотрите, как должно быть"),
+        (YardMode.Exam, "Экзамен", "Как «Учебный», но без подсказок; оценка — по нарушениям"),
+    };
+    YardTask task;
+    bool taskOver;
+    string student = "";
+    Button btnTasks, btnTaskEnd;
+    readonly Label lblTask = new() { AutoSize = true, ForeColor = Color.Gold, Font = new Font("Segoe UI", 9.5f, FontStyle.Bold), Margin = new Padding(8, 9, 6, 0), MaximumSize = new Size(900, 0) };
+    bool arsLocked, gacLocked, syncing;
+    // приём, башмаки, отправление (Учебный / Экзамен)
+    GroupBox gOps;
+    readonly Label lblApproach = new() { AutoSize = false, Height = 22, Dock = DockStyle.Top, ForeColor = Color.White, Font = BtnFont };
+    readonly Button[] accBtns = new Button[Lay.ArrTracks + 1];
+    readonly Button[] shoeBtns = new Button[Lay.Tracks + 1];
+    readonly Label[] depInfo = new Label[Lay.DepTracks + 1];
+    readonly Button[] depBtns = new Button[Lay.DepTracks + 1];
     readonly List<Button> speedButtons = new();
     Button btnAi;
     Ai.AiChatWindow aiWindow;
@@ -95,6 +133,8 @@ public sealed class YardForm : Form
         KeyPreview = true;
         Font = new Font("Segoe UI", 9.5f);
 
+        mode = StartupMode;
+        task = StartupTask;
         BuildTop();
         BuildRight();
         var left = new Panel { Dock = DockStyle.Fill };
@@ -135,17 +175,6 @@ public sealed class YardForm : Form
         var top = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, BackColor = Color.FromArgb(22, 26, 31), WrapContents = true, Padding = new Padding(4, 0, 4, 4) };
         top.Controls.Add(new Label { Text = Lay.Cur.Title.Length > 0 ? Lay.Cur.Title : "Сортировочная — пульт ДСПГ", Tag = Lay.Cur.Title.Length > 0 ? "nolang" : null, AutoSize = true, ForeColor = Color.White, Font = new Font("Segoe UI", 12f, FontStyle.Bold), Margin = new Padding(6, 9, 6, 0) });
         top.Controls.Add(lblClock);
-        cbVariant.Items.AddRange(new object[] { "Вариант: только горка", "Вариант: горка + маневры" });
-        cbVariant.SelectedIndex = 0;
-        cbVariant.SelectedIndexChanged += (_, _) =>
-        {
-            if (sim == null || sim.AutoOps == (cbVariant.SelectedIndex == 0)) return;   // перевод списка тоже «меняет» выбор
-            sim.AutoOps = cbVariant.SelectedIndex == 0;
-            Note(sim.AutoOps ? "Вариант «Только горка»: приём, осмотр, горочный локомотив и вывод составов — сами" : "Вариант «Горка + маневры»: горочный локомотив под состав, его возврат и вывод составов — делаете вы", false);
-            RefreshPanel();
-        };
-        tips.SetToolTip(cbVariant, "Только горка — всё до и после горки делается само. Горка + маневры — вы сами подаёте горочный локомотив, возвращаете его и выводите составы в парк отправления");
-        top.Controls.Add(cbVariant);
         foreach (var (t, v) in new[] { ("⏸", 0.0), ("×1", 1.0), ("×2", 2.0), ("×4", 4.0) })
         {
             var b = Btn(t, () => { speed = v; }, 40);
@@ -160,12 +189,37 @@ public sealed class YardForm : Form
         }));
         foreach (var (text, click) in TopButtons) { var f = this; top.Controls.Add(Btn(text, () => click(f))); }   // [ДОБАВЛЕНО 24.11.2026] «Станция по схеме»: «Схема…»
         top.Controls.Add(Btn("Инструкция", OpenGuide));
+        // [ДОБАВЛЕНО 26.11.2026] окно «Разработчики» — кто сделал программу (общее для всех программ)
+        var btnDevs = Btn("Разработчики", () => StationApp.Common.DevelopersForm.Open(this, Text, L.Current));
+        tips.SetToolTip(btnDevs, "Кто сделал программу");
+        top.Controls.Add(btnDevs);
         var lang = LangUi.Selector();
         top.Controls.Add(lang);
         btnAi = Btn("ИИ", () => ShowAi(aiWindow == null || !aiWindow.Visible), 60, Color.FromArgb(0, 105, 190));
         tips.SetToolTip(btnAi, "ИИ-помощник: вопросы про горку, роспуск, светофоры, замедлители");
         btnAi.Visible = AiEnabled;
         top.Controls.Add(btnAi);
+
+        // [ДОБАВЛЕНО 26.11.2026] варианты кнопками и задания
+        var strip = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, BackColor = Color.FromArgb(28, 33, 40), WrapContents = true, Padding = new Padding(4, 0, 4, 2) };
+        strip.Controls.Add(new Label { Text = "Вариант:", AutoSize = true, ForeColor = Color.Gainsboro, Font = BtnFont, Margin = new Padding(6, 10, 2, 0) });
+        foreach (var (m, t, tip) in Variants)
+        {
+            var mm = m;
+            var b = Btn(t, () => ChooseMode(mm));
+            tips.SetToolTip(b, tip);
+            modeBtns[m] = b;
+            strip.Controls.Add(b);
+        }
+        strip.Controls.Add(new Label { Text = "", Width = 14, Margin = Padding.Empty });
+        btnTasks = Btn("Задания…", OpenTasks, 0, Color.FromArgb(125, 85, 20));
+        tips.SetToolTip(btnTasks, "Выбрать задание (урок): что сделать, за сколько минут, итог — оценка и файл для преподавателя");
+        strip.Controls.Add(btnTasks);
+        btnTaskEnd = Btn("Закончить задание", () => FinishTask(true));
+        btnTaskEnd.Visible = false;
+        strip.Controls.Add(btnTaskEnd);
+        strip.Controls.Add(lblTask);
+        Controls.Add(strip);        // Dock = Top: добавленный позже — выше, верхняя строка остаётся сверху
         Controls.Add(top);
     }
 
@@ -201,6 +255,53 @@ public sealed class YardForm : Form
         nowPanel.Controls.Add(lblNow);
         nowPanel.Controls.Add(nowTitle);
         items.Add(nowPanel);
+
+        // ---- [ДОБАВЛЕНО 26.11.2026] приём, башмаки, отправление («Учебный», «Экзамен») ----
+        int shoeRows = (Lay.Tracks + 9) / 10;
+        gOps = steps[0] = Group("Приём, тормозные башмаки, отправление", 66 + 40 + 22 + 38 * shoeRows + 36 * Lay.DepTracks);
+        var ra = Row(40);
+        ra.Controls.Add(new Label { Text = "Принять на:", AutoSize = true, ForeColor = Color.Gainsboro, Font = BtnFont, Margin = new Padding(3, 11, 3, 0) });
+        for (int a = 1; a <= Lay.ArrTracks; a++)
+        {
+            int aa = a;
+            var b = Btn("П" + a, () => sim.AcceptTrain(aa), 58);
+            b.Font = new Font("Segoe UI", 10f, FontStyle.Bold);
+            tips.SetToolTip(b, $"Принять поезд на подходе на путь П{a} парка приёма");
+            accBtns[a] = b;
+            ra.Controls.Add(b);
+        }
+        var rs = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 38 * shoeRows, WrapContents = true, Margin = Padding.Empty };
+        // подпись — отдельной строкой: кнопки всех путей (до 10) влезают в одну строку на любом языке
+        var lblShoes = new Label { Text = "Башмаки на путях:", AutoSize = false, Height = 22, Dock = DockStyle.Top, ForeColor = Color.Gainsboro, Font = BtnFont, Padding = new Padding(3, 4, 0, 0) };
+        for (int k = 1; k <= Lay.Tracks; k++)
+        {
+            int kk = k;
+            var b = Btn(k.ToString(), () => sim.SetShoe(kk, !sim.Shoe[kk]), 34);
+            b.Tag = "nolang";
+            b.Font = new Font("Segoe UI", 9.5f, FontStyle.Bold);
+            tips.SetToolTip(b, $"Путь {k}: уложить / снять тормозной башмак. На свободный путь башмак кладут до первого отцепа; перед выводом состава — снимают");
+            shoeBtns[k] = b;
+            rs.Controls.Add(b);
+        }
+        var depRows = new List<Control>();
+        for (int d = 1; d <= Lay.DepTracks; d++)
+        {
+            int dd = d;
+            var row = Row(36);
+            depInfo[d] = new Label { AutoSize = false, Width = 268, Height = 32, ForeColor = Color.Gainsboro, Font = BtnFont, Margin = new Padding(3, 8, 0, 0) };
+            depBtns[d] = Btn("", () => { if (sim.Dep[dd].State == DepState.Ready) sim.DepartTrain(dd); else sim.OrderTrainLoco(dd); }, 170);
+            depBtns[d].Font = BtnFont;
+            row.Controls.Add(depInfo[d]);
+            row.Controls.Add(depBtns[d]);
+            depRows.Add(row);
+        }
+        for (int i = depRows.Count - 1; i >= 0; i--) gOps.Controls.Add(depRows[i]);
+        gOps.Controls.Add(rs);
+        gOps.Controls.Add(lblShoes);
+        gOps.Controls.Add(ra);
+        gOps.Controls.Add(lblApproach);
+        gOps.Visible = false;
+        items.Add(gOps);
 
         // ---- шаг 1: надвиг ----
         var g1 = steps[1] = Group("Шаг 1. Надвиг состава на горку", 108);
@@ -248,7 +349,7 @@ public sealed class YardForm : Form
         int nRet = Lay.Cur.RetDefs.Count;
         var g3 = steps[3] = Group("Шаг 3. Торможение отцепов (замедлители)", 84 + 46 * nRet);
         chkArs.Dock = DockStyle.Top;
-        chkArs.CheckedChanged += (_, _) => { sim.SetArs(chkArs.Checked); RefreshPanel(); };
+        chkArs.CheckedChanged += (_, _) => { if (syncing) return; sim.SetArs(chkArs.Checked); RefreshPanel(); };
         tips.SetToolTip(chkArs, "Галочка стоит — замедлители тормозят сами. Снимите — тормозите кнопками; жёлтая рамка подсказывает, какую нажать");
         for (int i = nRet - 1; i >= 0; i--)
         {
@@ -279,7 +380,7 @@ public sealed class YardForm : Form
         rbGac.Font = BtnFont; rbManual.Font = BtnFont;
         mode.Controls.Add(rbGac);
         mode.Controls.Add(rbManual);
-        rbGac.CheckedChanged += (_, _) => { if (sim != null && sim.GacMode != rbGac.Checked) { sim.SetGac(rbGac.Checked); RefreshPanel(); } };
+        rbGac.CheckedChanged += (_, _) => { if (!syncing && sim != null && sim.GacMode != rbGac.Checked) { sim.SetGac(rbGac.Checked); RefreshPanel(); } };
         tips.SetToolTip(rbGac, "ГАЦ сама берёт маршруты из сортировочного листка и переводит стрелки");
         tips.SetToolTip(rbManual, "Перед каждым отцепом нажмите кнопку его пути (или клавишу 1–8). Стрелки всё равно переведёт ГАЦ");
         var rows = Enumerable.Range(0, routeRows).Select(_ => Row(48)).ToArray();
@@ -431,6 +532,9 @@ public sealed class YardForm : Form
         var f = m.Items.Add(L.T("Вывести состав в парк отправления"), null, (_, _) => sim.FormTrain(k));
         f.Enabled = !sim.AutoOps;
         if (sim.AutoOps) f.ToolTipText = L.T("В варианте «Только горка» составы выводятся сами");
+        if (sim.Strict)
+            m.Items.Add(L.T(sim.Shoe[k] ? "Снять тормозной башмак" : "Уложить тормозной башмак"), null, (_, _) => sim.SetShoe(k, !sim.Shoe[k]));
+        if (mode == YardMode.Demo) foreach (ToolStripItem it in m.Items) it.Enabled = false;
         m.Show(view, p);
     }
 
@@ -439,11 +543,26 @@ public sealed class YardForm : Form
     // =================================================================
     void NewShift()
     {
-        sim = new YardSim(seed);
-        sim.AutoOps = cbVariant.SelectedIndex <= 0;
-        sim.GacMode = rbGac.Checked;
-        sim.Ars = chkArs.Checked;
-        if (!sim.GacMode) foreach (var c in sim.ListokTrain.AllCuts) c.Route = 0;
+        // [ИЗМЕНЕНО 26.11.2026] вариант и ограничения задания; у задания — свой набор поездов (seed)
+        if (task != null) mode = task.Mode;
+        var m = mode;
+        sim = new YardSim(task?.Seed ?? seed, s => { s.ApplyMode(m); s.ForceForbidden = task?.Forbidden ?? false; });
+        bool? ars = sim.Strict ? false : m == YardMode.Demo ? true : task?.Ars;
+        bool? gac = sim.Strict ? false : m == YardMode.Demo ? true : task?.Gac;
+        arsLocked = ars != null;
+        gacLocked = gac != null;
+        if (!sim.Strict && m != YardMode.Demo)
+        {
+            sim.GacMode = gac ?? rbGac.Checked;
+            sim.Ars = ars ?? chkArs.Checked;
+            if (!sim.GacMode) foreach (var c in sim.ListokTrain.AllCuts) c.Route = 0;
+        }
+        syncing = true;
+        chkArs.Checked = sim.Ars;
+        rbGac.Checked = sim.GacMode; rbManual.Checked = !sim.GacMode;
+        syncing = false;
+        chkArs.Enabled = !arsLocked;
+        rbGac.Enabled = rbManual.Enabled = !gacLocked;
         sim.Log += (t, bad) =>
         {
             if (IsDisposed) return;
@@ -453,8 +572,15 @@ public sealed class YardForm : Form
         AiSim?.Invoke(sim);
         log.Clear();
         journal.Items.Clear();
-        Note("Смена началась. Поезд на пути П1 готов к роспуску. Делайте то, что написано в жёлтом блоке «Что делать сейчас» справа", false);
+        Note(m switch
+        {
+            YardMode.Training => "Смена началась (вариант «Учебный»): всё делаете вы — состав на пути П1 осмотрен, подайте под него горочный локомотив. Подсказки — в жёлтом блоке справа",
+            YardMode.Exam => "Смена началась (вариант «Экзамен»): всё делаете вы, подсказок нет. Состав на пути П1 осмотрен и ждёт горочный локомотив",
+            YardMode.Demo => "Смена началась (вариант «Демонстрация»): горку ведёт автопилот — смотрите схему и журнал",
+            _ => "Смена началась. Поезд на пути П1 готов к роспуску. Делайте то, что написано в жёлтом блоке «Что делать сейчас» справа",
+        }, false);
         foreach (var n in StartNotes) Note(n, true);
+        if (task != null) Note($"Задание «{task.Title}» на {task.Minutes} мин. {task.Text}", false);
         RefreshPanel();
     }
 
@@ -529,13 +655,30 @@ public sealed class YardForm : Form
         foreach (var b in speedButtons) b.BackColor = (double)b.Tag == speed ? Color.FromArgb(0, 105, 190) : Color.FromArgb(55, 64, 76);
 
         // что делать сейчас
-        var (now, btn, act, step, urgent) = Advice();
+        // [ДОБАВЛЕНО 26.11.2026] варианты, задание, «Экзамен» (без подсказок), «Демонстрация» (пульт у автопилота)
+        bool hints = mode != YardMode.Exam;
+        foreach (var (m, b) in modeBtns)
+        {
+            b.BackColor = m == mode ? Color.FromArgb(0, 105, 190) : Color.FromArgb(55, 64, 76);
+            b.Enabled = task == null || taskOver || m == mode;
+        }
+        RefreshTask();
+        bool demo = mode == YardMode.Demo;
+        for (int i = 1; i <= 4; i++) if (steps[i].Enabled == demo) steps[i].Enabled = !demo;
+        if (gMan.Enabled == demo) { gMan.Enabled = !demo; gExtra.Enabled = !demo; }
+        if (btnAi != null) btnAi.Enabled = mode != YardMode.Exam;
+        RefreshOps();
+
+        var (now, btn, act, step, urgent) = hints ? Advice()
+            : ("Экзамен: подсказок нет. Работайте сами — программа следит за каждым шагом и ставит оценку", (string)null, (Action)null, -1, false);
+        if (demo) (now, btn, act, step, urgent) = ("Демонстрация: горку ведёт автопилот — в журнале написано, что он делает и почему. Ускорить время — «×2», «×4»", null, null, -1, false);
         LangUi.SetText(lblNow, now);
         // заранее: следующий за первым отцеп — «Л» / «Е»
         var pp = sim.Pushing;
         string warn = pp != null && !pp.Escort && pp.Cuts.Count > 1 && pp.Cuts[1].Forbidden && !pp.Cuts[0].Forbidden
             ? $"Внимание: за отцепом {pp.Cuts[0].No} идёт «{pp.Cuts[1].Mark}» (его нельзя с горки) — как только отцеп {pp.Cuts[0].No} уйдёт, нажмите «СТОП»" : "";
         LangUi.SetText(lblWarn, warn);
+        if (!hints || demo) warn = "";
         lblWarn.Visible = warn != "";
         nowPanel.Height = warn != "" ? 170 : 134;
         nowAct = act;
@@ -544,7 +687,7 @@ public sealed class YardForm : Form
         bool blink = Environment.TickCount / 400 % 2 == 0;
         nowPanel.BackColor = urgent ? (blink ? Color.FromArgb(120, 30, 25) : Color.FromArgb(80, 24, 20)) : Color.FromArgb(58, 50, 18);
         btnNow.BackColor = urgent ? Color.FromArgb(255, 120, 90) : Color.Gold;
-        for (int i = 1; i <= 4; i++)
+        for (int i = 0; i <= 4; i++)
         {
             steps[i].ForeColor = i == step ? StepHot : StepColor;
             steps[i].BackColor = i == step ? GrpHot : Grp;
@@ -588,7 +731,7 @@ public sealed class YardForm : Form
             var r = sim.Retarders[i];
             int cur = r.Step == 0 ? 0 : r.Step <= 2 ? 1 : 2;
             int adv = r.Advice == 0 ? 0 : r.Advice <= 2 ? 1 : 2;
-            bool hint = !sim.Ars && r.CutOn && adv != cur;
+            bool hint = hints && !sim.Ars && r.CutOn && adv != cur;
             for (int s = 0; s < 3; s++)
             {
                 var b = retBtns[i, s];
@@ -610,14 +753,15 @@ public sealed class YardForm : Form
         if (rbGac.Checked != sim.GacMode) { rbGac.Checked = sim.GacMode; rbManual.Checked = !sim.GacMode; }
         var lt = sim.ListokTrain;
         var next = lt?.AllCuts.FirstOrDefault(c => c.State == CutState.InTrain && c.Route == 0);
-        string nx = sim.SelectedCut != null && sim.SelectedCut.State == CutState.InTrain
+        string nx = !hints ? "Маршрут — кнопкой пути перед каждым отцепом (клавиши 1–8)"
+            : sim.SelectedCut != null && sim.SelectedCut.State == CutState.InTrain
             ? $"Выбран отцеп {sim.SelectedCut.No} (по листку — путь {sim.SelectedCut.Dest}): нажмите кнопку пути"
             : next != null ? $"Следующий без маршрута: отцеп {next.No} — по листку путь {next.Dest}. Нажмите кнопку «{next.Dest}»"
             : sim.GacMode ? "ГАЦ ставит маршруты сама. Чтобы изменить — выберите отцеп в листке и нажмите путь" : "Маршруты всем отцепам заданы";
         LangUi.SetText(lblNext, nx);
         for (int k = 1; k <= Lay.Tracks; k++)
         {
-            bool hot = (sim.SelectedCut?.Dest ?? next?.Dest) == k;
+            bool hot = hints && (sim.SelectedCut?.Dest ?? next?.Dest) == k;
             routeBtns[k].BackColor = hot ? Color.FromArgb(40, 120, 200) : Color.FromArgb(55, 64, 76);
             routeBtns[k].FlatAppearance.BorderSize = hot ? 3 : 1;
             routeBtns[k].FlatAppearance.BorderColor = hot ? Color.White : Color.FromArgb(80, 90, 104);
@@ -650,6 +794,30 @@ public sealed class YardForm : Form
             return p != null && p.V > 0.05 && !p.Escort
                 ? ($"Отцеп {stuck.No} остановился в стрелочной зоне! Сначала остановите роспуск", "■ СТОП (красный)", stop, 2, true)
                 : ($"Отцеп {stuck.No} стоит в стрелочной зоне — протолкните его на путь", "Протолкнуть отцеп", () => sim.PushStuck(), 0, true);
+
+        // [ДОБАВЛЕНО 26.11.2026] «Учебный»: приём, отправление, башмаки
+        if (sim.Strict)
+        {
+            if (sim.Approaching != null)
+            {
+                var f = sim.Arr.Skip(1).FirstOrDefault(a => a.State == ArrState.Free && a.Train == null && !(sim.Pushing?.Arr == a.No && a.Train == sim.Pushing));
+                if (f != null) return ($"Поезд {sim.Approaching.Name} ({sim.Approaching.WagonCount} ваг.) подходит к станции. Примите его на свободный путь парка приёма", $"Принять на П{f.No}", () => sim.AcceptTrain(f.No), 0, true);
+            }
+            var dr = sim.Dep.Skip(1).FirstOrDefault(d => d.State == DepState.Ready);
+            if (dr != null) return ($"Поезд №{dr.TrainNo} на пути О{dr.No} готов (тормоза опробованы) — отправьте его", $"Отправить с О{dr.No}", () => sim.DepartTrain(dr.No), 0, false);
+            var dw = sim.Dep.Skip(1).FirstOrDefault(d => d.State == DepState.WaitLoco);
+            if (dw != null) return ($"Состав выведен на путь О{dw.No} — закажите под него поездной локомотив", $"Локомотив на О{dw.No}", () => sim.OrderTrainLoco(dw.No), 0, false);
+            if (p != null && !p.Escort && p.Cuts.Count > 0)
+            {
+                var c = p.Cuts[0];
+                int k = c.Route > 0 ? c.Route : c.Dest;
+                if (!sim.Shoe[k] && !sim.Cuts.Any(x => x.Active && x.Track == k))
+                    return ($"Отцеп {c.No} пойдёт на свободный путь {k} — уложите на него тормозной башмак, иначе вагоны не закреплены", $"Башмак на путь {k}", () => sim.SetShoe(k, true), 0, true);
+            }
+            for (int k = 1; k <= Lay.Tracks; k++)
+                if (sim.Shoe[k] && sim.OnTrack(k).Sum(c => c.Wagons.Count) >= YardSim.Norm(k) && !sim.ShuntBusy && sim.Dep.Skip(1).Any(d => d.State == DepState.Free))
+                { int kk = k; return ($"На пути {k} набран состав. Снимите тормозной башмак — потом выведите состав в парк отправления", $"Снять башмак с пути {k}", () => sim.SetShoe(kk, false), 0, false); }
+        }
 
         if (p == null)
         {
@@ -706,6 +874,204 @@ public sealed class YardForm : Form
                              : (sim.GacMode ? "Идёт роспуск: ГАЦ ставит маршруты, тормозите вы — смотрите на скорость отцепов у замедлителей"
                                             : "Идёт роспуск: маршруты и торможение — ваши. Следите за схемой");
         return (run, "■ СТОП (красный)", stop, 0, false);
+    }
+
+    // =================================================================
+    //  [ДОБАВЛЕНО 26.11.2026] ПРИЁМ, БАШМАКИ, ОТПРАВЛЕНИЕ; ВАРИАНТЫ; ЗАДАНИЯ
+    // =================================================================
+    void RefreshOps()
+    {
+        bool on = sim.Strict;
+        if (gOps.Visible != on) gOps.Visible = on;
+        if (!on) return;
+        var ap = sim.Approaching;
+        LangUi.SetText(lblApproach, ap != null ? $"Поезд {ap.Name} ({ap.WagonCount} ваг.) у входного светофора — на какой путь принять:" : "Поездов на подходе нет");
+        lblApproach.ForeColor = ap != null ? Color.Gold : Color.Gainsboro;
+        for (int a = 1; a <= Lay.ArrTracks; a++)
+        {
+            bool free = sim.Arr[a].State == ArrState.Free && sim.Arr[a].Train == null;
+            accBtns[a].Enabled = ap != null && free;
+            accBtns[a].BackColor = ap != null && free ? Color.FromArgb(30, 140, 60) : Color.FromArgb(55, 64, 76);
+        }
+        for (int k = 1; k <= Lay.Tracks; k++)
+        {
+            shoeBtns[k].BackColor = sim.Shoe[k] ? Color.FromArgb(230, 130, 30) : Color.FromArgb(55, 64, 76);
+            shoeBtns[k].ForeColor = sim.Shoe[k] ? Color.Black : Color.White;
+        }
+        for (int d = 1; d <= Lay.DepTracks; d++)
+        {
+            var x = sim.Dep[d];
+            string st = x.State switch
+            {
+                DepState.Free => "свободен",
+                DepState.Filling => "выводят состав",
+                DepState.WaitLoco => "состав ждёт поездной локомотив",
+                DepState.LocoComing => "поездной локомотив идёт",
+                DepState.BrakeTest => "опробование тормозов",
+                DepState.Ready => "готов к отправлению",
+                _ => "отправляется",
+            };
+            LangUi.SetText(depInfo[d], $"О{d}: " + L.T(st) + (x.State != DepState.Free && x.TrainNo > 0 ? $" · №{x.TrainNo}, {x.Wagons.Count} ваг." : ""));
+            bool ready = x.State == DepState.Ready, wait = x.State == DepState.WaitLoco;
+            LangUi.SetText(depBtns[d], ready ? "▶ Отправить" : "Заказать локомотив");
+            depBtns[d].Enabled = ready || wait;
+            depBtns[d].BackColor = ready ? Color.FromArgb(30, 140, 60) : wait ? Color.FromArgb(40, 120, 200) : Color.FromArgb(55, 64, 76);
+        }
+    }
+
+    static string ModeName(YardMode m) => Variants.First(v => v.m == m).text;
+
+    void ChooseMode(YardMode m)
+    {
+        if (task != null && !taskOver) { Note("Нельзя: идёт задание — сначала закончите его (кнопка «Закончить задание»)", true); return; }
+        if (m == mode && task == null) return;
+        // «Только горка» ⇄ «Горка + маневры» — на ходу, как раньше; остальные — новой сменой
+        if (task == null && mode is YardMode.Hump or YardMode.HumpShunt && m is YardMode.Hump or YardMode.HumpShunt)
+        {
+            mode = m;
+            sim.ApplyMode(m);
+            Note(sim.AutoOps ? "Вариант «Только горка»: приём, осмотр, горочный локомотив и вывод составов — сами" : "Вариант «Горка + маневры»: горочный локомотив под состав, его возврат и вывод составов — делаете вы", false);
+            RefreshPanel();
+            return;
+        }
+        if (sim.T > 30 && task == null &&
+            MessageBox.Show(L.T($"Начать новую смену в варианте «{ModeName(m)}»? Оценка и журнал обнулятся."), Text, MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+        task = null;
+        taskOver = false;
+        mode = m;
+        seed = Environment.TickCount;
+        speed = 1;
+        NewShift();
+    }
+
+    void RefreshTask()
+    {
+        btnTaskEnd.Visible = task != null && !taskOver;
+        btnTasks.Enabled = task == null || taskOver;
+        if (task == null) { LangUi.SetText(lblTask, ""); return; }
+        if (!taskOver)
+        {
+            double left = task.Minutes * 60 - sim.T;
+            if (task.Reached(sim)) { FinishTask(false); return; }
+            if (left <= 0) { FinishTask(false); return; }
+            var ts = TimeSpan.FromSeconds(Math.Max(0, left));
+            LangUi.SetText(lblTask, $"Задание «{task.Title}» · осталось {(int)ts.TotalMinutes}:{ts.Seconds:00} · " + string.Join(" · ", task.Goals(sim).Select(g => (g.Done ? "✔ " : "") + g.Text)));
+            lblTask.ForeColor = left < 120 ? Color.FromArgb(255, 140, 110) : Color.Gold;
+        }
+    }
+
+    /// <summary>Конец урока: итог окном и файлом.</summary>
+    void FinishTask(bool byUser)
+    {
+        if (task == null || taskOver) return;
+        if (byUser && MessageBox.Show(L.T("Закончить задание сейчас? Невыполненные цели — не засчитаются."), Text, MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+        taskOver = true;
+        speed = 0;
+        string grade = task.Grade(sim);
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine(L.T("Сортировочная — итог задания"));
+        sb.AppendLine(L.T("Ученик: ") + (student.Length > 0 ? student : L.T("(не указан)")));
+        sb.AppendLine(L.T("Задание: ") + L.T(task.Title));
+        sb.AppendLine(L.T("Вариант: ") + L.T(ModeName(task.Mode)));
+        var used = TimeSpan.FromSeconds(Math.Min(sim.T, task.Minutes * 60));
+        sb.AppendLine(L.T($"Дата: {DateTime.Now:dd.MM.yyyy HH:mm}, время на задание {task.Minutes} мин, затрачено {(int)used.TotalMinutes}:{used.Seconds:00}"));
+        if (byUser) sb.AppendLine(L.T("Задание закончено досрочно (кнопкой)"));
+        sb.AppendLine();
+        sb.AppendLine(L.T("Цели:"));
+        foreach (var (t, done) in task.Goals(sim)) sb.AppendLine((done ? "  [✔] " : "  [ ] ") + L.T(t));
+        sb.AppendLine();
+        sb.AppendLine(L.T($"Нарушений: {sim.Violations.Count}"));
+        foreach (var v in sim.Violations)
+            sb.AppendLine($"  {new DateTime(2026, 1, 1, 8, 0, 0).AddSeconds(v.T):HH:mm:ss}  {L.T(v.Text)} (−{v.Penalty})");
+        sb.AppendLine();
+        sb.AppendLine(L.T($"Распущено: {sim.TrainsRolled} поездов, {sim.Rolled} ваг., {sim.CutsRolled} отцепов (на свой путь — {sim.CorrectCuts}); отправлено поездов: {sim.Departed}"));
+        sb.AppendLine(L.T($"Баллы: {sim.Score} из 100"));
+        sb.AppendLine(L.T($"ОЦЕНКА: {grade}") + (task.GoalsMet(sim) ? "" : " — " + L.T("цели задания не выполнены")));
+        string text = sb.ToString();
+        string file = null;
+        try
+        {
+            var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "Сортировочная — результаты");
+            Directory.CreateDirectory(dir);
+            string who = string.Concat((student.Length > 0 ? student : "ученик").Split(Path.GetInvalidFileNameChars()));
+            file = Path.Combine(dir, $"{DateTime.Now:yyyy-MM-dd HH-mm} {who} — {task.Id}.txt");
+            File.WriteAllText(file, text, System.Text.Encoding.UTF8);
+        }
+        catch { file = null; }
+        Note($"Задание «{task.Title}» окончено: оценка {grade}", grade == "2");
+        RefreshPanel();
+        LastReport = file;
+        if (!headless) ShowText(L.T("Итог задания"), text + (file != null ? "\n" + L.T("Сохранено: ") + file : ""));
+    }
+
+    void ShowText(string title, string text)
+    {
+        using var f = new Form { Text = title, Size = new Size(760, 560), StartPosition = FormStartPosition.CenterParent, BackColor = Panel, Font = BtnFont, Tag = "nolang" };
+        var tb = new TextBox { Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill, Text = text.Replace("\r\n", "\n").Replace("\n", "\r\n"), BackColor = Color.FromArgb(24, 28, 33), ForeColor = Color.White, Font = new Font("Segoe UI", 10.5f), BorderStyle = BorderStyle.None };
+        var ok = new Button { Text = "OK", Dock = DockStyle.Bottom, Height = 36, DialogResult = DialogResult.OK, FlatStyle = FlatStyle.Flat, ForeColor = Color.White, BackColor = Color.FromArgb(0, 105, 190) };
+        f.Controls.Add(tb);
+        f.Controls.Add(ok);
+        f.AcceptButton = ok;
+        f.ShowDialog(this);
+    }
+
+    /// <summary>Окно «Задания»: список, описание, фамилия ученика, «Начать».</summary>
+    void OpenTasks()
+    {
+        using var f = new Form { Text = L.T("Задания — выберите урок"), Size = new Size(820, 560), StartPosition = FormStartPosition.CenterParent, BackColor = Panel, Font = BtnFont, FormBorderStyle = FormBorderStyle.FixedDialog, MaximizeBox = false, MinimizeBox = false, Tag = "nolang" };
+        var list = new ListBox { Dock = DockStyle.Left, Width = 300, BackColor = Color.FromArgb(24, 28, 33), ForeColor = Color.White, Font = new Font("Segoe UI", 10.5f), BorderStyle = BorderStyle.None, IntegralHeight = false };
+        foreach (var t in YardTask.All) list.Items.Add(L.T(t.Title));
+        var info = new TextBox { Multiline = true, ReadOnly = true, Dock = DockStyle.Fill, BackColor = Color.FromArgb(30, 35, 41), ForeColor = Color.White, Font = new Font("Segoe UI", 10.5f), BorderStyle = BorderStyle.None, ScrollBars = ScrollBars.Vertical };
+        var bottom = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 46, FlowDirection = FlowDirection.LeftToRight, Padding = new Padding(6), BackColor = Color.FromArgb(22, 26, 31) };
+        bottom.Controls.Add(new Label { Text = L.T("Ученик (фамилия, имя):"), AutoSize = true, ForeColor = Color.Gainsboro, Margin = new Padding(3, 9, 3, 0) });
+        var name = new TextBox { Width = 260, Text = student, Margin = new Padding(3, 6, 12, 0) };
+        bottom.Controls.Add(name);
+        var start = new Button { Text = L.T("▶ Начать задание"), AutoSize = true, Height = 32, FlatStyle = FlatStyle.Flat, ForeColor = Color.Black, BackColor = Color.Gold, DialogResult = DialogResult.OK, Enabled = false };
+        var cancel = new Button { Text = L.T("Отмена"), AutoSize = true, Height = 32, FlatStyle = FlatStyle.Flat, ForeColor = Color.White, BackColor = Color.FromArgb(55, 64, 76), DialogResult = DialogResult.Cancel };
+        bottom.Controls.Add(start);
+        bottom.Controls.Add(cancel);
+        list.SelectedIndexChanged += (_, _) =>
+        {
+            if (list.SelectedIndex < 0) return;
+            var t = YardTask.All[list.SelectedIndex];
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine(L.T(t.Title)).AppendLine();
+            sb.AppendLine(L.T(t.Text)).AppendLine();
+            sb.AppendLine(L.T("Вариант: ") + L.T(ModeName(t.Mode)));
+            sb.AppendLine(L.T($"Время: {t.Minutes} мин (модельного времени; ускорять можно)"));
+            if (t.Ars != null && !(t.Mode is YardMode.Training or YardMode.Exam)) sb.AppendLine(L.T(t.Ars == true ? "АРС: включена" : "АРС: выключена — торможение вручную"));
+            if (t.Gac != null && !(t.Mode is YardMode.Training or YardMode.Exam)) sb.AppendLine(L.T(t.Gac == true ? "Маршруты: ГАЦ по листку" : "Маршруты: вручную"));
+            sb.AppendLine(L.T("Цели:"));
+            if (t.Trains > 0) sb.AppendLine("  • " + L.T($"распустить поездов: {t.Trains}"));
+            if (t.Forms > 0) sb.AppendLine("  • " + L.T($"вывести составов в парк отправления: {t.Forms}"));
+            if (t.Departs > 0) sb.AppendLine("  • " + L.T($"отправить поездов: {t.Departs}"));
+            if (t.MaxViolations >= 0) sb.AppendLine("  • " + L.T($"нарушений не больше {t.MaxViolations}"));
+            sb.AppendLine().AppendLine(L.T("Итог (цели, нарушения, оценка) сохранится в «Документы\\Сортировочная — результаты»."));
+            info.Text = sb.ToString().Replace("\r\n", "\n").Replace("\n", "\r\n");
+            start.Enabled = true;
+        };
+        list.DoubleClick += (_, _) => { if (list.SelectedIndex >= 0) { f.DialogResult = DialogResult.OK; f.Close(); } };
+        f.Controls.Add(info);
+        f.Controls.Add(list);
+        f.Controls.Add(bottom);
+        f.AcceptButton = start;
+        f.CancelButton = cancel;
+        list.SelectedIndex = 0;
+        if (TasksShot != null)      // служебное: снимок окна заданий (выбрано TasksShotIndex)
+        {
+            f.StartPosition = FormStartPosition.Manual; f.Location = new Point(-6000, 0); f.ShowInTaskbar = false;
+            f.Show(); list.SelectedIndex = TasksShotIndex; name.Text = "Иванов Иван"; LangUi.Apply(f, true); Application.DoEvents();
+            using var bmp = new Bitmap(f.Width, f.Height);
+            f.DrawToBitmap(bmp, new Rectangle(0, 0, f.Width, f.Height));
+            bmp.Save(TasksShot, System.Drawing.Imaging.ImageFormat.Png);
+            return;
+        }
+        if (f.ShowDialog(this) != DialogResult.OK || list.SelectedIndex < 0) return;
+        student = name.Text.Trim();
+        task = YardTask.All[list.SelectedIndex];
+        taskOver = false;
+        speed = 1;
+        NewShift();
     }
 
     string LocoText() => sim.Loco switch
@@ -774,19 +1140,32 @@ public sealed class YardForm : Form
     public void Shot(string path, double seconds, bool manual = false)
     {
         timer.Stop();
+        headless = true;
         WindowState = FormWindowState.Normal;
         StartPosition = FormStartPosition.Manual;
         Bounds = new Rectangle(-6000, 0, 1600, 960);
         ShowInTaskbar = false;
         Show();
-        chkArs.Checked = !manual;
-        if (manual) rbManual.Checked = true;
-        sim.SetPushRoute(1);
-        if (manual) for (int k = 0; k < 2; k++) sim.RouteButton(sim.ListokTrain.AllCuts.First(c => c.Route == 0).Dest);
-        sim.SetAspect(Aspect.YellowGreen);
+        if (sim.Strict) sim.SendHumpLoco(1);       // [26.11.2026] «Учебный»: подать локомотив, дальше — как студент
+        else if (mode != YardMode.Demo)
+        {
+            chkArs.Checked = !manual;
+            if (manual) rbManual.Checked = true;
+            sim.SetPushRoute(1);
+            if (manual) for (int k = 0; k < 2; k++) sim.RouteButton(sim.ListokTrain.AllCuts.First(c => c.Route == 0).Dest);
+            sim.SetAspect(Aspect.YellowGreen);
+        }
         for (double t = 0; t < seconds; t += 0.05)
         {
             sim.Tick(0.05);
+            if ((int)(t * 20) % 10 == 0) RefreshTask();
+            if (sim.Strict)
+            {
+                if (sim.Pushing == null && sim.Arr[1].State == ArrState.Ready) { sim.SetPushRoute(1); sim.SetAspect(Aspect.YellowGreen); }
+                foreach (var c in sim.Pushing?.Cuts.Take(1) ?? Enumerable.Empty<Cut>()) if (c.Route == 0) { if (!sim.Cuts.Any(x => x.Active && x.Track == c.Dest)) sim.SetShoe(c.Dest, true); sim.RouteButton(c.Dest); }
+                for (int r = 0; r < sim.Retarders.Length; r++) sim.SetRetarder(r, sim.Retarders[r].CutOn ? sim.Retarders[r].Advice : 0);
+                if (sim.Approaching != null && sim.Arr.Skip(1).FirstOrDefault(x => x.State == ArrState.Free && x.Train == null) is ArrTrack fa) sim.AcceptTrain(fa.No);
+            }
             var p = sim.Pushing;
             if (p != null && p.Cuts.Count > 0 && p.Cuts.All(c => c.Forbidden) && !p.Escort && p.Cuts[0].Head > -25)
             { sim.SetAspect(Aspect.Red); if (p.V == 0) { sim.StartEscort(); sim.SetAspect(Aspect.Yellow); } }

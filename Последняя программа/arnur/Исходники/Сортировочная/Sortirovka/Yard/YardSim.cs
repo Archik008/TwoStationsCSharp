@@ -27,13 +27,21 @@
 //   «Только горка» — приём, осмотр, подача и возврат горочного локомотива, вывод составов в парк отправления
 //                    и отправление идут сами; студент — надвиг и роспуск;
 //   «Горка + маневры» — горочный локомотив под состав, его возврат и вывод составов — делает студент.
+//   [ДОБАВЛЕНО 26.11.2026]
+//   «Учебный» — студент делает всё сам: принимает поезд на путь парка приёма, подаёт и возвращает горочный локомотив,
+//               надвиг, маршруты отцепам (вручную), торможение замедлителями (без АРС), тормозные башмаки на путях,
+//               вывод состава, заказ поездного локомотива и отправление. Программа проверяет каждый шаг и ставит оценку;
+//   «Экзамен»   — то же без подсказок; «Демонстрация» — всё делает автопилот и пишет в журнал, что и почему.
 // =====================================================================
+
+/// <summary>[ДОБАВЛЕНО 26.11.2026] Вариант работы (кнопки вверху окна).</summary>
+public enum YardMode { Hump, HumpShunt, Training, Demo, Exam }
 
 public enum Aspect { Red, Yellow, YellowGreen, Green, RedN }
 
 public enum ArrState { Free, Arriving, Uncoupling, Inspection, WaitLoco, LocoComing, Ready, Pushing }
 public enum HumpLocoState { Standby, ToTrain, Coupled, AtHorb, Returning }
-public enum DepState { Free, Filling, WaitLoco, LocoComing, BrakeTest, Ready, Leaving }
+public enum DepState { Free, Filling, WaitLoco, LocoComing, BrakeTest, Ready, Leaving }   // Ready — только в «Учебном» / «Экзамене»: ждёт команды «Отправить»
 
 public sealed class Train
 {
@@ -75,6 +83,8 @@ public sealed class DepTrack
     public int From, TrainNo;
     public double Until;
     public LocoKind Loco;
+    /// <summary>[26.11.2026] Нарушение «задержка» уже записано (не повторять).</summary>
+    public bool Late;
 }
 
 /// <summary>Движение «сценой» по ломаной схемы (приём, уход в депо, заезд горочного локомотива, вывод состава…).</summary>
@@ -162,6 +172,28 @@ public sealed class YardSim
     public bool ShuntBusy;
     public Cut SelectedCut;
     public int Rolled, CutsRolled, Departed, CorrectCuts;
+    /// <summary>[ДОБАВЛЕНО 26.11.2026] Поездов распущено до конца (для заданий).</summary>
+    public int TrainsRolled;
+    /// <summary>[26.11.2026] Составов выведено в парк отправления.</summary>
+    public int Formed;
+
+    // ---- [ДОБАВЛЕНО 26.11.2026] варианты «Учебный», «Экзамен», «Демонстрация» ----
+    public YardMode Mode = YardMode.Hump;
+    /// <summary>«Учебный» и «Экзамен»: всё делает студент, программа проверяет.</summary>
+    public bool Strict => Mode is YardMode.Training or YardMode.Exam;
+    /// <summary>Поезд на подходе: ждёт, пока студент назначит путь парка приёма (только Strict).</summary>
+    public Train Approaching;
+    double approachSince;
+    bool approachLate;
+    /// <summary>Тормозной башмак на сортировочном пути k (только Strict): лежит в 12 м от упора.</summary>
+    public readonly bool[] Shoe = new bool[Lay.Tracks + 1];
+    public const double ShoeGap = 12, ShoeMaxSpeed = 12 / 3.6;
+    public static double ShoeS => Lay.SEnd - ShoeGap;
+    readonly bool[] shoeWarned = new bool[Lay.Tracks + 1], overflowWarned = new bool[Lay.Tracks + 1];
+    /// <summary>В каждом поезде — вагон, запрещённый к роспуску (для задания).</summary>
+    public bool ForceForbidden;
+    /// <summary>Автопилот («Демонстрация»).</summary>
+    public bool Autopilot;
     public int Score => Math.Max(0, 100 - Violations.Sum(v => v.Penalty));
     public string Grade => Score >= 90 ? "5" : Score >= 75 ? "4" : Score >= 60 ? "3" : "2";
 
@@ -173,10 +205,12 @@ public sealed class YardSim
     int nextTrainNo = 2001, nextDepNo = 3001, nextCutNo = 1;
     double nextArrival;
 
-    public YardSim(int seed)
+    /// <param name="setup">[26.11.2026] вариант и настройки до первого поезда (ApplyMode, ForceForbidden)</param>
+    public YardSim(int seed, Action<YardSim> setup = null)
     {
         rnd = new Random(seed);
         Edges = Lay.MakeEdges(out Switches, out Retarders);
+        setup?.Invoke(this);
         // начало смены: поезд в парке приёма уже осмотрен, горочный локомотив прицеплен; второй — на подходе
         var t = MakeTrain(1);
         t.TrainLoco = null;
@@ -187,6 +221,24 @@ public sealed class YardSim
         LocoTrain = t;
         ListokTrain = t;
         nextArrival = 40;
+        if (Strict)
+        {
+            // учебный: состав осмотрен, но горочный локомотив ещё на стоянке — подаёт студент
+            Arr[1].State = ArrState.WaitLoco;
+            t.HumpLoco = false;
+            Loco = HumpLocoState.Standby;
+            LocoTrain = null;
+        }
+    }
+
+    /// <summary>[ДОБАВЛЕНО 26.11.2026] Включить вариант работы. «Учебный» и «Экзамен» — АРС выключена, маршруты вручную.</summary>
+    public void ApplyMode(YardMode m)
+    {
+        Mode = m;
+        AutoOps = m is YardMode.Hump or YardMode.Demo;
+        Autopilot = m == YardMode.Demo;
+        if (Strict) { Ars = false; foreach (var r in Retarders) r.Step = 0; SetGac(false); }
+        if (m == YardMode.Demo) { Ars = true; SetGac(true); }
     }
 
     void Say(string ru, bool bad = false) => Log?.Invoke(ru, bad);
@@ -224,7 +276,7 @@ public sealed class YardSim
         var t = new Train { No = nextTrainNo, Arr = arr, TrainLoco = Rolling.Train[rnd.Next(Rolling.Train.Length)] };
         nextTrainNo += 2;
         // [ИЗМЕНЕНО 17.11.2026] поезд 6–10 вагонов (было 22–30): вагоны на схеме крупнее, роспуск нагляднее
-        bool forb = rnd.NextDouble() < 0.45;
+        bool forb = rnd.NextDouble() < 0.45 || ForceForbidden;
         int target = rnd.Next(6, 11) - (forb ? 1 : 0), count = 0;
         while (count < target)
         {
@@ -476,13 +528,20 @@ public sealed class YardSim
         if (Pushing?.Escort == true && Pushing.Cuts.Count > 0 && Pushing.Cuts[0].Route == k) return auto ? false : Refuse($"на путь {k} спускаются вагоны с локомотивом");
         var d = Dep.Skip(1).FirstOrDefault(x => x.State == DepState.Free);
         if (d == null) return auto ? false : Refuse("в парке отправления нет свободного пути");
+        // [ДОБАВЛЕНО 26.11.2026] учебный: сначала снять башмак; неполный состав — замечание
+        if (Strict && Shoe[k]) return Refuse($"на пути {k} лежит тормозной башмак — сначала снимите его");
+        int nw = on.Sum(c => c.Wagons.Count);
+        if (Strict && nw < Norm(k)) Violate($"состав с пути {k} выведен неполным: {nw} ваг. при норме {Norm(k)}", 2);
+        shoeWarned[k] = overflowWarned[k] = false;
         var wagons = on.OrderByDescending(c => c.Head).SelectMany(c => c.Wagons).ToList();
         foreach (var c in on) c.State = CutState.Gone;
         d.State = DepState.Filling;
+        d.Late = false;
         d.From = k;
         d.TrainNo = nextDepNo;
         nextDepNo += 2;
         ShuntBusy = true;
+        Formed++;
         var pts = Lay.ToDeparture(k, d.No);
         double headPos = (on.Max(c => c.Head) - Lay.STrack) / (Lay.SEnd - Lay.STrack) * Mover.Dist(pts[0], pts[1]);
         var m = new Mover { Pts = pts, Speed = 16, Pos = headPos };
@@ -544,6 +603,8 @@ public sealed class YardSim
         Gac();
         StepRetarders();
         StepOps(dt);
+        if (Strict) StepChecks();
+        if (Autopilot) Pilot();
         StepMovers(dt);
     }
 
@@ -644,6 +705,7 @@ public sealed class YardSim
             Rolled += wagons.Count;
             CutsRolled += t.Cuts.Count;
             t.Cuts.Clear();
+            TrainsRolled++;
             t.Returning = true;
             t.Head = t.LocoFront;
             Say($"Вагоны спущены с локомотивом на путь {track} и сцеплены. Горочный локомотив возвращается на горб");
@@ -660,6 +722,7 @@ public sealed class YardSim
         LocoTrain = null;
         var at = Arr[t.Arr];
         if (at.Train == t) { at.Train = null; at.State = ArrState.Free; }
+        if (!t.Escort) TrainsRolled++;      // со спуском локомотивом — засчитан, когда вагоны сцеплены на пути
         Say($"Роспуск поезда {t.Name} окончен. Горочный светофор — красный. Горочный локомотив на горбу");
         if (AutoOps) returnAt = T + 8;
         Changed?.Invoke();
@@ -712,6 +775,7 @@ public sealed class YardSim
                 }
                 double a = Lay.G * (i - w - b) / 1000;
                 c.V += a * dt;
+                if (c.ShoeStop > 0) c.V -= 1.2 * dt;            // [26.11.2026] юзом на тормозном башмаке
                 if (c.V <= 0)
                 {
                     c.V = 0;
@@ -720,6 +784,7 @@ public sealed class YardSim
                     continue;
                 }
                 c.Head += c.V * dt;
+                if (Strict && ShoeHit(c)) continue;
             }
 #if SORTTEST
             if (Lay.Cur.Builtin && old - c.Length < 120 && c.Head - c.Length >= 120) { var rr = Retarders[c.Lo <= 4 ? 1 : 2]; Console.WriteLine($"      [выход 2ТП] t={T:0} {c.No} v={c.V * 3.6:0.0} цель={TargetSpeed(rr, c) * 3.6:0.0} ступень={rr.Step} n={c.Wagons.Count}"); }
@@ -729,6 +794,12 @@ public sealed class YardSim
             {
                 c.Track = c.Lo;
                 CheckTrack(c, c.Track);
+                // [ДОБАВЛЕНО 26.11.2026] учебный: на свободный путь — только с башмаком (иначе вагоны не закреплены)
+                if (Strict && !Shoe[c.Track] && !shoeWarned[c.Track] && !Cuts.Any(x => x != c && x.Active && x.Track == c.Track))
+                {
+                    shoeWarned[c.Track] = true;
+                    Violate($"отцеп {c.No} пошёл на свободный путь {c.Track} без тормозного башмака — вагоны не закреплены", 2);
+                }
             }
             if (c.Head >= Lay.SEnd)
             {
@@ -962,7 +1033,8 @@ public sealed class YardSim
     void StepOps(double dt)
     {
         // приём поезда
-        if (T >= nextArrival)
+        if (ManualArrivalStep()) { }
+        else if (T >= nextArrival)
         {
             var free = Arr.Skip(1).FirstOrDefault(a => a.State == ArrState.Free && a.Train == null && !PushOccupies(a.No));
             if (free != null) Arrive(free);
@@ -997,28 +1069,193 @@ public sealed class YardSim
         {
             switch (d.State)
             {
-                case DepState.WaitLoco when T >= d.Until:
-                    {
-                        d.State = DepState.LocoComing;
-                        d.Loco = Rolling.Train[rnd.Next(Rolling.Train.Length)];
-                        var m = new Mover { Pts = Lay.DepotToDeparture(d.No), Speed = 30 };
-                        m.Vehicles.Add(((float)(d.Loco.Length * Lay.SceneScale) * 1.3f, d.Loco, null));
-                        m.Done = () => { d.State = DepState.BrakeTest; d.Until = T + 60; Say($"Путь О{d.No}: поездной локомотив {d.Loco.Series} прицеплен, опробование автотормозов"); };
-                        Movers.Add(m);
-                        break;
-                    }
+                case DepState.WaitLoco when T >= d.Until && !Strict:
+                    SendTrainLoco(d);
+                    break;
                 case DepState.BrakeTest when T >= d.Until:
-                    Depart(d);
+                    if (Strict)
+                    {
+                        d.State = DepState.Ready;
+                        d.Until = T;
+                        Say($"Путь О{d.No}: тормоза опробованы, поезд №{d.TrainNo} готов к отправлению — отправьте его");
+                    }
+                    else Depart(d);
                     break;
             }
         }
     }
 
+    void SendTrainLoco(DepTrack d)
+    {
+        d.State = DepState.LocoComing;
+        d.Loco = Rolling.Train[rnd.Next(Rolling.Train.Length)];
+        var m = new Mover { Pts = Lay.DepotToDeparture(d.No), Speed = 30 };
+        m.Vehicles.Add(((float)(d.Loco.Length * Lay.SceneScale) * 1.3f, d.Loco, null));
+        m.Done = () => { d.State = DepState.BrakeTest; d.Until = T + 60; Say($"Путь О{d.No}: поездной локомотив {d.Loco.Series} прицеплен, опробование автотормозов"); };
+        Movers.Add(m);
+    }
+
+    // =================================================================
+    //  [ДОБАВЛЕНО 26.11.2026] «УЧЕБНЫЙ» И «ЭКЗАМЕН»: ПРИЁМ, ОТПРАВЛЕНИЕ, БАШМАКИ, ПРОВЕРКИ
+    // =================================================================
+    /// <summary>Поезд подходит — ждёт команды «Принять на П…». true — приём в этом варианте ручной.</summary>
+    bool ManualArrivalStep()
+    {
+        if (!Strict) return false;
+        if (Approaching == null && T >= nextArrival)
+        {
+            Approaching = MakeTrain(0);
+            approachSince = T;
+            approachLate = false;
+            Say($"ДСП: поезд {Approaching.Name} ({Approaching.WagonCount} ваг.) подходит к станции — назначьте путь парка приёма");
+        }
+        return true;
+    }
+
+    /// <summary>Принять подходящий поезд на путь a парка приёма.</summary>
+    public bool AcceptTrain(int a)
+    {
+        if (!Strict) return Refuse("приём поездов сам — в этом варианте его делает ДСП станции");
+        if (Approaching == null) return Refuse("поездов на подходе нет");
+        var at = Arr[a];
+        if (at.State != ArrState.Free || at.Train != null || PushOccupies(a)) return Refuse($"путь П{a} парка приёма занят");
+        var t = Approaching;
+        Approaching = null;
+        t.Arr = a;
+        Arrive(at, t);
+        nextArrival = T + 150 + rnd.Next(0, 120);
+        return true;
+    }
+
+    /// <summary>Заказать поездной локомотив под состав на пути d парка отправления.</summary>
+    public bool OrderTrainLoco(int d)
+    {
+        var x = Dep[d];
+        if (x.State != DepState.WaitLoco) return Refuse(x.State switch
+        {
+            DepState.Free => $"путь О{d} свободен",
+            DepState.Filling => $"на путь О{d} ещё выводят состав",
+            _ => $"локомотив на путь О{d} уже заказан",
+        });
+        SendTrainLoco(x);
+        Say($"Заказан поездной локомотив на путь О{d} (поезд №{x.TrainNo})");
+        return true;
+    }
+
+    /// <summary>Отправить готовый поезд с пути d парка отправления.</summary>
+    public bool DepartTrain(int d)
+    {
+        var x = Dep[d];
+        if (x.State != DepState.Ready) return Refuse(x.State switch
+        {
+            DepState.BrakeTest => $"на пути О{d} ещё идёт опробование тормозов",
+            DepState.WaitLoco or DepState.LocoComing => $"на пути О{d} нет поездного локомотива",
+            _ => $"на пути О{d} нет готового поезда",
+        });
+        Depart(x);
+        return true;
+    }
+
+    /// <summary>Уложить / снять тормозной башмак на сортировочном пути k.</summary>
+    public bool SetShoe(int k, bool on)
+    {
+        if (!Strict) return Refuse("тормозные башмаки — в вариантах «Учебный» и «Экзамен»");
+        if (Shoe[k] == on) return true;
+        if (on && Cuts.Any(c => c.Active && c.Track == k))
+            return Refuse($"на пути {k} уже есть вагоны — башмак кладут на свободный путь, до первого отцепа");
+        if (!on && Cuts.Any(c => c.State == CutState.Rolling && (c.Track == k || (c.Lo == c.Hi && c.Lo == k))))
+            return Refuse($"на путь {k} идёт отцеп — подождите");
+        Shoe[k] = on;
+        if (!on) foreach (var c in Cuts.Where(c => c.Track == k)) c.ShoeStop = 0;
+        Say(on ? $"Путь {k}: тормозной башмак уложен у конца пути ({ShoeGap:0} м до упора)" : $"Путь {k}: тормозной башмак снят");
+        return true;
+    }
+
+    /// <summary>Отцеп наехал на башмак: тормозит юзом; быстрее 12 км/ч — сбил башмак. true — остановился.</summary>
+    bool ShoeHit(Cut c)
+    {
+        if (c.Lo != c.Hi || !Shoe[c.Lo] || c.Head < ShoeS) return false;
+        if (c.ShoeStop == 0)
+        {
+            if (c.V > ShoeMaxSpeed)
+            {
+                Shoe[c.Lo] = false;
+                Violate($"отцеп {c.No} сбил тормозной башмак на пути {c.Lo} ({c.V * 3.6:0.0} км/ч, наезжать не быстрее 12)", 5);
+                return false;
+            }
+            c.ShoeStop = ShoeS + Math.Min(ShoeGap - 1, c.V * c.V / 2.4 + 0.5);
+        }
+        if (c.Head < c.ShoeStop && c.V > 0) return false;
+        c.Head = Math.Min(c.Head, c.ShoeStop);
+        c.V = 0;
+        c.State = CutState.Stopped;
+        c.StopChecked = true;
+        Say($"Отцеп {c.No} остановлен тормозным башмаком на пути {c.Lo}");
+        return true;
+    }
+
+    /// <summary>Задержки, которые студент допустил (каждая — один раз).</summary>
+    void StepChecks()
+    {
+        // ждать, пока все пути приёма заняты, — не вина студента: время считается, только пока есть свободный путь
+        if (Approaching != null && !Arr.Skip(1).Any(a => a.State == ArrState.Free && a.Train == null && !PushOccupies(a.No))) approachSince = T;
+        if (Approaching != null && !approachLate && T - approachSince > 180)
+        {
+            approachLate = true;
+            Violate($"поезд {Approaching.Name} больше 3 минут ждёт у входного светофора, хотя есть свободный путь приёма", 3);
+        }
+        foreach (var d in Dep.Skip(1))
+        {
+            if (d.Late) continue;
+            if (d.State == DepState.WaitLoco && T - d.Until > 165)
+            { d.Late = true; Violate($"на пути О{d.No} состав больше 3 минут ждёт — не заказан поездной локомотив", 2); }
+            else if (d.State == DepState.Ready && T - d.Until > 180)
+            { d.Late = true; Violate($"поезд №{d.TrainNo} больше 3 минут готов, но не отправлен с пути О{d.No}", 3); }
+        }
+        for (int k = 1; k <= Lay.Tracks; k++)
+        {
+            int n = OnTrack(k).Sum(c => c.Wagons.Count);
+            if (!overflowWarned[k] && n > Norm(k) + 4)
+            { overflowWarned[k] = true; Violate($"путь {k} переполнен: {n} ваг. при норме {Norm(k)} — состав не выведен вовремя", 3); }
+        }
+    }
+
+    // =================================================================
+    //  [ДОБАВЛЕНО 26.11.2026] АВТОПИЛОТ («Демонстрация»): то, что в «Только горка» делает студент
+    // =================================================================
+    void Pilot()
+    {
+        var t = Pushing;
+        if (t == null)
+        {
+            var r = Arr.Skip(1).FirstOrDefault(a => a.State == ArrState.Ready);
+            if (r == null || Cuts.Any(c => c.State == CutState.Stopped && c.Head < Lay.STrack)) return;
+            Say($"Автопилот: состав на пути П{r.No} готов — задаю надвиг и открываю горочный светофор (жёлтый и зелёный)");
+            SetPushRoute(r.No);
+            SetAspect(Aspect.YellowGreen);
+            return;
+        }
+        // отцеп встал в стрелочной зоне — остановить роспуск и протолкнуть
+        if (Cuts.Any(c => c.State == CutState.Stopped && c.Head < Lay.STrack) && !t.Escort)
+        {
+            if (Hump != Aspect.Red) { Say("Автопилот: отцеп остановился в стрелочной зоне — останавливаю роспуск"); SetAspect(Aspect.Red); }
+            else if (t.V < 0.05) { Say("Автопилот: проталкиваю отцеп на путь"); PushStuck(); }
+            return;
+        }
+        if (Hump == Aspect.Red && !t.Escort && t.Cuts.Count > 0 && !t.Cuts[0].Forbidden) { Say("Автопилот: продолжаю роспуск"); SetAspect(Aspect.YellowGreen); return; }
+        // впереди только вагоны «Л» / «Е» — остановить перед горбом и спустить локомотивом
+        if (t.Cuts.Count > 0 && !t.Escort && t.Cuts.All(c => c.Forbidden) && t.Cuts[0].Head > -25)
+        {
+            if (Hump != Aspect.Red) { Say($"Автопилот: впереди отцеп «{t.Cuts[0].Mark}» — его с горки распускать нельзя, останавливаю надвиг"); SetAspect(Aspect.Red); }
+            else if (t.V == 0) { Say("Автопилот: спускаю эти вагоны с горки локомотивом, не быстрее 5 км/ч"); if (StartEscort()) SetAspect(Aspect.Yellow); }
+        }
+    }
+
     bool PushOccupies(int a) => Pushing != null && Pushing.Arr == a && Arr[a].Train == Pushing;
 
-    void Arrive(ArrTrack a)
+    void Arrive(ArrTrack a, Train t = null)
     {
-        var t = MakeTrain(a.No);
+        t ??= MakeTrain(a.No);
         a.State = ArrState.Arriving;
         a.Train = null;
         var m = new Mover { Pts = Lay.ArrivalPath(a.No), Speed = 40 };

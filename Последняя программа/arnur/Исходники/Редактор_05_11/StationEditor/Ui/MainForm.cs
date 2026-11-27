@@ -172,6 +172,10 @@ public sealed partial class MainForm : Form
         guide.Alignment = ToolStripItemAlignment.Right;
         guide.Overflow = ToolStripItemOverflow.Never;
         guide.Font = new Font(guide.Font, FontStyle.Bold);
+        // [ДОБАВЛЕНО 26.11.2026] окно «Разработчики» — кто сделал программу (общее для всех программ)
+        var devs = Btn("Разработчики", "Кто сделал программу", () => StationApp.Common.DevelopersForm.Open(this, StationApp.Core.L.T("Редактор станций"), StationApp.Core.L.Current));
+        devs.Alignment = ToolStripItemAlignment.Right;
+        devs.Overflow = ToolStripItemOverflow.Never;
 
         // ---- строка состояния ----
         status = new StatusStrip { SizingGrip = true };

@@ -1,6 +1,6 @@
 «СОРТИРОВОЧНАЯ» (HUMP YARD) PROGRAM — USER GUIDE
 A training classification yard with a hump. You work as the hump yard operator (ДСПГ) and the retarder operator.
-Version 1.1 of 17.11.2026. Russian — ИНСТРУКЦИЯ.txt, Kazakh — НҰСҚАУЛЫҚ.txt (the «Guide» button opens the file
+Version 1.4 of 26.11.2026. Russian — ИНСТРУКЦИЯ.txt, Kazakh — НҰСҚАУЛЫҚ.txt (the «Guide» button opens the file
 in the language of the program). Button names below are given as they appear in the English interface.
 =====================================================================================================
 
@@ -19,7 +19,7 @@ CONTENTS
   11. Wagons that must not be humped («Л», «Е»)
   12. The cut list
   13. Wagons and locomotives
-  14. Work variants: «Hump only» and «Hump + shunting»
+  14. Work variants and tasks (Training, Exam, Demonstration, brake skates)
   15. Extra commands: fixing mistakes
   16. Violations and score
   17. Time, language, AI assistant
@@ -268,9 +268,9 @@ CONTENTS
   departure yard.
 
 
-14. WORK VARIANTS: «HUMP ONLY» AND «HUMP + SHUNTING»
----------------------------------------------------
-  The «Variant…» list at the top of the window (can be changed at any moment):
+14. WORK VARIANTS AND TASKS
+---------------------------
+  The «Variant:» buttons under the top bar of the window (the pressed one is blue):
     «Hump only» — everything before and after the hump is done by itself: train reception, uncoupling of the train
       locomotive, ПТО inspection (2 min), the hump locomotive coming to the rear of the train, its return after
       humping, moving complete trains out to the departure yard, departure. Your job — push-up and humping.
@@ -279,8 +279,41 @@ CONTENTS
       — «Return hump locomotive» — after humping, from the crest to its stand (otherwise it will not go to the
         next train);
       — «Move train out…» → choose a classification track (when the norm is reached the track label is green).
-      The «What to do now» block prompts these actions as well.
-  If trains are not moved out, the classification tracks fill up.
+    «Training» — you do EVERYTHING, the program checks every step and gives hints in the «What to do now» block.
+      ARS and GAC are off at the start (you may switch them on, but it is better to learn by hand). Your steps:
+      — reception: a train approaches the home signal (a blinking label on the scheme) — in the group «Receiving,
+        brake skates, departure» press «Receive on: П1…П4» (a free track of the receiving yard);
+      — the ПТО inspection runs by itself (2 min), then — hump locomotive to the train, push-up, humping, routes,
+        braking;
+      — brake skates (skid shoes): on an EMPTY classification track the skate is laid before the first cut — the
+        track button in the «Skates on tracks» row (or right click on the track → «Lay brake skate»). On the scheme
+        the skate is an orange wedge at the end of the track. A cut running onto it at no more than 12 km/h is
+        stopped; faster — the skate is knocked off;
+      — the norm is reached — remove the skate and move the train out to the departure yard;
+      — a train on track О… — «Order locomotive»; the locomotive came and the brakes are tested (the train is
+        «ready to depart») — «▶ Dispatch».
+    «Exam» — like «Training», but without hints: the «What to do now» block, button highlighting and the AI
+      assistant are off. The grade depends on violations.
+    «Demonstration» — the autopilot does everything, the log lines «Autopilot: …» say what it does and why.
+      The panel buttons do not work; time can be sped up. Good to show before the first lesson.
+  «Hump only» ⇄ «Hump + shunting» switch at once; «Training», «Exam», «Demonstration» start a new shift
+  (the program asks). If trains are not moved out, the classification tracks fill up.
+
+  TASKS (LESSONS). The «Tasks…» button — a list of lessons: what to do, in how many minutes, restrictions (for
+  example, ARS is off and cannot be switched on). Type the surname and name, choose a task, «▶ Start task». At the
+  top of the window — the task, the time left and the goals (✓ — done). The lesson ends by itself when the goals are
+  met or the time is over; «Finish task» — earlier. The result (goals, violations, points, grade) is shown in a
+  window and saved as a file to «Documents\Сортировочная — результаты» — it can be given to the teacher. Goals not
+  met — «2».
+  Tasks:
+    1. First humping — «Hump only», ARS and GAC, one train, 20 min.
+    2. Manual braking — ARS off, two trains, no more than 3 violations, 45 min.
+    3. Manual routes — GAC off, two trains, no more than 2 violations, 30 min.
+    4. Cars that must not be humped — «Л» or «Е» in every train, two trains, no more than 1 violation, 45 min.
+    5. Hump and shunting — three trains and one train moved out, 45 min.
+    6. Full cycle (training) — variant «Training»: hump two trains, dispatch one, 50 min.
+    7. Exam: DSPG shift — variant «Exam»: hump three trains, dispatch two, 70 min.
+  A task has the same set of trains for all students — results can be compared.
 
 
 15. EXTRA COMMANDS: FIXING MISTAKES
@@ -312,6 +345,14 @@ CONTENTS
     cut stopped on a braking position                       −3
     short roll: a gap of more than 50 m to the wagons
                (on an empty track — more than 100 m to the end of the track) −2
+  Only in the «Training» and «Exam» variants:
+    a cut went to an empty track without a brake skate              −2
+    the skate was knocked off (run onto at more than 12 km/h)       −5
+    a train waited at the home signal > 3 min with a free receiving track  −3
+    a train waited > 3 min — no train locomotive ordered            −2
+    a train was ready > 3 min but not dispatched                    −3
+    a track overfilled (norm + 4 wagons) — the train not moved out  −3
+    a train moved out short (less than the norm)                    −2
   Grade: 90 points and more — «5», 75 — «4», 60 — «3», less — «2».
   «Not possible: …» in the log is a refused command (the program explains why), no points are taken for it.
   A new shift — the «New shift» button (score and log are reset, the wagons in the trains are different).
@@ -370,12 +411,11 @@ CONTENTS
 
 20. FOR THE TEACHER
 -------------------
-  Suggested order of lessons:
-    1) «Hump only», GAC, ARS on — getting acquainted: working by the «What to do now» block, hump signal,
-       push-up, the list, «Л» / «Е».
-    2) The same without ARS — manual braking with retarders (the main skill of a hump operator).
-    3) Manual route setting.
-    4) «Hump + shunting» — full work of the ДСПГ with their own hump locomotive and moving trains out.
+  Suggested order of lessons — tasks 1–7 (the «Tasks…» button, section 14): from getting acquainted with ARS and
+  GAC to the exam. Before the first lesson you can show the «Demonstration» variant. The student types the surname,
+  the lesson result is saved to «Documents\Сортировочная — результаты» (file name — date, student, task).
+  Your own tasks — in the source Исходники\Сортировочная\Sortirovka\Yard\YardTasks.cs (list All: variant,
+  minutes, goals, ARS / GAC, «Л» / «Е», the number of the train set).
   Texts of the AI assistant — the Knowledge folder next to the program (Справка_по_интерфейсу.txt, Глоссарий.txt,
   Подсказки_по_ошибкам.txt): they can be extended, the program re-reads them by itself. Questions the assistant
   found no answer to are written to Knowledge\_Вопросы_без_ответа.txt.
@@ -383,7 +423,7 @@ CONTENTS
   Исходники\Сортировочная\Sortirovka\Yard\YardSim.cs (at the start of class YardSim and in MakeTrain), the profile
   and track lengths — Yard\YardLayout.cs.
   NOT yet available: a link with the «Преподаватель» (teacher) program (tasks, faults, student screen), the Arduino
-  model, the third braking position and skid shoes, links with neighbouring stations.
+  model, the third braking position, a task editor, links with neighbouring stations.
 
 Sources: Instruction on signalling in railway transport of the Republic of Kazakhstan (hump and shunting signals,
 cl. 98–99); the articles «Сортировочная станция» and «Сортировочная горка» (Wikipedia, «Наш транспорт» — after the

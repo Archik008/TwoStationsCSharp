@@ -24,7 +24,7 @@ public static class Settings
     public static readonly List<(string station, string scheme)> Tiles = new();
     /// <summary>[ДОБАВЛЕНО 18.11.2026] Схемы, убранные диспетчером (✕): при подключении станции сами не добавляются.</summary>
     public static readonly HashSet<string> Hidden = new();
-    /// <summary>[ДОБАВЛЕНО 18.11.2026] Режим интерфейса у всех станций: Work — «Медеуский» (по умолчанию), Classic — «Павлодарский».</summary>
+    /// <summary>[ДОБАВЛЕНО 18.11.2026] Режим интерфейса у всех станций: Work — «Медеуский» (по умолчанию), Classic — «Павлодарский», [26.11.2026] Training — «Учебный».</summary>
     public static string Mode = "Work";
     /// <summary>[ДОБАВЛЕНО 18.11.2026] Порядок схем задал диспетчер (перетаскивание, ◀ ▶); иначе — по стыкам путей.</summary>
     public static bool ManualOrder;
@@ -57,7 +57,7 @@ public static class Settings
                         if (j > 0) Tiles.Add((v[..j], v[(j + 1)..]));
                         break;
                     case "hide": if (v.IndexOf('|') > 0) Hidden.Add(v); break;
-                    case "mode": if (v is "Work" or "Classic") Mode = v; break;
+                    case "mode": if (v is "Work" or "Classic" or "Training") Mode = v; break;
                     case "order": ManualOrder = v == "manual"; break;
                     case "panel": if (v is "auto" or "left" or "right") PanelSide = v; break;
                 }

@@ -126,6 +126,10 @@ class StationForm : Form
         btnSimple = PinkButton("Включить упрощённый", ToggleSimple);
         topRight.Controls.Add(btnSimple);
         topRight.Controls.Add(LangUi.Selector());   // [ДОБАВЛЕНО 22.10.2026, этап 8] язык
+        // [ДОБАВЛЕНО 26.11.2026] окно «Разработчики» — кто сделал программу (общее для всех программ)
+        var btnDevs = PinkButton("Разработчики", () => StationApp.Common.DevelopersForm.Open(this, Text, StationApp.Core.L.Current));
+        tips.SetToolTip(btnDevs, "Кто сделал программу");
+        topRight.Controls.Add(btnDevs);
         topBar.Controls.Add(topRight);
         topBar.Controls.Add(left);
         topBar.Controls.Add(lblSensors);   // добавлен последним → прижимается к низу первым, на всю ширину

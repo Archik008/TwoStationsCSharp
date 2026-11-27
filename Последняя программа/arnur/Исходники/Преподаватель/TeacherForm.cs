@@ -135,7 +135,10 @@ public class TeacherForm : Form
 
         var bConn = Btn("Связь…");
         bConn.Click += (_, _) => { using var d = new ServerDialog(); if (d.ShowDialog(this) == DialogResult.OK) Classroom.Reconnect(); };
-        left.Controls.Add(Row(lblConn, bConn, StationApp.Ui.LangUi.Selector()));   // [ДОБАВЛЕНО 22.10.2026, этап 8] язык (уходит и станциям)
+        // [ДОБАВЛЕНО 26.11.2026] окно «Разработчики» — кто сделал программу (общее для всех программ)
+        var bDevs = Btn("Разработчики");
+        bDevs.Click += (_, _) => StationApp.Common.DevelopersForm.Open(this, Text, StationApp.Core.L.Current);
+        left.Controls.Add(Row(lblConn, bConn, StationApp.Ui.LangUi.Selector(), bDevs));   // [ДОБАВЛЕНО 22.10.2026, этап 8] язык (уходит и станциям)
 
         var lessonBox = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, Dock = DockStyle.Top, WrapContents = false, Padding = new Padding(4) };
         lessonBox.Controls.Add(Row(L("Урок:"), cbLesson));

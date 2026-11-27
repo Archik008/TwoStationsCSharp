@@ -239,7 +239,7 @@ public static class Net
         Say($"Режим станций: {ModeName(mode)}");
     }
 
-    public static string ModeName(string mode) => mode == "Classic" ? "Павлодарский" : "Медеуский (рабочий)";
+    public static string ModeName(string mode) => mode switch { "Classic" => "Павлодарский", "Training" => "Учебный", _ => "Медеуский (рабочий)" };   // [ИЗМЕНЕНО 27.11.2026] + учебный
 
     public static void Input(string id, object data) { if (Get(id) is { Control: true }) Send(id, data); }
     public static void Click(string id, string uiId, bool right) => Send(id, new { kind = "t_click", id = uiId, btn = right ? "right" : "left" });
